@@ -10,6 +10,17 @@ piece, chanted, sung or spoken.
 Everything runs on your machine. Slokas are ordinary WAV files in folders under `library/`
 (one folder per chapter, say); quizzes are JSON files in `quizzes/`.
 
+## Demo
+
+A five-minute narrated tour, recorded with a learner's library of Bhagavad Gita chapter 12:
+learning a sloka from a file, Teach mode with a deliberately flawed recitation and its report,
+Self Evaluation against several slokas at once, and a quiz.
+
+[![Watch the demo: Teach mode report with a skipped phrase flagged](docs/demo/poster.jpg)](docs/demo/SlokAbhyasa-demo.mp4)
+
+[`docs/demo/SlokAbhyasa-demo.mp4`](docs/demo/SlokAbhyasa-demo.mp4) (18 MB, 1440×900, with
+[subtitles](docs/demo/SlokAbhyasa-demo.srt)). `tools/demo/` regenerates it from a library.
+
 ## Run it
 
 ```

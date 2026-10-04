@@ -1,0 +1,79 @@
+1
+00:00:00,901 --> 00:00:22,285
+SlokAbhyasa is a small app for learning slokas by ear. You record a verse, or load one from a file. The app listens, remembers it, and later tells you how closely your own recitation matches. Everything runs on your computer; nothing is uploaded.
+
+2
+00:00:22,595 --> 00:00:41,891
+This library holds the learner's own recordings: the twenty slokas of chapter twelve of the Bhagavad Gita, Bhakti Yoga, together with its opening and closing lines, and one sloka from chapter eighteen. They are ordinary WAV files, kept in one folder per chapter.
+
+3
+00:00:43,031 --> 00:00:55,055
+Each recording can keep its words beside it, as a text file. The text is written on this computer by the Whisper speech model, and you can correct it by hand.
+
+4
+00:00:57,994 --> 00:01:09,610
+The Player plays any recording at any speed, with the pitch preserved. Slow a sloka down to three quarters, or half, and catch every syllable.
+
+5
+00:01:14,442 --> 00:01:31,242
+To teach the app a new sloka, record it, or pick a file. Here is a recording of chapter eighteen, sloka sixty six, the famous closing sloka. The app trims the silence and writes down the words it hears.
+
+6
+00:01:33,924 --> 00:01:42,876
+Give it a name, choose a folder, and save. The recording, its words and its analysis are stored together.
+
+7
+00:01:46,181 --> 00:01:55,037
+Teach mode works on one sloka at a time. Here is the third sloka of chapter twelve, with its text.
+
+8
+00:01:55,348 --> 00:01:59,596
+Press Play to hear it, at half speed if you like.
+
+9
+00:02:07,995 --> 00:02:19,443
+Then press Listen, and recite it yourself. For this demonstration the recitation rushes the first line, and skips a few syllables later on.
+
+10
+00:02:27,175 --> 00:02:44,551
+The app lines your recitation up with the original and scores it: content, timing, pitch and dynamics. The chart shows the two side by side, and the list below names each deviation, judged against a tolerance you can set yourself.
+
+11
+00:02:46,177 --> 00:02:57,577
+Your words are compared with the sloka's text too. Sloka words that were not heard are highlighted, and so are extra or different words in your attempt.
+
+12
+00:03:01,158 --> 00:03:10,782
+In Self Evaluation you can tick several slokas, recite any one of them from memory, and let the app work out which one you sang.
+
+13
+00:03:11,090 --> 00:03:14,522
+Here the learner recites one of the five.
+
+14
+00:03:30,854 --> 00:03:41,270
+It found sloka three, opened its report, and marked the other four as not matching this recording. Every report is one click away.
+
+15
+00:03:44,376 --> 00:03:52,488
+Quizzes test your memory. Choose a folder, pick one sloka or several, and name the quiz.
+
+16
+00:03:53,459 --> 00:04:01,427
+The recording stays hidden; only the name is shown. You recite it from memory, in one take.
+
+17
+00:04:04,182 --> 00:04:11,238
+When you stop, the app compares the take with the original, just as in Self Evaluation.
+
+18
+00:04:22,320 --> 00:04:39,864
+Each sloka is judged on content, pronunciation, timing, pitch and dynamics, within fixed tolerances. You choose which categories count; here, content alone. The quiz score is the share of slokas that passed.
+
+19
+00:04:40,278 --> 00:04:46,566
+Every attempt is saved with the quiz, so the trend shows your progress over the weeks.
+
+20
+00:04:47,827 --> 00:05:04,723
+Your recordings stay on your computer as plain WAV files, easy to copy and back up. SlokAbhyasa is free and open source: github.com/hchowlur-ops/slokAbhyasa
