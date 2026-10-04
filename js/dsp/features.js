@@ -1,0 +1,346 @@
+// Per-frame feature extraction at 16 kHz on a 20 ms hop:
+//   rmsDb   – frame loudness in dBFS (32 ms window)
+//   loud    – rmsDb minus the recording's own peak (normalises mic gain)
+//   active  – 0/1 activity mask (adaptive threshold + hysteresis)
+//   st      – pitch in fractional MIDI semitones (NaN when unvoiced), YIN + Viterbi
+//   conf    – 1 - CMNDF at the chosen period (0 when unvoiced)
+//   mfcc    – 12 mel-frequency cepstral coefficients c1..c12 per frame (row-major)
+
+import { createFFT, powerSpectrum } from './fft.js';
+import { fillGaps, dropShort, movingMedianNaN, bytesToBase64, base64ToBytes } from './util.js';
+import { activityThreshold } from './activity.js';
+
+export const FEAT_VERSION = 3;
+export const SR = 16000;
+export const HOP = 320;
+export const HOP_SEC = HOP / SR;
+export const MFCC_WIN = 512;
+export const N_MEL = 26;
+export const N_MFCC = 12;
+export const F_MIN = 60;
+export const F_MAX = 1230;
+export const TAU_MIN = Math.floor(SR / F_MAX);
+export const TAU_MAX = Math.ceil(SR / F_MIN);
+export const YIN_INT = 1024;
+export const PITCH_WIN = YIN_INT + TAU_MAX + 1;
+export const PRE_EMPH = 0.97;
+export const YIN_THRESHOLD = 0.15;
+export const VOICED_ON = 0.25;
+export const VOICED_OFF = 0.40;
+
+export const msToFrames = (ms) => Math.max(1, Math.round(ms / 1000 / HOP_SEC));
+export const hzToSt = (hz) => 69 + 12 * Math.log2(hz / 440);
+export const stToHz = (st) => 440 * Math.pow(2, (st - 69) / 12);
+
+// ---------- activity ----------
+
+// rmsDb per frame; `samples`/`frameStart` let the threshold inspect the quietest window.
+export function detectActivity(rmsDb, samples = null, frameStart = null) {
+  const n = rmsDb.length;
+  const { floor, peak, thr } = activityThreshold(rmsDb, { samples, sampleRate: SR, frameStart, winFrames: msToFrames(300), aboveFloor: 8, maxBelowPeak: 45 });
+  const active = new Uint8Array(n);
+  let on = 0;
+  for (let i = 0; i < n; i++) {
+    if (!on && rmsDb[i] >= thr) on = 1;
+    else if (on && rmsDb[i] < thr - 3) on = 0;
+    active[i] = on;
+  }
+  fillGaps(active, msToFrames(120));
+  dropShort(active, msToFrames(60));
+  return { active, thr, floor, peak };
+}
+
+// ---------- mel filterbank / DCT ----------
+
+const melOf = (hz) => 2595 * Math.log10(1 + hz / 700);
+const hzOfMel = (m) => 700 * (Math.pow(10, m / 2595) - 1);
+
+function melFilterbank(nFft, sr, nMel, fLo = 0, fHi = sr / 2) {
+  const nBins = nFft / 2 + 1;
+  const mLo = melOf(fLo);
+  const mHi = melOf(fHi);
+  const pts = new Float64Array(nMel + 2);
+  for (let i = 0; i < nMel + 2; i++) pts[i] = (hzOfMel(mLo + ((mHi - mLo) * i) / (nMel + 1)) * nFft) / sr;
+  const filters = [];
+  for (let m = 0; m < nMel; m++) {
+    const lo = pts[m];
+    const c = pts[m + 1];
+    const hi = pts[m + 2];
+    const b0 = Math.max(0, Math.floor(lo));
+    const b1 = Math.min(nBins - 1, Math.ceil(hi));
+    const w = new Float32Array(b1 - b0 + 1);
+    for (let b = b0; b <= b1; b++) {
+      let v = 0;
+      if (b >= lo && b <= c && c > lo) v = (b - lo) / (c - lo);
+      else if (b > c && b <= hi && hi > c) v = (hi - b) / (hi - c);
+      w[b - b0] = Math.max(0, v);
+    }
+    filters.push({ b0, w });
+  }
+  return filters;
+}
+
+function dctTable(nMfcc, nMel) {
+  const t = new Float64Array(nMfcc * nMel);
+  for (let c = 1; c <= nMfcc; c++) {
+    for (let m = 0; m < nMel; m++) t[(c - 1) * nMel + m] = Math.cos((Math.PI * c * (m + 0.5)) / nMel);
+  }
+  return t;
+}
+
+// ---------- YIN ----------
+
+// Returns up to 4 period candidates {tau, val, st} for one frame (YIN_INT integration window).
+function yinCandidates(frame, d, cmnd) {
+  for (let tau = 1; tau <= TAU_MAX; tau++) {
+    let s = 0;
+    for (let i = 0; i < YIN_INT; i++) {
+      const df = frame[i] - frame[i + tau];
+      s += df * df;
+    }
+    d[tau] = s;
+  }
+  cmnd[0] = 1;
+  let run = 0;
+  for (let tau = 1; tau <= TAU_MAX; tau++) {
+    run += d[tau];
+    cmnd[tau] = run > 0 ? (d[tau] * tau) / run : 1;
+  }
+  const cands = [];
+  for (let t = TAU_MIN; t <= TAU_MAX; t++) {
+    const v = cmnd[t];
+    if (v < 0.5 && v <= cmnd[t - 1] && (t === TAU_MAX || v < cmnd[t + 1])) {
+      let tau = t;
+      if (t > 1 && t < TAU_MAX) {
+        const a = cmnd[t - 1];
+        const c = cmnd[t + 1];
+        const den = a - 2 * v + c;
+        if (den > 1e-9) tau = t + (0.5 * (a - c)) / den;
+      }
+      cands.push({ tau, val: v, st: hzToSt(SR / tau), first: false });
+    }
+  }
+  if (!cands.length) return cands;
+  // YIN's rule: prefer the first dip below the absolute threshold (avoids sub-octave errors).
+  let first = cands.find((c) => c.val < YIN_THRESHOLD);
+  if (!first) first = cands.reduce((a, b) => (b.val < a.val ? b : a));
+  first.first = true;
+  cands.sort((a, b) => a.val - b.val);
+  const kept = cands.slice(0, 4);
+  if (!kept.includes(first)) kept[kept.length - 1] = first;
+  return kept;
+}
+
+// Viterbi over consecutive frames: emission = CMNDF (minus a bonus for YIN's first dip),
+// transition = 0.03 * min(|Δst|, 12). Fills st/conf with the chosen candidate (voicing decided later).
+function trackPitch(candList, st, cmndOut) {
+  const n = candList.length;
+  let s = 0;
+  while (s < n) {
+    if (!candList[s] || !candList[s].length) { s++; continue; }
+    let e = s;
+    while (e + 1 < n && candList[e + 1] && candList[e + 1].length) e++;
+    // run [s, e]
+    const costs = [];
+    const back = [];
+    for (let t = s; t <= e; t++) {
+      const cands = candList[t];
+      const cost = new Float64Array(cands.length);
+      const bp = new Int16Array(cands.length);
+      for (let c = 0; c < cands.length; c++) {
+        const emit = cands[c].val - (cands[c].first ? 0.05 : 0);
+        if (t === s) { cost[c] = emit; bp[c] = -1; continue; }
+        const prevC = candList[t - 1];
+        const prevCost = costs[costs.length - 1];
+        let best = Infinity;
+        let bi = 0;
+        for (let p = 0; p < prevC.length; p++) {
+          const v = prevCost[p] + 0.03 * Math.min(Math.abs(cands[c].st - prevC[p].st), 12);
+          if (v < best) { best = v; bi = p; }
+        }
+        cost[c] = emit + best;
+        bp[c] = bi;
+      }
+      costs.push(cost);
+      back.push(bp);
+    }
+    let bi = 0;
+    const last = costs[costs.length - 1];
+    for (let c = 1; c < last.length; c++) if (last[c] < last[bi]) bi = c;
+    for (let t = e; t >= s; t--) {
+      const cand = candList[t][bi];
+      st[t] = cand.st;
+      cmndOut[t] = cand.val;
+      bi = back[t - s][bi];
+    }
+    s = e + 1;
+  }
+}
+
+// ---------- main ----------
+
+export function extractFeatures(x, { onProgress } = {}) {
+  const len = x.length;
+  const n = Math.max(1, Math.ceil(len / HOP));
+  const padL = PITCH_WIN >> 1;
+  const xp = new Float32Array(len + 2 * padL + HOP);
+  xp.set(x, padL);
+
+  // RMS
+  const rmsDb = new Float32Array(n);
+  const halfM = MFCC_WIN >> 1;
+  for (let k = 0; k < n; k++) {
+    const s0 = padL + k * HOP - halfM;
+    let s = 0;
+    for (let i = 0; i < MFCC_WIN; i++) { const v = xp[s0 + i]; s += v * v; }
+    rmsDb[k] = 20 * Math.log10(Math.sqrt(s / MFCC_WIN) + 1e-9);
+  }
+  const act = detectActivity(rmsDb, xp, (k) => padL + k * HOP - halfM);
+  const active = act.active;
+  const loud = new Float32Array(n);
+  for (let k = 0; k < n; k++) loud[k] = rmsDb[k] - act.peak;
+
+  // MFCC
+  const fft = createFFT(MFCC_WIN);
+  const re = new Float32Array(MFCC_WIN);
+  const im = new Float32Array(MFCC_WIN);
+  const pow = new Float32Array(MFCC_WIN / 2 + 1);
+  const frame = new Float32Array(MFCC_WIN);
+  const hann = new Float32Array(MFCC_WIN);
+  for (let i = 0; i < MFCC_WIN; i++) hann[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (MFCC_WIN - 1));
+  const filters = melFilterbank(MFCC_WIN, SR, N_MEL, 0, 8000);
+  const dct = dctTable(N_MFCC, N_MEL);
+  const logE = new Float64Array(N_MEL);
+  const mfcc = new Float32Array(n * N_MFCC);
+  for (let k = 0; k < n; k++) {
+    const s0 = padL + k * HOP - halfM;
+    for (let i = 0; i < MFCC_WIN; i++) frame[i] = (xp[s0 + i] - PRE_EMPH * xp[s0 + i - 1]) * hann[i];
+    powerSpectrum(fft, frame, re, im, pow);
+    for (let m = 0; m < N_MEL; m++) {
+      const f = filters[m];
+      let e = 0;
+      for (let b = 0; b < f.w.length; b++) e += pow[f.b0 + b] * f.w[b];
+      logE[m] = Math.log(e + 1e-10);
+    }
+    for (let c = 0; c < N_MFCC; c++) {
+      let v = 0;
+      for (let m = 0; m < N_MEL; m++) v += logE[m] * dct[c * N_MEL + m];
+      mfcc[k * N_MFCC + c] = v;
+    }
+  }
+  const mfccMean = new Float32Array(N_MFCC);
+  let nAct = 0;
+  for (let k = 0; k < n; k++) {
+    if (!active[k]) continue;
+    nAct++;
+    for (let c = 0; c < N_MFCC; c++) mfccMean[c] += mfcc[k * N_MFCC + c];
+  }
+  if (nAct) for (let c = 0; c < N_MFCC; c++) mfccMean[c] /= nAct;
+
+  // Pitch
+  const halfP = PITCH_WIN >> 1;
+  const d = new Float64Array(TAU_MAX + 1);
+  const cmnd = new Float64Array(TAU_MAX + 1);
+  const candList = new Array(n);
+  for (let k = 0; k < n; k++) {
+    if (!active[k]) { candList[k] = null; continue; }
+    const s0 = padL + k * HOP - halfP;
+    candList[k] = yinCandidates(xp.subarray(s0, s0 + PITCH_WIN), d, cmnd);
+    if (onProgress && k % 50 === 0) onProgress(k / n);
+  }
+  const st = new Float32Array(n).fill(NaN);
+  const cm = new Float32Array(n).fill(1);
+  trackPitch(candList, st, cm);
+
+  // Voicing with hysteresis, then clean-up
+  const voiced = new Uint8Array(n);
+  let v = 0;
+  for (let k = 0; k < n; k++) {
+    const has = candList[k] && candList[k].length && !Number.isNaN(st[k]);
+    if (!has) v = 0;
+    else if (!v && cm[k] < VOICED_ON) v = 1;
+    else if (v && cm[k] > VOICED_OFF) v = 0;
+    voiced[k] = v;
+  }
+  fillGaps(voiced, 1);
+  dropShort(voiced, msToFrames(40));
+  for (let k = 0; k < n; k++) {
+    if (voiced[k] && Number.isNaN(st[k])) {
+      // gap filled: interpolate from neighbours
+      const a = k > 0 ? st[k - 1] : NaN;
+      const b = k + 1 < n ? st[k + 1] : NaN;
+      st[k] = Number.isNaN(a) ? b : Number.isNaN(b) ? a : 0.5 * (a + b);
+      cm[k] = VOICED_ON;
+    }
+    if (!voiced[k]) st[k] = NaN;
+  }
+  const stSmooth = movingMedianNaN(st, 5);
+  const conf = new Float32Array(n);
+  let nVoiced = 0;
+  for (let k = 0; k < n; k++) {
+    conf[k] = voiced[k] ? Math.max(0, 1 - cm[k]) : 0;
+    if (voiced[k]) nVoiced++;
+  }
+
+  // Trim
+  let first = 0;
+  while (first < n && !active[first]) first++;
+  let lastA = n - 1;
+  while (lastA > first && !active[lastA]) lastA--;
+  const pad = msToFrames(100);
+  const trimStart = first >= n ? 0 : Math.max(0, first - pad);
+  const trimEnd = first >= n ? n - 1 : Math.min(n - 1, lastA + pad);
+
+  if (onProgress) onProgress(1);
+  return {
+    featVersion: FEAT_VERSION,
+    sr: SR,
+    hop: HOP,
+    hopSec: HOP_SEC,
+    n,
+    duration: len / SR,
+    rmsDb,
+    loud,
+    active,
+    st: stSmooth,
+    conf,
+    mfcc,
+    mfccMean,
+    trimStart,
+    trimEnd,
+    peakDb: act.peak,
+    floorDb: act.floor,
+    thrDb: act.thr,
+    activeFrac: nAct / n,
+    voicedFrac: nVoiced / n,
+  };
+}
+
+// ---------- (de)serialisation for the on-disk cache ----------
+
+const TYPED = { rmsDb: Float32Array, loud: Float32Array, active: Uint8Array, st: Float32Array, conf: Float32Array, mfcc: Float32Array, mfccMean: Float32Array };
+
+export function serializeFeatures(f) {
+  const out = {};
+  for (const [k, v] of Object.entries(f)) {
+    if (TYPED[k]) out[k] = { $t: TYPED[k].name, $b: bytesToBase64(new Uint8Array(v.buffer, v.byteOffset, v.byteLength)) };
+    else out[k] = v;
+  }
+  return out;
+}
+
+export function deserializeFeatures(o) {
+  const out = {};
+  for (const [k, v] of Object.entries(o)) {
+    if (v && typeof v === 'object' && v.$t && TYPED[k]) {
+      const bytes = base64ToBytes(v.$b);
+      const buf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+      out[k] = new TYPED[k](buf);
+    } else out[k] = v;
+  }
+  return out;
+}
+
+export function isValidFeatures(f) {
+  return !!f && f.featVersion === FEAT_VERSION && f.st instanceof Float32Array && f.mfcc instanceof Float32Array && f.n > 0;
+}

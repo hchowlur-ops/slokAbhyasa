@@ -1,0 +1,14 @@
+# Your recordings and quizzes are personal data, never part of the repository.
+# They live here by default; local.json can move them elsewhere (see datadir.js).
+/library/
+/quizzes/
+/local.json
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Operating system clutter
+.DS_Store
+Thumbs.db
+desktop.ini

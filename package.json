@@ -1,0 +1,14 @@
+{
+  "name": "slokabhyasa",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Listen, learn and practise audio: play at any speed, memorise a baseline, and see where your attempt deviates.",
+  "type": "module",
+  "scripts": {
+    "start": "node serve.js",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

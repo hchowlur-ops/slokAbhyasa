@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SlokAbhyasa · Listen, Learn, Self Evaluation</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%230f766e'/%3E%3Cpath d='M26 18v22a6 6 0 1 1-4-5.6V22l20-4v14a6 6 0 1 1-4-5.6V16z' fill='white'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M10 5v11.2A3.5 3.5 0 1 0 12 19.5V8.4l6-1.3v6.1a3.5 3.5 0 1 0 2 3.3V3z"/></svg>
+      </span>
+      <span class="brand-name">SlokAbhyasa</span>
+    </div>
+    <nav class="nav" aria-label="Main">
+      <button class="nav-btn active" data-view="player" type="button">
+        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M8 5v14l11-7z"/></svg><span>Player</span>
+      </button>
+      <button class="nav-btn" data-view="learn" type="button">
+        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11z"/></svg><span>Learn</span>
+      </button>
+      <button class="nav-btn" data-view="teach" type="button">
+        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M5 13.18v4L12 21l7-3.82v-4L12 17l-7-3.82zM12 3 1 9l11 6 11-6-11-6z"/></svg><span>Teach</span>
+      </button>
+      <button class="nav-btn" data-view="evaluate" type="button">
+        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 17h4v-6H3zm7 0h4V3h-4zm7 0h4V8h-4zM3 21h18v-2H3z"/></svg><span>Self Evaluation</span>
+      </button>
+      <button class="nav-btn" data-view="quiz" type="button">
+        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M19 3h-4.18C14.4 1.84 13.3 1 12 1s-2.4.84-2.82 2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zm-7 0a1 1 0 1 1 0 2 1 1 0 0 1 0-2zm-2 14-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/></svg><span>Quiz</span>
+      </button>
+      <button class="nav-btn" data-view="library" type="button">
+        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M4 4h4v16H4zm6 0h4v16h-4zm6.6.3 3.9-1 4 15.5-3.9 1z"/></svg><span>Library</span>
+      </button>
+    </nav>
+    <div class="sidebar-footer">
+      <button class="btn btn-ghost btn-sm" id="theme-toggle" type="button" title="Switch light / dark">
+        <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 3a9 9 0 1 0 9 9c0-.5 0-.9-.1-1.3A5.5 5.5 0 0 1 13.3 3.1 9 9 0 0 0 12 3z"/></svg>
+        <span>Theme</span>
+      </button>
+    </div>
+  </aside>
+
+  <main class="main">
+
+    <!-- ================= PLAYER ================= -->
+    <section class="view active" id="view-player" aria-labelledby="player-title">
+      <header class="view-header">
+        <h1 id="player-title">Player</h1>
+        <p class="subtitle">Load a recording and listen to it at any speed.</p>
+      </header>
+
+      <div class="card dropzone" id="player-drop">
+        <input type="file" id="player-file" accept="audio/*" hidden />
+        <div class="dropzone-empty" id="player-empty">
+          <div class="dz-icon">
+            <svg viewBox="0 0 24 24" width="40" height="40"><path fill="currentColor" d="M12 3a9 9 0 0 0-9 9v5a3 3 0 0 0 3 3h2v-8H5v-.5A7 7 0 0 1 19 12v.5h-3v8h2a3 3 0 0 0 3-3v-5a9 9 0 0 0-9-9z"/></svg>
+          </div>
+          <p class="dz-text"><strong>Drop an audio file here</strong> or <button class="link" id="player-browse" type="button">browse your files</button></p>
+          <p class="muted small">MP3, WAV, M4A, OGG, FLAC and anything else your browser can play</p>
+        </div>
+
+        <div class="player-loaded" id="player-loaded" hidden>
+          <div class="track-head">
+            <div class="track-title">
+              <span class="track-name" id="player-name">—</span>
+              <span class="muted small" id="player-meta"></span>
+            </div>
+            <div class="track-actions">
+              <button class="btn btn-ghost btn-sm" id="player-to-learn" type="button">Save as sloka</button>
+              <button class="btn btn-ghost btn-sm" id="player-change" type="button">Change file</button>
+            </div>
+          </div>
+
+          <canvas class="wave wave-clickable" id="player-wave" height="150" aria-label="Waveform, click to seek"></canvas>
+
+          <div class="transport">
+            <button class="btn-icon" id="player-back" type="button" title="Back to start" aria-label="Back to start">
+              <svg viewBox="0 0 24 24"><path fill="currentColor" d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
+            </button>
+            <button class="btn-play" id="player-play" type="button" aria-label="Play">
+              <svg class="ico-play" viewBox="0 0 24 24"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
+              <svg class="ico-pause" viewBox="0 0 24 24"><path fill="currentColor" d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>
+            </button>
+            <div class="time mono"><span id="player-cur">0:00.0</span><span class="muted"> / </span><span id="player-dur">0:00.0</span></div>
+            <label class="toggle"><input type="checkbox" id="player-loop" /><span>Loop</span></label>
+          </div>
+
+          <div class="speed">
+            <div class="speed-head"><span>Playback speed</span><span class="mono speed-val" id="player-speed-val">1.00×</span></div>
+            <input type="range" class="slider" id="player-speed" min="0.5" max="2" step="0.05" value="1" aria-label="Playback speed" />
+            <div class="chips" id="player-speed-chips">
+              <button class="chip" type="button" data-speed="0.5">0.5×</button>
+              <button class="chip" type="button" data-speed="0.75">0.75×</button>
+              <button class="chip active" type="button" data-speed="1">1×</button>
+              <button class="chip" type="button" data-speed="1.25">1.25×</button>
+              <button class="chip" type="button" data-speed="1.5">1.5×</button>
+              <button class="chip" type="button" data-speed="2">2×</button>
+            </div>
+            <label class="toggle"><input type="checkbox" id="player-pitch" checked /><span>Keep the pitch when changing speed</span></label>
+          </div>
+        </div>
+      </div>
+
+      <p class="hint muted small">Tip: press <kbd>Space</kbd> to play or pause, <kbd>←</kbd> / <kbd>→</kbd> to skip 5 seconds.</p>
+    </section>
+
+    <!-- ================= LEARN ================= -->
+    <section class="view" id="view-learn" aria-labelledby="learn-title">
+      <header class="view-header">
+        <h1 id="learn-title">Learn</h1>
+        <p class="subtitle">Let SlokAbhyasa listen and remember a recording. It becomes a sloka you can evaluate yourself against.</p>
+      </header>
+
+      <div class="tabs" role="tablist">
+        <button class="tab active" role="tab" data-tab="learn-mic" type="button">Listen with the microphone</button>
+        <button class="tab" role="tab" data-tab="learn-file" type="button">Use an audio file</button>
+      </div>
+
+      <div class="card tab-panel active" id="learn-mic">
+        <div class="rec-stage" id="learn-stage">
+          <div class="rec-controls">
+            <button class="btn-record" id="learn-rec" type="button" aria-label="Start listening">
+              <span class="rec-dot"></span>
+            </button>
+            <div class="rec-status">
+              <div class="rec-label" id="learn-rec-label">Tap to start listening</div>
+              <div class="mono rec-timer" id="learn-timer">0:00.0</div>
+            </div>
+            <div class="clip" id="learn-clip" title="Too loud – the sound is clipping">CLIP</div>
+          </div>
+          <div class="meter" aria-hidden="true"><div class="meter-fill" id="learn-meter"></div></div>
+          <canvas class="wave wave-live" id="learn-live" height="110"></canvas>
+          <p class="muted small">Play the teacher's recording, or sing or recite near the microphone. Tap the button again to stop.</p>
+          <div class="options">
+            <label class="toggle"><input type="checkbox" id="learn-trim" checked /><span>Trim silence at the start and end</span></label>
+          </div>
+        </div>
+
+        <div class="preview" id="learn-preview" hidden>
+          <h3>What SlokAbhyasa heard</h3>
+          <canvas class="wave wave-clickable" id="learn-prev-wave" height="110"></canvas>
+          <div class="transport compact">
+            <button class="btn-play small" id="learn-prev-play" type="button" aria-label="Play">
+              <svg class="ico-play" viewBox="0 0 24 24"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
+              <svg class="ico-pause" viewBox="0 0 24 24"><path fill="currentColor" d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>
+            </button>
+            <div class="time mono"><span id="learn-prev-cur">0:00.0</span><span class="muted"> / </span><span id="learn-prev-dur">0:00.0</span></div>
+            <span class="muted small" id="learn-trim-info"></span>
+          </div>
+          <div class="transcript-panel" id="learn-transcript"></div>
+          <p class="muted small">The text is saved with the sloka as a .txt file next to the recording. Correct it with "Edit" if the recognition got a word wrong; you can also correct it later in Self Evaluation or the Library.</p>
+          <form class="save-row" id="learn-save-form">
+            <label class="field grow">
+              <span>Name this sloka</span>
+              <input type="text" id="learn-name" placeholder="e.g. Gayatri mantra – verse 1" maxlength="80" required autocomplete="off" />
+            </label>
+            <label class="field">
+              <span>Folder</span>
+              <select id="learn-folder"></select>
+            </label>
+            <div class="row-actions">
+              <button class="btn btn-ghost" id="learn-discard" type="button">Discard</button>
+              <button class="btn btn-primary" id="learn-save" type="submit">Save to library</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div class="card tab-panel" id="learn-file">
+        <div id="learn-file-none">
+          <p>Use an audio file as the sloka. Ideal when you already have a clean recording from your teacher.</p>
+          <input type="file" id="learn-file-input" accept="audio/*" hidden />
+          <button class="btn btn-primary" id="learn-file-browse" type="button">Choose an audio file</button>
+        </div>
+        <div id="learn-file-loaded" hidden>
+          <div class="track-head">
+            <div class="track-title">
+              <span class="track-name" id="learn-file-name">—</span>
+              <span class="muted small" id="learn-file-meta"></span>
+            </div>
+            <button class="btn btn-ghost btn-sm" id="learn-file-change" type="button">Change file</button>
+          </div>
+          <canvas class="wave" id="learn-file-wave" height="110"></canvas>
+          <div class="transcript-panel" id="learn-file-transcript"></div>
+          <form class="save-row" id="learn-file-form">
+            <label class="field grow">
+              <span>Name this sloka</span>
+              <input type="text" id="learn-file-name-input" placeholder="Name" maxlength="80" required autocomplete="off" />
+            </label>
+            <label class="toggle"><input type="checkbox" id="learn-file-trim" checked /><span>Trim silence at the start and end</span></label>
+            <div class="row-actions">
+              <button class="btn btn-primary" id="learn-file-save" type="submit">Save to library</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div class="progress" id="learn-progress" hidden>
+        <div class="progress-bar"><div class="progress-fill" id="learn-progress-fill"></div></div>
+        <span class="muted small" id="learn-progress-label">Remembering…</span>
+      </div>
+    </section>
+
+    <!-- ================= SELF EVALUATION (element ids still use "practice") ================= -->
+    <section class="view" id="view-evaluate" aria-labelledby="practice-title">
+      <header class="view-header">
+        <h1 id="practice-title">Self Evaluation</h1>
+        <p class="subtitle">Pick one or more slokas, perform once, and browse a report for each: exactly where you drifted, and where recordings conflict.</p>
+      </header>
+
+      <div class="card step">
+        <div class="step-head">
+          <span class="step-num">1</span><h2 id="practice-step1-title">Choose one or more slokas</h2>
+          <div class="grow"></div>
+          <button class="btn btn-ghost btn-sm" id="practice-select-all" type="button">Select all</button>
+          <button class="btn btn-ghost btn-sm" id="practice-select-none" type="button">Clear</button>
+        </div>
+        <div class="step-body">
+          <div class="quiz-box" id="practice-quiz-box" hidden>
+            <div class="quiz-box-head">
+              <span class="quiz-tag">Quiz</span>
+              <strong id="quiz-box-name"></strong>
+              <div class="grow"></div>
+              <button class="btn btn-ghost btn-sm" id="quiz-leave" type="button">Leave quiz</button>
+            </div>
+            <p class="muted small">Recite these from memory, in one recording and in any order. The slokas stay hidden until you have recorded; then every report opens as usual.</p>
+            <ol class="quiz-items" id="quiz-box-items"></ol>
+          </div>
+          <ul class="base-list" id="practice-list" aria-label="Slokas to be evaluated against"></ul>
+          <p id="practice-list-hint" class="muted small hint">Tick every sloka you want to be evaluated against. One recording is compared with all of them, and a sloka that is longer or shorter than your recording is matched to the part that fits. Click a name to preview it.</p>
+          <p id="teach-hint" class="muted small hint" hidden>Choose one sloka. Play it as often as you like, at any speed; then press Listen and recite it back.</p>
+          <p id="practice-base-empty" class="muted small">No slokas yet. Record or import one in <a href="#learn">Learn</a>.</p>
+          <div id="practice-base" hidden>
+            <div class="base-active"><span class="muted small" id="practice-base-role">Previewing</span><strong id="practice-base-name"></strong></div>
+            <div class="teach-actions" id="teach-actions" hidden>
+              <button class="btn btn-lg btn-primary" id="teach-play" type="button">
+                <svg class="ico-play" viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
+                <svg class="ico-pause" viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>
+                <span>Play</span>
+              </button>
+              <button class="btn btn-lg btn-listen" id="teach-listen" type="button">
+                <svg class="ico-mic" viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11z"/></svg>
+                <svg class="ico-stop" viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M6 6h12v12H6z"/></svg>
+                <span class="teach-listen-text">Listen</span>
+              </button>
+              <div class="teach-speed">
+                <span class="muted small">Speed</span>
+                <div class="chips" id="teach-speed-chips" aria-label="Playback speed">
+                  <button class="chip" type="button" data-speed="0.5" title="Half speed">½× slower</button>
+                  <button class="chip" type="button" data-speed="0.75">¾×</button>
+                  <button class="chip active" type="button" data-speed="1">1×</button>
+                  <button class="chip" type="button" data-speed="1.25">1¼×</button>
+                  <button class="chip" type="button" data-speed="1.5">1½×</button>
+                  <button class="chip" type="button" data-speed="2" title="Double speed">2× faster</button>
+                </div>
+              </div>
+            </div>
+            <div class="transcript-panel top" id="practice-transcript"></div>
+            <canvas class="wave wave-clickable" id="practice-base-wave" height="90"></canvas>
+            <div class="transport compact">
+              <button class="btn-play small" id="practice-base-play" type="button" aria-label="Play sloka">
+                <svg class="ico-play" viewBox="0 0 24 24"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
+                <svg class="ico-pause" viewBox="0 0 24 24"><path fill="currentColor" d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>
+              </button>
+              <div class="time mono"><span id="practice-base-cur">0:00.0</span><span class="muted"> / </span><span id="practice-base-dur">0:00.0</span></div>
+              <div class="speed inline">
+                <span class="muted small">Speed</span>
+                <input type="range" class="slider" id="practice-speed" min="0.5" max="2" step="0.05" value="1" aria-label="Playback speed" />
+                <span class="mono speed-val" id="practice-speed-val">1.00×</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card step" id="practice-step2">
+        <div class="step-head"><span class="step-num">2</span><h2>Perform it</h2></div>
+        <div class="step-body">
+          <div class="rec-stage">
+            <div class="rec-controls">
+              <button class="btn-record" id="practice-rec" type="button" aria-label="Start recording" disabled>
+                <span class="rec-dot"></span>
+              </button>
+              <div class="rec-status">
+                <div class="rec-label" id="practice-rec-label">Select a sloka first</div>
+                <div class="mono rec-timer" id="practice-timer">0:00.0</div>
+              </div>
+              <div class="clip" id="practice-clip" title="Too loud – the sound is clipping">CLIP</div>
+            </div>
+            <div class="meter" aria-hidden="true"><div class="meter-fill" id="practice-meter"></div></div>
+            <canvas class="wave wave-live" id="practice-live" height="90"></canvas>
+            <div class="options">
+              <label class="toggle"><input type="checkbox" id="practice-headphones" /><span>I'm wearing headphones</span></label>
+              <label class="toggle" id="practice-playalong-label"><input type="checkbox" id="practice-playalong" disabled /><span>Play the sloka while I record</span></label>
+              <label class="toggle"><input type="checkbox" id="practice-ignorekey" checked /><span>Ignore an overall key difference</span></label>
+              <label class="toggle"><input type="checkbox" id="practice-tempo" /><span>Penalise overall tempo</span></label>
+              <label class="toggle"><input type="checkbox" id="practice-trim" checked /><span>Trim silence at the start and end of my recording</span></label>
+            </div>
+            <div class="tol-row" id="tol-row">
+              <span class="field-label">Tolerance · acceptable variation</span>
+              <div class="tol-fields" id="tol-fields"></div>
+              <button class="btn btn-ghost btn-sm" id="tol-reset" type="button">Defaults</button>
+              <p class="muted small" id="tol-hint">A category is within tolerance when its score is at least 100 % minus the tolerance. Defaults: content 10 %, pronunciation 10 %, everything else 60 %.</p>
+              <p class="muted small" id="tol-quiz-note" hidden>In a quiz the tolerances are fixed: content 10 %, pronunciation 10 %, everything else 60 %.</p>
+            </div>
+          </div>
+          <div class="progress" id="practice-progress" hidden>
+            <div class="progress-bar"><div class="progress-fill" id="practice-progress-fill"></div></div>
+            <span class="muted small" id="practice-progress-label">Listening back and comparing…</span>
+            <button class="btn btn-sm btn-ghost progress-stop" id="practice-progress-stop" type="button" hidden>Stop</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card step" id="practice-results" hidden>
+        <div class="step-head">
+          <span class="step-num">3</span><h2>Results</h2>
+          <div class="grow"></div>
+          <button class="btn btn-ghost btn-sm" id="practice-again" type="button">Record again</button>
+        </div>
+        <div class="step-body">
+          <div class="quiz-score" id="quiz-score" hidden>
+            <div class="quiz-score-head">
+              <span class="quiz-tag">Quiz</span>
+              <h3 id="quiz-score-name"></h3>
+              <div class="grow"></div>
+              <span class="muted small" id="quiz-score-status"></span>
+            </div>
+            <div class="quiz-score-main">
+              <div class="quiz-pct" title="Correctness over the chosen categories">
+                <span class="mono" id="quiz-pct">–</span>
+                <span class="quiz-pct-label">correct</span>
+              </div>
+              <div class="quiz-cats">
+                <span class="muted small">Score on</span>
+                <div class="chips" id="quiz-cats" aria-label="Categories the score counts"></div>
+                <p class="muted small">A sloka is correct when every chosen category is within the quiz tolerance (content 10 %, pronunciation 10 %, others 60 %). Content and pronunciation by default; add timing, pitch or dynamics to require them too. Every category is measured and saved whatever you choose.</p>
+              </div>
+            </div>
+            <div class="quiz-table-wrap"><table class="quiz-table" id="quiz-table"></table></div>
+            <div class="quiz-trend" id="quiz-trend" hidden></div>
+          </div>
+          <div class="reports" id="reports" hidden>
+            <div class="reports-head">
+              <h3 id="reports-title">Reports</h3>
+              <div class="grow"></div>
+              <button class="btn btn-sm" id="report-prev" type="button">‹ Previous</button>
+              <span class="mono muted small" id="report-pos"></span>
+              <button class="btn btn-sm" id="report-next" type="button">Next ›</button>
+            </div>
+            <div class="report-map" id="report-map" role="tablist" aria-label="Reports, one per sloka"></div>
+            <p class="muted small">Each bar is your recording from start to end. The shaded stretch is where that sloka was found in it, and the coloured marks are conflicts of the kinds chosen below. Click a row to open its report.</p>
+          </div>
+          <div class="report-title-row" id="report-title-row" hidden>
+            <h3 id="report-name"></h3>
+            <span class="report-flag" id="report-flag" hidden></span>
+          </div>
+          <p class="report-error" id="report-error" hidden></p>
+          <div id="report-body">
+          <div class="scores">
+            <div class="score score-main">
+              <div class="ring" id="score-ring" style="--pct: 0"><span class="mono ring-val" id="score-overall">–</span></div>
+              <div class="score-label">Overall</div>
+              <div class="score-sub muted small" id="score-overall-sub"></div>
+              <div class="score-verdict" id="score-verdict"></div>
+            </div>
+            <div class="score" data-cat="content">
+              <div class="score-val mono" id="score-content">–</div>
+              <div class="score-label">Content</div>
+              <div class="score-sub muted small" id="score-content-sub"></div>
+              <div class="score-tol" id="score-content-tol"></div>
+            </div>
+            <div class="score" data-cat="pronunciation">
+              <div class="score-val mono" id="score-pronunciation">–</div>
+              <div class="score-label">Pronunciation</div>
+              <div class="score-sub muted small" id="score-pronunciation-sub"></div>
+              <div class="score-tol" id="score-pronunciation-tol"></div>
+            </div>
+            <div class="score" data-cat="timing">
+              <div class="score-val mono" id="score-timing">–</div>
+              <div class="score-label">Timing</div>
+              <div class="score-sub muted small" id="score-timing-sub"></div>
+              <div class="score-tol" id="score-timing-tol"></div>
+            </div>
+            <div class="score" data-cat="pitch">
+              <div class="score-val mono" id="score-pitch">–</div>
+              <div class="score-label">Pitch</div>
+              <div class="score-sub muted small" id="score-pitch-sub"></div>
+              <div class="score-tol" id="score-pitch-tol"></div>
+            </div>
+            <div class="score" data-cat="dynamics">
+              <div class="score-val mono" id="score-dynamics">–</div>
+              <div class="score-label">Dynamics</div>
+              <div class="score-sub muted small" id="score-dynamics-sub"></div>
+              <div class="score-tol" id="score-dynamics-tol"></div>
+            </div>
+          </div>
+          <ul class="notes" id="result-notes"></ul>
+
+          <div class="chart-wrap">
+            <div class="legend">
+              <span class="legend-item"><i class="sw sw-base"></i>Sloka</span>
+              <span class="legend-item"><i class="sw sw-heard"></i>What SlokAbhyasa heard</span>
+              <span class="legend-sep"></span>
+              <span class="legend-item"><i class="sw sw-pitch"></i>Pitch</span>
+              <span class="legend-item"><i class="sw sw-timing"></i>Timing</span>
+              <span class="legend-item"><i class="sw sw-content"></i>Content</span>
+              <span class="legend-item"><i class="sw sw-missing"></i>Missing / extra</span>
+              <span class="legend-item"><i class="sw sw-dynamics"></i>Dynamics</span>
+            </div>
+            <canvas class="chart" id="compare-chart" height="300" aria-label="Comparison of the sloka and your attempt"></canvas>
+            <p class="muted small">Your attempt is stretched onto the sloka's timeline so the two line up. Click a shaded band to jump to that deviation.</p>
+          </div>
+
+          <div class="playback-row">
+            <div class="pb">
+              <button class="btn btn-alt-base" id="res-play-base" type="button">
+                <svg class="ico-play" viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
+                <svg class="ico-pause" viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>
+                <span>Play the sloka</span>
+              </button>
+              <button class="btn btn-alt-heard" id="res-play-heard" type="button">
+                <svg class="ico-play" viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
+                <svg class="ico-pause" viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>
+                <span>Play what SlokAbhyasa heard</span>
+              </button>
+            </div>
+            <div class="speed inline">
+              <span class="muted small">Speed</span>
+              <input type="range" class="slider" id="res-speed" min="0.5" max="2" step="0.05" value="1" aria-label="Playback speed" />
+              <span class="mono speed-val" id="res-speed-val">1.00×</span>
+            </div>
+          </div>
+
+          <div class="dev-head-row">
+            <h3 id="dev-summary">Deviations</h3>
+            <div class="chips" id="dev-filters" aria-label="Kinds of deviation to show">
+              <button class="chip active" type="button" aria-pressed="true" data-filter="content" title="Wrong syllable, note or vowel">Content</button>
+              <button class="chip active" type="button" aria-pressed="true" data-filter="missing" title="Sloka material you skipped, or sound you added">Missing / extra</button>
+              <button class="chip active" type="button" aria-pressed="true" data-filter="pitch" title="Sharp or flat stretches">Pitch</button>
+              <button class="chip" type="button" aria-pressed="false" data-filter="timing" title="Rushed or dragged spans, added pauses">Timing</button>
+              <button class="chip" type="button" aria-pressed="false" data-filter="dynamics" title="Notably louder or softer stretches">Dynamics</button>
+              <button class="chip" type="button" aria-pressed="false" data-filter="all" title="Show every kind; click again for the default view">All</button>
+            </div>
+          </div>
+          <p class="muted small">Everything is measured and scored. The list and the chart show content, missing or extra material and pitch by default; add Timing or Dynamics, or show All. Click a chip again to hide that kind.</p>
+          <ol class="dev-list" id="dev-list"></ol>
+          <p class="muted small" id="dev-empty" hidden>No noticeable deviations. Beautifully done.</p>
+
+          <div class="transcript" id="transcript">
+            <div class="dev-head-row">
+              <h3>Transcript</h3>
+              <div class="stt-controls" id="stt-controls"></div>
+              <button class="btn btn-sm btn-primary" id="stt-run" type="button">Transcribe again</button>
+            </div>
+            <p class="muted small">Your attempt is transcribed automatically after each take (switch "Automatic" off in any transcript panel to stop that). Words of the sloka text that were not heard are highlighted here and at the top of this page. Speech is turned into text on this computer with Whisper; the first use downloads the model from Hugging Face and keeps it cached. Chanted or sung words are recognised approximately, so treat the text as a guide.</p>
+            <div class="progress" id="stt-progress" hidden>
+              <div class="progress-bar"><div class="progress-fill" id="stt-progress-fill"></div></div>
+              <span class="muted small" id="stt-progress-label">Starting…</span>
+              <button class="btn btn-sm btn-ghost progress-stop" id="stt-progress-stop" type="button" hidden>Stop</button>
+            </div>
+            <div id="stt-out" hidden>
+              <div class="stt-row"><div class="stt-label base">Sloka</div><div class="stt-text" id="stt-base"></div></div>
+              <div class="stt-row"><div class="stt-label heard">Yours</div><div class="stt-text" id="stt-heard"></div></div>
+              <p class="stt-summary" id="stt-summary"></p>
+              <p class="muted small">Click any phrase to hear it. <span class="w-del">Highlighted</span> sloka words were not heard in your attempt; <span class="w-ins">highlighted</span> words in yours are extra or different. <span class="w-dim">Greyed</span> words lie outside the part that was compared.</p>
+            </div>
+          </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= QUIZ ================= -->
+    <section class="view" id="view-quiz" aria-labelledby="quiz-title">
+      <header class="view-header">
+        <h1 id="quiz-title">Quiz</h1>
+        <p class="subtitle">Choose slokas from the folders you like (or let SlokAbhyasa pick at random), recite them from memory, and get a percentage. Every quiz and every attempt is saved, so you can retake one and watch the trend.</p>
+      </header>
+
+      <div class="card step" id="quiz-new">
+        <div class="step-head"><span class="step-num">1</span><h2>New quiz</h2></div>
+        <div class="step-body">
+          <p id="quiz-empty" class="muted small" hidden>No slokas yet. Record or import some in <a href="#learn">Learn</a>.</p>
+          <div class="quiz-setup" id="quiz-setup">
+            <div class="quiz-setup-col">
+              <div class="field-label">Folders to draw from</div>
+              <ul class="folder-list" id="quiz-folders"></ul>
+              <p class="muted small">Tick folders to narrow the list below; with none ticked, the whole library is listed. Folders are subfolders of <code>library</code>; make them in Learn, in the Library view or with Explorer.</p>
+            </div>
+            <div class="quiz-setup-col">
+              <div class="field-label">How many slokas</div>
+              <label class="toggle"><input type="radio" name="quiz-mode" value="single" /><span>One sloka</span></label>
+              <label class="toggle"><input type="radio" name="quiz-mode" value="multiple" checked /><span>Several slokas, at most</span>
+                <input type="number" class="num" id="quiz-max" min="2" max="200" value="10" aria-label="Maximum number of slokas" /></label>
+              <p class="muted small">Choose them yourself in the list below, or let "Pick at random" choose for you.</p>
+            </div>
+          </div>
+          <div class="quiz-choose" id="quiz-choose">
+            <div class="dev-head-row">
+              <h3 id="quiz-choose-title">Choose the slokas</h3>
+              <div class="chips">
+                <span class="muted small" id="quiz-choose-count"></span>
+                <button class="btn btn-sm" id="quiz-random" type="button">Pick at random</button>
+                <button class="btn btn-sm btn-primary" id="quiz-start" type="button" disabled>Start quiz…</button>
+              </div>
+            </div>
+            <ul class="base-list" id="quiz-slokas" aria-label="Slokas to choose from"></ul>
+            <p class="muted small" id="quiz-choose-hint"></p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card step" id="quiz-saved">
+        <div class="step-head"><span class="step-num">2</span><h2>Saved quizzes</h2></div>
+        <div class="step-body">
+          <p id="quiz-none" class="muted small">No quizzes yet.</p>
+          <ul class="quiz-list" id="quiz-list"></ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= LIBRARY ================= -->
+    <section class="view" id="view-library" aria-labelledby="library-title">
+      <header class="view-header">
+        <h1 id="library-title">Library</h1>
+        <p class="subtitle">Everything SlokAbhyasa has learnt, stored as WAV files in the project's <code>library</code> folder.</p>
+      </header>
+      <div class="card" id="library-empty">
+        <p>Nothing here yet. Go to <a href="#learn">Learn</a> to record or import your first sloka.</p>
+      </div>
+      <div class="lib-toolbar" id="library-toolbar" hidden>
+        <button class="btn btn-sm btn-primary" id="library-evaluate" type="button" disabled title="Tick slokas below, then evaluate yourself against all of them">Self Evaluation with selected</button>
+        <button class="btn btn-sm" id="library-new-folder" type="button" title="Folders are ordinary subfolders of the library; you can also make and move things with Explorer">New folder</button>
+        <button class="btn btn-sm" id="library-trim-all" type="button" title="Remove silence at the start and end of every sloka WAV">
+          <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M3 11h3v2H3zm15 0h3v2h-3zM7 5h2v14H7zm8 0h2v14h-2zm-4 4h2v6h-2z"/></svg>
+          <span>Trim silence in all slokas</span>
+        </button>
+        <span class="muted small">Originals are kept in <code>library/backup</code>.</span>
+        <div class="progress" id="library-progress" hidden>
+          <div class="progress-bar"><div class="progress-fill" id="library-progress-fill"></div></div>
+          <span class="muted small" id="library-progress-label">Trimming…</span>
+        </div>
+      </div>
+      <ul class="lib-list" id="library-list"></ul>
+    </section>
+  </main>
+</div>
+
+<div class="toast-host" id="toast-host" aria-live="polite"></div>
+
+<dialog class="dialog" id="dialog">
+  <form id="dialog-form">
+    <h3 id="dialog-title">Rename</h3>
+    <p class="muted small" id="dialog-msg" hidden></p>
+    <label class="field" id="dialog-select-field" hidden><span id="dialog-select-label">Folder</span><select id="dialog-select"></select></label>
+    <label class="field" id="dialog-field"><span id="dialog-label">Name</span><input type="text" id="dialog-input" maxlength="80" autocomplete="off" /></label>
+    <div class="row-actions">
+      <button class="btn btn-ghost" type="button" id="dialog-cancel">Cancel</button>
+      <button class="btn btn-primary" type="submit" id="dialog-ok">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
