@@ -62,6 +62,20 @@ test('compareAuto: a long take against a one-verse baseline compares only the ma
   assert.equal(res.chart.iOf[Math.round(1 / HOP_SEC)], -1, 'a frame in verse A maps to nothing');
 });
 
+test('compareAuto: a quiet verse first in a take with a louder one after it is still heard in full', () => {
+  // The sloka was recorded with a noisy floor, so its "sound" threshold sits only a few dB
+  // below its peak. The take's peak belongs to the louder verse C: that strict yardstick,
+  // taken from the take's peak, would put all of the softer verse B below "sound".
+  const scale = (x, g) => Float32Array.from(x, (v) => v * g);
+  const B = feat(addNoise(verseB(), 15));
+  const H = feat(concat(scale(verseB(), 0.35), scale(verseC(), 1.0)));
+  const res = compareAuto(B, H);
+  assert.equal(res.match.located, 'heard');
+  assert.ok(res.match.ok, `contrast ${res.match.contrast}`);
+  assert.equal(res.deviations.filter((d) => d.type === 'missing' || d.type === 'timing').length, 0, JSON.stringify(res.deviations.map((d) => [d.type, d.label, d.tBase])));
+  assert.ok(res.scores.overall >= 95, `overall ${res.scores.overall}`);
+});
+
 test('compareAuto: a one-verse take against a long baseline reports absolute baseline times', () => {
   const B = feat(concat(verseA(), verseB(), verseC()));
   // the 4th syllable is sung with the wrong vowel

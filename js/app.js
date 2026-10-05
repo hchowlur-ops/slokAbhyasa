@@ -13,7 +13,7 @@ import { QUIZ_CATEGORIES, DEFAULT_QUIZ_CATEGORIES, DEFAULT_TOLERANCE, itemScores
 import { mixToMono } from './dsp/resample.js';
 import { trimSilence } from './dsp/trim.js';
 import { Transcriber, STT_LANGUAGES, STT_TIERS, sttLanguageLabel, sttLanguageTag, sttTierLabel, isStopped } from './stt.js';
-import { tokenize, diffWords, diffSummary } from './textdiff.js';
+import { diffWords, diffSummary, compareWords, tokenizeTranscript, windowedTokens } from './textdiff.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -383,13 +383,6 @@ function shiftTranscript(t, delta, duration) {
       end: c.end == null ? null : Math.max(0, duration != null ? Math.min(duration, c.end + delta) : c.end + delta),
     })),
   };
-}
-
-function tokenizeTranscript(t) {
-  const toks = [];
-  (t.chunks || []).forEach((c, ci) => { for (const w of tokenize(c.text)) toks.push({ ...w, chunk: ci }); });
-  if (!toks.length && t.text) for (const w of tokenize(t.text)) toks.push({ ...w, chunk: -1 });
-  return toks;
 }
 
 // Renders a transcript as clickable phrases; `flagged` token indices get `cls`.
@@ -916,8 +909,8 @@ let practice = {
   base: null, // = bases.get(activeId) once loaded
   take: null, // the attempt { samples, sampleRate, duration, blob }
   heard: null, // its features
-  heardTranscript: null,
-  heardJob: null, // the take's transcription while it runs: { take, language, tier, ctrl, promise }
+  heardTranscripts: new Map(), // part key → the take's words there (see transcribeTakePart)
+  heardJobs: new Map(), // part key → its transcription while it runs: { take, language, tier, ctrl, promise }
   options: null, // comparison options of this take, reused when a sloka is ticked later
   results: new Map(), // id → comparison result, or { error }
   pairContrast: new Map(), // "idA|idB" → how alike two slokas are (see locate.js)
@@ -1317,10 +1310,12 @@ async function analyseAttempt() {
   try {
     practice.results.clear();
     practice.pairContrast.clear();
-    practice.heardTranscript = null;
-    // The words are needed soon (word diff, quiz pronunciation): the speech worker starts on
-    // them now, while the analysis worker compares the take.
-    if (sttSettings.auto || practice.quiz) transcribeTake(false).catch(() => {});
+    practice.heardTranscripts.clear();
+    stopTakeTranscriptions();
+    // The words are needed soon (word diff, quiz pronunciation): for a take that is
+    // transcribed whole, the speech worker starts on them now, while the analysis worker
+    // compares the take. (A longer take is transcribed part by part once the parts are known.)
+    if ((sttSettings.auto || practice.quiz) && take.duration <= TAKE_WHOLE_MAX_SEC) transcribeTakePart(null, false).catch(() => {});
     practice.heard = await analyzer.features(take.samples, take.sampleRate, (p) => practiceProgress.set(p * 0.6), { warps: true });
     practice.options = {
       ignoreKey: $('#practice-ignorekey').checked,
@@ -1534,7 +1529,7 @@ function showActiveReport() {
   setHidden($('#report-body'), false);
   renderResult(r);
   renderQuizScore();
-  if (sttSettings.auto || practice.heardTranscript) transcribeBoth(false);
+  if (sttSettings.auto || practice.heardTranscripts.size) transcribeBoth(false);
 }
 
 // ======================================================================
@@ -1617,48 +1612,51 @@ async function scoreQuizAttempt() {
   const prog = practiceProgress;
   // Stop skips the rest of the listening: the attempt is scored without pronunciation.
   const skip = new AbortController();
-  const stop = () => { skip.abort(); if (practice.heardJob && practice.heardJob.take === take) practice.heardJob.ctrl.abort(); };
+  const stop = () => { skip.abort(); stopTakeTranscriptions(); };
   try {
-    // 1. the take's words, once (the job usually started when the recording stopped)
+    // For each recited sloka: the words of the stretch of the take it was found in, and the
+    // sloka's own words (stored transcripts are reused). Pronunciation is left out of the
+    // attempt altogether when the listening fails, and for the slokas not reached when it is
+    // stopped.
     let stt = true;
-    try {
-      if (!practice.heardTranscript) prog.show('Quiz: listening to the words of your recording…', stop);
-      const t = await transcribeTake(false);
-      if (!t) throw new DOMException('Transcription stopped', 'AbortError');
-    } catch (err) {
-      stt = false;
-      if (isStopped(err)) toast('Pronunciation was not scored: the listening was stopped.', 'info', 5000);
-      else toast(`Pronunciation could not be scored: ${err.message}`, 'error', 7000);
+    const sims = new Map();
+    const ids = quiz.items.map((it) => it.id).filter((id) => { const r = practice.results.get(id); return isReport(r) && r.match.ok; });
+    for (let k = 0; k < ids.length; k++) {
+      const id = ids[k];
+      if (!live()) return;
+      if (skip.signal.aborted) break;
+      let base;
+      try { base = await ensureBase(id); } catch { continue; }
+      const res = practice.results.get(id);
+      let heardT;
+      try {
+        prog.show(`Quiz: listening to the words of your recording (${k + 1} of ${ids.length})…`, stop);
+        heardT = await transcribeTakePart(heardPartOf(res), false);
+        if (!heardT) throw new DOMException('Transcription stopped', 'AbortError');
+      } catch (err) {
+        if (isStopped(err)) { toast('Pronunciation was not scored for the rest: the listening was stopped.', 'info', 5000); break; }
+        stt = false;
+        toast(`Pronunciation could not be scored: ${err.message}`, 'error', 7000);
+        break;
+      }
+      if (!live()) return;
+      if (!base.transcript && practice.activeId === id) { await practicePanel.wait(); }
+      if (!base.transcript) {
+        try {
+          prog.show(`Quiz: listening to the words of “${base.record.name}” (${k + 1} of ${ids.length})…`, stop);
+          const t = await runTranscription(base.samples, base.sampleRate, prog, `“${base.record.name}”`, skip.signal);
+          base.transcript = t;
+          api.putTranscript(id, t).catch(() => {});
+          if (practice.activeId === id) practicePanel.set(t);
+        } catch { continue; }
+      }
+      if (!live()) return;
+      const sim = wordSimilarity(res, base.transcript, heardT, base.duration, take.duration);
+      if (sim != null) { sims.set(id, sim); practice.wordSims.set(id, sim); }
     }
     if (!live()) return;
     attempt.sttAvailable = stt;
-    // 2. each recited sloka's words (stored transcripts are reused)
-    const sims = new Map();
-    if (stt) {
-      const ids = quiz.items.map((it) => it.id).filter((id) => { const r = practice.results.get(id); return isReport(r) && r.match.ok; });
-      for (let k = 0; k < ids.length; k++) {
-        const id = ids[k];
-        if (!live()) return;
-        if (skip.signal.aborted) break; // slokas not listened to get no pronunciation score
-        let base;
-        try { base = await ensureBase(id); } catch { continue; }
-        if (!base.transcript && practice.activeId === id) { await practicePanel.wait(); }
-        if (!base.transcript) {
-          try {
-            prog.show(`Quiz: listening to the words of “${base.record.name}” (${k + 1} of ${ids.length})…`, stop);
-            const t = await runTranscription(base.samples, base.sampleRate, prog, `“${base.record.name}”`, skip.signal);
-            base.transcript = t;
-            api.putTranscript(id, t).catch(() => {});
-            if (practice.activeId === id) practicePanel.set(t);
-          } catch { continue; }
-        }
-        if (!live()) return;
-        const sim = wordSimilarity(practice.results.get(id), base.transcript, practice.heardTranscript, base.duration, take.duration);
-        if (sim != null) { sims.set(id, sim); practice.wordSims.set(id, sim); }
-      }
-    }
-    if (!live()) return;
-    // 3. scores
+    // the scores
     attempt.items = quiz.items.map((it) => {
       const r = practice.results.get(it.id);
       const sc = itemScores(r, { wordSimilarity: sims.has(it.id) ? sims.get(it.id) : null, sttAvailable: stt });
@@ -1667,7 +1665,7 @@ async function scoreQuizAttempt() {
     const sum = attemptSummary(attempt.items, quiz.categories, DEFAULT_TOLERANCE);
     Object.assign(attempt, sum);
     refreshVerdicts();
-    // 4. save
+    // saved with every category, so the chosen categories can change afterwards
     const saved = await api.addQuizAttempt(quiz.id, {
       at: attempt.at, takeDuration: take.duration, categories: quiz.categories, score: attempt.score,
       byCategory: attempt.byCategory, counted: attempt.counted, recited: attempt.recited, items: attempt.items, correct: attempt.correct,
@@ -2065,8 +2063,8 @@ function hideResults() {
   practice.pairContrast.clear();
   practice.wordSims.clear();
   practice.heard = null;
-  practice.heardTranscript = null;
-  if (practice.heardJob) practice.heardJob.ctrl.abort();
+  practice.heardTranscripts.clear();
+  stopTakeTranscriptions();
   practice.quizAttempt = null;
   setHidden($('#quiz-score'), true);
   if (practice.quiz) { practice.take = null; setHidden($('#practice-base'), true); } // the next attempt is from memory again
@@ -2155,7 +2153,7 @@ function renderTiles(res, id) {
   };
   put('content', s.content, s.contentCoveredPct ? `${s.contentCoveredPct}% of the piece flagged` : 'matches throughout');
   const sim = practice.wordSims.has(id) ? practice.wordSims.get(id) : null;
-  put('pronunciation', sim == null ? null : Math.round(100 * sim), sim == null ? (practice.heardTranscript || sttSettings.auto || practice.quiz ? 'from the transcript, below' : 'transcribe to judge') : 'of the words heard');
+  put('pronunciation', sim == null ? null : Math.round(100 * sim), sim == null ? (practice.heardTranscripts.size || sttSettings.auto || practice.quiz ? 'from the transcript, below' : 'transcribe to judge') : 'of the words heard');
   put('timing', s.timing, s.timingCoveredPct ? `${s.timingCoveredPct}% of the piece flagged` : 'steady throughout');
   put('pitch', s.pitch, s.pitch == null ? 'not enough steady pitch' : `in tune ${s.pitchInTunePct}% · avg ${s.pitchMeanCents} cents off`);
   put('dynamics', s.dynamics, s.dynamics == null ? 'not measured' : s.dynamicsCoveredPct ? `${s.dynamicsCoveredPct}% of the piece flagged` : 'even throughout');
@@ -2442,29 +2440,58 @@ function resetTranscriptUI() {
   practicePanel.highlight(new Set());
 }
 
-// The take's transcript, made once per take in the speech worker; whoever needs it (the
-// word diff, quiz scoring) waits for the same job. Resolves with null when it was stopped.
-// `force` redoes a transcript made with another model.
-async function transcribeTake(force) {
+// The take's words, made in the speech worker; whoever needs them (the word diff, quiz
+// scoring) waits for the same job. A take of up to one Whisper window is transcribed whole,
+// once, as soon as it is recorded. A longer take is transcribed part by part, each part being
+// the stretch a sloka was found in: Whisper loses its way in a long chant (it wrote 12.2's
+// words, then "प्व्व्व्…" for the rest of a two-sloka take), while a single sloka's worth it
+// transcribes well. Timings in a part's transcript are absolute take times. Resolves with
+// null when it was stopped. `force` redoes a transcript made with another model.
+const TAKE_WHOLE_MAX_SEC = 30;
+const TAKE_PART_PAD_SEC = 0.3;
+
+// The stretch of the take a report's transcript should cover: null for the whole take.
+function heardPartOf(res) {
+  const take = practice.take;
+  if (!take || !res || take.duration <= TAKE_WHOLE_MAX_SEC || !res.match || res.match.located !== 'heard') return null;
+  return res.matched.heard;
+}
+const partKey = (win) => (win ? `${win[0].toFixed(1)}-${win[1].toFixed(1)}` : 'all');
+
+async function transcribeTakePart(win, force) {
   const take = practice.take;
   if (!take) return null;
   const language = sttSettings.language;
   const tier = await sttTier();
   const fits = (t) => !!t && t.language === language && (!force || t.tier === tier);
   if (practice.take !== take) return null;
-  if (fits(practice.heardTranscript)) return practice.heardTranscript;
-  const old = practice.heardJob;
+  const key = partKey(win);
+  const have = practice.heardTranscripts.get(key);
+  if (fits(have)) return have;
+  const old = practice.heardJobs.get(key);
   if (old && old.take === take && fits(old)) return old.promise;
   if (old) old.ctrl.abort();
   const ctrl = new AbortController();
   const job = { take, language, tier, ctrl, promise: null };
+  const sr = take.sampleRate;
+  const from = win ? Math.max(0, Math.round((win[0] - TAKE_PART_PAD_SEC) * sr)) : 0;
+  const to = win ? Math.min(take.samples.length, Math.round((win[1] + TAKE_PART_PAD_SEC) * sr)) : take.samples.length;
+  const samples = win ? take.samples.subarray(from, to) : take.samples;
+  const what = win ? `your attempt (${fmtTime(win[0])}–${fmtTime(win[1])})` : 'your attempt';
   sttProgress.show('Starting…', () => ctrl.abort());
-  job.promise = runTranscription(take.samples, take.sampleRate, sttProgress, 'your attempt', ctrl.signal)
-    .then((t) => { if (practice.take === take) practice.heardTranscript = t; return t; })
+  job.promise = runTranscription(samples, sr, sttProgress, what, ctrl.signal)
+    .then((t) => {
+      const abs = win ? shiftTranscript(t, from / sr, take.duration) : t;
+      if (practice.take === take) practice.heardTranscripts.set(key, abs);
+      return abs;
+    })
     .catch((err) => { if (isStopped(err)) return null; throw err; })
-    .finally(() => { if (practice.heardJob === job) { practice.heardJob = null; sttProgress.hide(); } });
-  practice.heardJob = job;
+    .finally(() => { if (practice.heardJobs.get(key) === job) { practice.heardJobs.delete(key); if (!practice.heardJobs.size) sttProgress.hide(); } });
+  practice.heardJobs.set(key, job);
   return job.promise;
+}
+function stopTakeTranscriptions() {
+  for (const job of practice.heardJobs.values()) job.ctrl.abort();
 }
 
 let sttBothInflight = null;
@@ -2489,7 +2516,7 @@ function transcribeBoth(force) {
       if (stale) baseT = await practicePanel.transcribe();
       if (!current()) return;
       if (!baseT) throw new Error('The sloka could not be transcribed.');
-      const heardT = await transcribeTake(force);
+      const heardT = await transcribeTakePart(heardPartOf(practice.result), force);
       if (!current() || !heardT) return; // stopped: the report stays without a word diff
       sttPractice.base = baseT;
       sttPractice.heard = heardT;
@@ -2500,25 +2527,10 @@ function transcribeBoth(force) {
       btn.disabled = false;
       sttBothInflight = null;
       // another report was opened while this ran: do the same for the one now on screen
-      if (practice.activeId !== id && practice.result && (sttSettings.auto || practice.heardTranscript)) transcribeBoth(false);
+      if (practice.activeId !== id && practice.result && (sttSettings.auto || practice.heardTranscripts.size)) transcribeBoth(false);
     }
   })();
   return sttBothInflight;
-}
-
-// Tokens of a transcript, and which of them lie inside [win]. Only phrase-timed transcripts can
-// be windowed; without timings (or when the window is the whole recording) everything counts.
-function windowedTokens(t, win, fullDuration) {
-  const toks = tokenizeTranscript(t);
-  const partial = !!win && (win[0] > 0.75 || win[1] < fullDuration - 0.75);
-  const inside = toks.map((tok) => {
-    const c = tok.chunk >= 0 && t.chunks ? t.chunks[tok.chunk] : null;
-    if (!partial || !c || typeof c.start !== 'number') return true;
-    const end = typeof c.end === 'number' ? c.end : c.start + 6;
-    const ov = Math.min(end, win[1]) - Math.max(c.start, win[0]);
-    return ov >= 0.5 * Math.max(0.1, end - c.start);
-  });
-  return { toks, inside };
 }
 
 // The word diff of a sloka and the take, over the parts of each that were compared.
@@ -2527,13 +2539,20 @@ function windowedDiff(res, baseT, heardT, baseDuration, takeDuration) {
   const B = windowedTokens(heardT, res.matched.heard, takeDuration);
   const ai = A.toks.map((_, i) => i).filter((i) => A.inside[i]);
   const bi = B.toks.map((_, i) => i).filter((i) => B.inside[i]);
-  const ops = diffWords(ai.map((i) => A.toks[i].norm), bi.map((i) => B.toks[i].norm));
-  const delA = new Set();
-  const insB = new Set();
-  for (const o of ops) { if (o.op === 'delete') delA.add(ai[o.a]); else if (o.op === 'insert') insB.add(bi[o.b]); }
+  const aw = ai.map((i) => A.toks[i].norm);
+  const bw = bi.map((i) => B.toks[i].norm);
+  // character by character, blind to word breaks; whole words only for texts too long for that
+  let cmp = compareWords(aw, bw);
+  if (!cmp) {
+    const ops = diffWords(aw, bw);
+    cmp = { delA: new Set(), insB: new Set(), summary: diffSummary(ops, aw.length, bw.length) };
+    for (const o of ops) { if (o.op === 'delete') cmp.delA.add(o.a); else if (o.op === 'insert') cmp.insB.add(o.b); }
+  }
+  const delA = new Set([...cmp.delA].map((k) => ai[k]));
+  const insB = new Set([...cmp.insB].map((k) => bi[k]));
   const dimA = new Set(A.toks.map((_, i) => i).filter((i) => !A.inside[i]));
   const dimB = new Set(B.toks.map((_, i) => i).filter((i) => !B.inside[i]));
-  return { A, B, ai, bi, ops, delA, insB, dimA, dimB, summary: diffSummary(ops, ai.length, bi.length) };
+  return { A, B, ai, bi, delA, insB, dimA, dimB, summary: cmp.summary };
 }
 
 function renderTranscriptDiff() {
@@ -2546,7 +2565,7 @@ function renderTranscriptDiff() {
   renderTranscriptText($('#stt-heard'), sttPractice.heard, B.toks, insB, 'w-ins', (s, e) => { basePlayer.pause(); heardPlayer.playRange(s, e); }, dimB);
   practicePanel.highlight(delA, 'w-del', dimA);
   $('#stt-summary').textContent = ai.length
-    ? `Words matched: ${sm.matched} of ${ai.length} (${Math.round(sm.similarity * 100)}%) · ${sm.missing} missing · ${sm.extra} extra or different · ${sttLanguageLabel(sttPractice.base.language)}`
+    ? `${Math.round(sm.similarity * 100)}% of the sloka's text heard (${sm.matched} of ${ai.length} words) · ${sm.missing} missing · ${sm.extra} extra or different · ${sttLanguageLabel(sttPractice.base.language)}`
     : 'Nothing was recognised in the sloka. Try another language or model.';
   setHidden($('#stt-out'), false);
 }

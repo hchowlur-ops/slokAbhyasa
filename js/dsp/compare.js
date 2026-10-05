@@ -37,12 +37,16 @@ const mmss = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart
 // Adds: match { contrast, ok, located: 'heard' | 'base' | null }, baseOffset, baseFullDuration.
 export function compareAuto(B, H, options = {}) {
   if (!isValidFeatures(B) || !isValidFeatures(H)) return compare(B, H, options); // throws the right message
-  // One yardstick for "sound" in both recordings (the stricter of the two, relative to each peak).
+  // One yardstick for "sound" in both recordings: the stricter of the two thresholds, each
+  // relative to its recording's own peak. Two recordings made in different rooms judge
+  // silence very differently, and the pauses of a quiet one must not come out as extra sound.
   const relB = B.thrDb - B.peakDb;
   const relH = H.thrDb - H.peakDb;
-  if (Number.isFinite(relB) && Number.isFinite(relH) && Math.abs(relB - relH) > ACTIVITY_TOLERANCE_DB) {
-    if (relB < relH) B = rethreshold(B, relH); else H = rethreshold(H, relB);
-  }
+  const relBoth = Number.isFinite(relB) && Number.isFinite(relH) ? Math.max(relB, relH) : NaN;
+  const harmonise = (X, Y) => {
+    if (!Number.isFinite(relBoth) || Math.abs(relB - relH) <= ACTIVITY_TOLERANCE_DB) return [X, Y];
+    return [rethreshold(X, relBoth), rethreshold(Y, relBoth)];
+  };
   // A different voice (a child after an adult, say) has its vowels' formants elsewhere: read
   // the take at the frequency warp that fits the sloka best, before anything is located,
   // aligned or judged.
@@ -54,6 +58,10 @@ export function compareAuto(B, H, options = {}) {
   let located = null;
   let contrast = null;
   if (options.locate !== false && (ratio >= LOCATE_RATIO || ratio <= 1 / LOCATE_RATIO)) {
+    // The search runs on each recording as it judged itself; the yardstick is applied to the
+    // window it finds, against the window's own peak. The whole recording's peak may belong
+    // to another, louder sloka, and judged against that one the quieter syllables of this
+    // one would come out as "not heard" (or the whole of it, before it was even found).
     const heardIsLong = ratio > 1;
     const L = heardIsLong ? H : B;
     const loc = locate(heardIsLong ? B : H, L);
@@ -61,7 +69,8 @@ export function compareAuto(B, H, options = {}) {
       const i0 = Math.max(0, loc.start - LOCATE_PAD);
       const i1 = Math.min(L.n - 1, loc.end + LOCATE_PAD);
       const Lc = sliceFeatures(L, i0, i1);
-      res = heardIsLong ? compare(B, Lc, options) : compare(Lc, H, options);
+      const [Bw, Hw] = heardIsLong ? harmonise(B, Lc) : harmonise(Lc, H);
+      res = compare(Bw, Hw, options);
       if (heardIsLong) shiftHeard(res, i0, H); else shiftBase(res, i0, B);
       // Neighbouring material at the edges of the window is not the performer's mistake.
       const drop = heardIsLong ? 'extra' : 'missing';
@@ -71,8 +80,9 @@ export function compareAuto(B, H, options = {}) {
     }
   }
   if (!res) {
-    res = compare(B, H, options);
-    const loc = spanB <= spanH ? locate(B, H) : locate(H, B);
+    const [Bh, Hh] = harmonise(B, H);
+    res = compare(Bh, Hh, options);
+    const loc = spanB <= spanH ? locate(Bh, Hh) : locate(Hh, Bh);
     contrast = loc ? loc.contrast : null;
   }
   if (res.baseOffset === undefined) { res.baseOffset = 0; res.baseFullDuration = B.duration; }

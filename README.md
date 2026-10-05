@@ -212,6 +212,18 @@ files next to the recording in `library/`:
 
 Corrected text is used as the reference when your attempts are compared.
 
+**How your words are judged.** The pronunciation score is the share of the sloka's text that
+was heard in your attempt. The two texts are compared sound by sound rather than word by
+word: each word is turned into a plain-Latin phonetic key (Devanagari, Kannada and the other
+Indic scripts transliterated, diacritics dropped), the two streams are aligned character by
+character with the spaces left out, and a word counts as heard when at least half of its
+sound is there. That makes the score blind to the things the recogniser does differently
+from one run to the next: spelling (निर्देश्यम or निर्देश्यम्), where it breaks words, and even
+the script it chooses (Whisper writes Sanskrit now in Devanagari, now in IAST). A take
+longer than 30 s is transcribed stretch by stretch, each stretch being where a sloka was
+found in it: Whisper loses its way in a long chant, but transcribes a single sloka's worth
+well.
+
 Languages: **English, Sanskrit (Devanagari), Kannada**. Models: Fast (whisper-base, about
 75 MB), Better (whisper-small, about 250 MB), Best (whisper-large-v3-turbo, about 750 MB,
 needs WebGPU). The default is Better when the browser has WebGPU, otherwise Fast.
