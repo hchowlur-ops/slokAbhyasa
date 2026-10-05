@@ -358,6 +358,7 @@ async function runTranscription(samples, sampleRate, progress, what, signal) {
       else if (p.stage === 'download') progress.set(0.6 * p.progress, `Downloading the speech model (${sttTierLabel(tier)}, ${Math.round((p.total || 0) / 1048576)} MB)… ${Math.round(p.progress * 100)}%`);
       else if (p.stage === 'ready') progress.set(0.62, `Listening to ${what}…`);
       else if (p.stage === 'transcribe') progress.set(0.7, `Transcribing ${what}…${p.partial ? ' ' + p.partial.slice(-70) : ''}`);
+      else if (p.stage === 'retry') progress.set(0.65, `The first answer was nonsense; listening to ${what} once more…`);
       else if (p.stage === 'fallback') progress.set(0.65, `The graphics card's answer was nonsense; transcribing ${what} on the processor instead…`);
     },
   });
@@ -1320,7 +1321,7 @@ async function analyseAttempt() {
     // The words are needed soon (word diff, quiz pronunciation): the speech worker starts on
     // them now, while the analysis worker compares the take.
     if (sttSettings.auto || practice.quiz) transcribeTake(false).catch(() => {});
-    practice.heard = await analyzer.features(take.samples, take.sampleRate, (p) => practiceProgress.set(p * 0.6));
+    practice.heard = await analyzer.features(take.samples, take.sampleRate, (p) => practiceProgress.set(p * 0.6), { warps: true });
     practice.options = {
       ignoreKey: $('#practice-ignorekey').checked,
       penalizeTempo: $('#practice-tempo').checked,

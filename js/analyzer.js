@@ -38,9 +38,11 @@ export class Analyzer {
   }
 
   // samples: Float32Array at any sample rate (a copy is transferred to the worker).
-  features(samples, sampleRate, onProgress) {
+  // { warps: true } for a take: it is also analysed at several voice warps, so the comparison
+  // can allow for a voice unlike the sloka's (see compare.js).
+  features(samples, sampleRate, onProgress, { warps = false } = {}) {
     const copy = Float32Array.from(samples);
-    return this._send({ type: 'features', samples: copy, sampleRate }, [copy.buffer], onProgress);
+    return this._send({ type: 'features', samples: copy, sampleRate, warps }, [copy.buffer], onProgress);
   }
 
   compare(base, heard, options, onProgress) {

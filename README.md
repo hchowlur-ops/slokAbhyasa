@@ -30,6 +30,24 @@ node serve.js
 Then open <http://127.0.0.1:8787> in Chrome, Edge, Firefox or Safari. No install step;
 Node 18 or newer is the only requirement. (`npm start` does the same thing.)
 
+### A package for people who will not install anything
+
+```
+node tools/package.mjs
+```
+
+builds `dist/SlokAbhyasa-<version>-windows.zip` (about 33 MB): the app, a portable Node.js
+runtime downloaded from nodejs.org (same version as the one running the script, cached in
+`dist/cache`), a `Start SlokAbhyasa.cmd` launcher and a plain-language `README.txt`. Whoever
+receives it unzips the folder and double-clicks the launcher: a console window stays open
+while the app runs, the browser opens on the app, and recordings go to their Documents
+folder (`Documents\SlokAbhyasa`, found through the registry so OneDrive-redirected Documents
+work too). Starting it twice just re-opens the running app (`serve.js --open`). The first use
+of speech-to-text still needs the internet, for the model download. Publish the zip as an
+asset of a GitHub release; the repository itself stays code-only. On a Mac or Linux
+machine, install Node.js and run `node serve.js --open` from the `app` folder of the same
+zip.
+
 ### Where your files live
 
 Your recordings and quizzes are yours, not part of the code: `library/`, `quizzes/` and
@@ -138,6 +156,15 @@ default view). Click any chip to show or hide that kind; the choice is remembere
 Options: ignore an overall key difference (on by default, so singing in a different key is
 reported as a note but not penalised) and penalise overall tempo (off by default, since slow
 practice is the point).
+
+**A different voice is allowed for.** A child reciting after an adult, or a woman after a
+man, sings higher and, more to the point, with every vowel's resonances higher: the same
+syllable has a different sound. Before anything is compared, the recording is read at the
+"voice warp" that fits the sloka best, so the syllables line up and only real differences
+are reported; the report then says, for instance, "Your voice is lighter in character than
+the sloka's (25%); the comparison allowed for that." The key difference is ignored on top of
+that, and an octave slip of the pitch tracker (common with high or very deep voices) is not
+taken for a wrong note. Quizzes use the same comparison, so this applies to them too.
 
 **Tolerance.** How much variation is acceptable in each category, as a percentage: a category
 is within tolerance when its score is at least 100 minus the tolerance. The defaults are
@@ -277,9 +304,19 @@ node tools/trim-library.mjs --dry-run  # only report what would change
 
 Both recordings are resampled to 16 kHz and described every 20 ms by loudness, an activity
 flag, pitch (YIN with an octave-error-resistant tracker), and 12 mel-frequency cepstral
-coefficients that capture the sound of the syllable being sung. The two sequences are then
-aligned with dynamic time warping (banded, with penalised open ends so extra sound at the start
-or a missing ending is reported rather than distorting the alignment).
+coefficients that capture the sound of the syllable being sung. The coefficients are taken
+from a smoothed spectral envelope (the running maximum of the spectrum over ±250 Hz), so the
+harmonics of a high voice, which are far apart, give the same vowel shape as those of a low
+one. The two sequences are then aligned with dynamic time warping (banded, with penalised open
+ends so extra sound at the start or a missing ending is reported rather than distorting the
+alignment).
+
+A take is also analysed at nine vocal-tract-length warps (its spectrum read at 0.74× to 1.35×
+the frequency). The warp whose spectral frames lie closest to the sloka's wins, judged by
+nearest-neighbour distance over a sample of frames of each, which needs no alignment and so
+works before the search below; the unwarped reading keeps its place unless another is clearly
+better (4 %), so a same-voice take is never warped on a whim. This is what lets a child be
+judged against an adult's recording on the words, not the voice.
 
 Along the aligned path SlokAbhyasa looks for:
 

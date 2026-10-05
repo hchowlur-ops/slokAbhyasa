@@ -1,13 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { extractFeatures, hzToSt, serializeFeatures, deserializeFeatures, HOP_SEC } from '../js/dsp/features.js';
-import { compare } from '../js/dsp/compare.js';
+import { compare, compareAuto } from '../js/dsp/compare.js';
+import { foldOctave } from '../js/dsp/deviations.js';
 import { alignDTW, pathMaps } from '../js/dsp/dtw.js';
 import { resample } from '../js/dsp/resample.js';
 import { createFFT } from '../js/dsp/fft.js';
 import { medianOf } from '../js/dsp/util.js';
 import {
-  tone, melody, silence, concat, timeWarp, addNoise, noise, vowel, chant, VOWEL_A, VOWEL_I, midiToHz, insertSilence,
+  tone, melody, silence, concat, timeWarp, addNoise, noise, vowel, chant, VOWEL_A, VOWEL_I, SYLLABLES, midiToHz, insertSilence,
 } from './synth.js';
 
 const SCALE = [60, 62, 64, 65, 67, 69, 71, 72]; // C major, 400 ms notes
@@ -281,6 +282,64 @@ test('compare: silent attempt is rejected with a clear message', () => {
   const B = feat(scaleSignal());
   const H = feat(concat(silence(2000), noise(500, -70)));
   assert.throws(() => compare(B, H), /No audio was detected/);
+});
+
+// A different voice: the same chant sung higher or lower with the vowel formants moved the
+// way a shorter or longer vocal tract moves them (a child's sit up to 1.3× a man's).
+const MAN = [48, 50, 52, 53, 55, 57, 59, 60]; // 131–262 Hz
+const scaledVowels = (vowels, k) => vowels.map((f) => f.map(([hz, bw]) => [hz * k, bw * k]));
+const sungBy = (notes, semitonesUp, formantScale, vowels = SYLLABLES) => chant(notes.map((m) => m + semitonesUp), 400, scaledVowels(vowels, formantScale));
+
+test('compare: another voice (child, woman, deeper man) scores like the same voice', () => {
+  const B = feat(chant(MAN));
+  for (const [label, up, k] of [['woman', 5, 1.12], ['child', 9, 1.2], ['small child', 12, 1.3], ['deeper man', -5, 0.9]]) {
+    const H = extractFeatures(sungBy(MAN, up, k), { warps: true });
+    const res = compareAuto(B, H);
+    assert.ok(res.match.ok, `${label}: taken for different material (contrast ${res.match.contrast})`);
+    assert.equal(res.deviations.length, 0, `${label}: ${JSON.stringify(res.deviations.map((d) => d.label))}`);
+    assert.ok(res.scores.overall >= 95 && res.scores.content >= 95 && res.scores.pitch >= 95, `${label}: ${JSON.stringify(res.scores)}`);
+    assert.equal(Math.round(res.keyOffset), up, `${label}: key offset ${res.keyOffset}`);
+    if (k !== 1) assert.ok((k > 1) === (res.voiceWarp > 1), `${label}: warp ${res.voiceWarp} for formants ×${k}`);
+    assert.ok(res.notes.some((n) => /voice is (lighter|deeper)/.test(n)), `${label}: no voice note in ${JSON.stringify(res.notes)}`);
+  }
+});
+
+test('compare: the same wrong syllable is found in a child\'s voice as in the sloka\'s own', () => {
+  // the chant's second syllable is "i"; the learner sings "a" there
+  const oneWrong = SYLLABLES.map((v, k) => (k === 1 ? VOWEL_A : v));
+  const B = feat(chant(MAN));
+  for (const [label, up, k] of [['same voice', 0, 1], ['child', 9, 1.2]]) {
+    const res = compareAuto(B, extractFeatures(sungBy(MAN, up, k, oneWrong), { warps: true }));
+    const content = devsOfType(res, 'content');
+    assert.ok(content.some((d) => overlaps(d, noteRange(1))), `${label}: ${JSON.stringify(res.deviations.map((d) => [d.type, d.tBase]))}`);
+    assert.ok(content.every((d) => overlaps(d, noteRange(1))), `${label}: content deviation elsewhere ${JSON.stringify(content.map((d) => d.tBase))}`);
+    assert.equal(res.deviations.filter((d) => !d.types.includes('content')).length, 0, `${label}: other deviations ${JSON.stringify(res.deviations.map((d) => d.label))}`);
+  }
+});
+
+test('compare: a take without warps is compared as recorded; one with warps is not warped on a whim', () => {
+  const B = feat(chant(MAN));
+  assert.equal(compareAuto(B, feat(chant(MAN))).voiceWarp, 1);
+  assert.equal(compareAuto(B, extractFeatures(chant(MAN), { warps: true })).voiceWarp, 1);
+});
+
+test('foldOctave: an octave slip of the pitch tracker folds back, only when the key is ignored', () => {
+  const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, `${a} ≠ ${b}`);
+  near(foldOctave(12.3, true), 0.3);
+  near(foldOctave(-11.6, true), 0.4);
+  near(foldOctave(24.2, true), 0.2);
+  near(foldOctave(5, true), 5);
+  near(foldOctave(12.3, false), 12.3);
+  assert.ok(Number.isNaN(foldOctave(NaN, true)));
+});
+
+test('performance: a one-minute take analysed at every voice warp stays quick', () => {
+  const x = concat(...Array.from({ length: 8 }, () => chant(MAN)));
+  const t0 = performance.now();
+  const F = extractFeatures(x, { warps: true });
+  const ms = performance.now() - t0;
+  assert.ok(F.mfccWarps.length === 9 * F.n * 12);
+  assert.ok(ms < 8000, `features took ${ms.toFixed(0)} ms for ${F.duration.toFixed(0)} s`);
 });
 
 test('performance: three-minute pair compares quickly', () => {

@@ -2,8 +2,8 @@
 // detect deviations, score, and package everything the UI needs.
 
 import { alignLarge, pathMaps } from './dtw.js';
-import { N_MFCC, HOP_SEC, isValidFeatures } from './features.js';
-import { detectDeviations } from './deviations.js';
+import { N_MFCC, HOP_SEC, isValidFeatures, WARP_ALPHAS, WARP_UNITY } from './features.js';
+import { detectDeviations, foldOctave } from './deviations.js';
 import { medianOf, slopeOf, clamp } from './util.js';
 import { locate, sliceFeatures, rethreshold } from './locate.js';
 
@@ -43,6 +43,10 @@ export function compareAuto(B, H, options = {}) {
   if (Number.isFinite(relB) && Number.isFinite(relH) && Math.abs(relB - relH) > ACTIVITY_TOLERANCE_DB) {
     if (relB < relH) B = rethreshold(B, relH); else H = rethreshold(H, relB);
   }
+  // A different voice (a child after an adult, say) has its vowels' formants elsewhere: read
+  // the take at the frequency warp that fits the sloka best, before anything is located,
+  // aligned or judged.
+  H = normalizeVoice(B, H);
   const spanB = Math.max(1, B.trimEnd - B.trimStart + 1);
   const spanH = Math.max(1, H.trimEnd - H.trimStart + 1);
   const ratio = spanH / spanB;
@@ -111,6 +115,7 @@ export function compare(B, H, options = {}) {
   if (!isValidFeatures(H)) throw new Error('The recording could not be analysed.');
   if (H.activeFrac < 0.05 || H.peakDb < -40) throw new Error('No audio was detected in your recording. Check the microphone and try again.');
   if (B.activeFrac < 0.05 || B.peakDb < -40) throw new Error('The sloka seems to be silent.');
+  H = normalizeVoice(B, H); // no-op when compareAuto already did it, or the take has no warps
 
   const bs = B.trimStart;
   const be = B.trimEnd;
@@ -194,6 +199,7 @@ export function compare(B, H, options = {}) {
     keyOffset: key.offset,
     keyOffsetPairs: key.n,
     offsetApplied,
+    voiceWarp: H.voiceWarp ?? 1,
     tempoRatio,
     alignmentCost: align.meanCost,
     contentFloor: dev.contentFloor,
@@ -209,6 +215,61 @@ export function compare(B, H, options = {}) {
 }
 
 // ---------- helpers ----------
+
+// Vocal-tract-length normalisation. Among the warps the take was analysed at, the one whose
+// spectral frames lie closest to the sloka's wins: for a sample of active frames of each
+// recording, the mean distance to the nearest frame of the other (no alignment needed, so
+// this works whatever the lengths and before locate()). The unwarped reading keeps its place
+// unless another is clearly better, so a same-voice take is never warped on a whim.
+const WARP_MIN_GAIN = 0.04;
+const WARP_SAMPLE = 300;
+
+export function chooseVoiceWarp(B, H) {
+  if (!H.mfccWarps || !H.mfccWarpMeans) return WARP_UNITY;
+  const nA = Math.round(H.mfccWarps.length / (H.n * N_MFCC));
+  const pick = (F) => {
+    const idx = [];
+    for (let k = F.trimStart; k <= F.trimEnd; k++) if (F.active[k]) idx.push(k);
+    const step = Math.max(1, Math.ceil(idx.length / WARP_SAMPLE));
+    return idx.filter((_, i) => i % step === 0);
+  };
+  const bi = pick(B);
+  const hi = pick(H);
+  if (bi.length < 10 || hi.length < 10) return WARP_UNITY;
+  const costs = new Float64Array(nA);
+  for (let a = 0; a < nA; a++) {
+    const Hv = { n: H.n, active: H.active, mfcc: H.mfccWarps.subarray(a * H.n * N_MFCC, (a + 1) * H.n * N_MFCC), mfccMean: H.mfccWarpMeans.subarray(a * N_MFCC, (a + 1) * N_MFCC) };
+    const { Bm, Hm } = normalizeMfcc(B, Hv);
+    const d2 = (i, j) => { let s = 0; for (let c = 0; c < N_MFCC; c++) { const t = Bm[i * N_MFCC + c] - Hm[j * N_MFCC + c]; s += t * t; } return s; };
+    let sum = 0;
+    for (const j of hi) { let best = Infinity; for (const i of bi) { const v = d2(i, j); if (v < best) best = v; } sum += Math.sqrt(best / N_MFCC); }
+    for (const i of bi) { let best = Infinity; for (const j of hi) { const v = d2(i, j); if (v < best) best = v; } sum += Math.sqrt(best / N_MFCC); }
+    costs[a] = sum / (hi.length + bi.length);
+  }
+  let best = WARP_UNITY;
+  for (let a = 0; a < nA; a++) if (costs[a] < costs[best]) best = a;
+  return costs[best] < costs[WARP_UNITY] * (1 - WARP_MIN_GAIN) ? best : WARP_UNITY;
+}
+
+// The take read at warp k: its MFCCs and their mean (over the current activity mask).
+export function withVoiceWarp(H, k) {
+  if (k === WARP_UNITY || !H.mfccWarps) return { ...H, voiceWarp: 1 };
+  const mfcc = H.mfccWarps.slice(k * H.n * N_MFCC, (k + 1) * H.n * N_MFCC);
+  const mfccMean = new Float32Array(N_MFCC);
+  let nAct = 0;
+  for (let i = 0; i < H.n; i++) {
+    if (!H.active[i]) continue;
+    nAct++;
+    for (let c = 0; c < N_MFCC; c++) mfccMean[c] += mfcc[i * N_MFCC + c];
+  }
+  if (nAct) for (let c = 0; c < N_MFCC; c++) mfccMean[c] /= nAct;
+  return { ...H, mfcc, mfccMean, voiceWarp: WARP_ALPHAS[k] };
+}
+
+function normalizeVoice(B, H) {
+  if (H.voiceWarp !== undefined || !H.mfccWarps) return H;
+  return withVoiceWarp(H, chooseVoiceWarp(B, H));
+}
 
 function normalizeMfcc(B, H) {
   const Bm = new Float32Array(B.mfcc.length);
@@ -325,6 +386,10 @@ function buildNotes(ctx, dev, key, offsetApplied) {
   if (Math.abs(pct) >= 5) {
     notes.push(`Overall you took ${Math.abs(pct)}% ${pct > 0 ? 'longer' : 'less time'} than the sloka${opts.penalizeTempo ? '' : ' (not penalised)'}.`);
   }
+  const warp = ctx.H.voiceWarp ?? 1;
+  if (Math.abs(Math.log(warp)) > 0.03) {
+    notes.push(`Your voice is ${warp > 1 ? 'lighter' : 'deeper'} in character than the sloka's (${Math.round(Math.abs(warp - 1) * 100)}%); the comparison allowed for that.`);
+  }
   if (!Number.isNaN(dev.contentFloor) && dev.contentFloor > 1.3) {
     notes.push('Your recording sounds quite different from the sloka overall (voice, microphone or room), so content deviations may be less precise.');
   }
@@ -335,7 +400,7 @@ function buildNotes(ctx, dev, key, offsetApplied) {
 }
 
 function buildChart(ctx) {
-  const { B, H, jOf, iOf, offset } = ctx;
+  const { B, H, jOf, iOf, offset, opts } = ctx;
   const n = B.n;
   const times = new Float32Array(n);
   const hSt = new Float32Array(n).fill(NaN);
@@ -345,7 +410,8 @@ function buildChart(ctx) {
     times[i] = i * HOP_SEC;
     const j = jOf[i];
     if (j < 0) continue;
-    hSt[i] = H.st[j] - offset;
+    // drawn where it is compared: key offset removed, tracker octave slips folded back
+    hSt[i] = Number.isNaN(B.st[i]) ? H.st[j] - offset : B.st[i] + foldOctave(H.st[j] - B.st[i] - offset, opts.ignoreKey);
     hLoud[i] = H.loud[j];
     hActive[i] = H.active[j];
   }

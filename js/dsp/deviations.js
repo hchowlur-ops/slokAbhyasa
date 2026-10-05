@@ -9,6 +9,17 @@ const f = msToFrames;
 const tStart = (i) => i * HOP_SEC;
 const tEnd = (i) => (i + 1) * HOP_SEC;
 
+// A pitch difference that is an octave give or take a little is almost always the pitch
+// tracker landing on the other octave of the same note (a child's or a deep voice does that
+// often), not a note sung an octave off: when the key is being ignored, fold it back.
+export function foldOctave(d, ignoreKey) {
+  if (!ignoreKey || Number.isNaN(d)) return d;
+  const a = Math.abs(d);
+  if (Math.abs(a - 12) <= 1) return d - Math.sign(d) * 12;
+  if (Math.abs(a - 24) <= 1) return d - Math.sign(d) * 24;
+  return d;
+}
+
 // ---------- note / onset segmentation ----------
 
 export function segmentNotes(F, from, to) {
@@ -132,7 +143,7 @@ export function detectDeviations(ctx) {
     if (Number.isNaN(bSm[i]) || Number.isNaN(hSm[j])) continue;
     if (B.conf[i] < 0.8 || H.conf[j] < 0.8) continue;
     if (bJump[i] || hJump[j] || noteHead[i]) continue;
-    const d = hSm[j] - bSm[i] - offset;
+    const d = foldOctave(hSm[j] - bSm[i] - offset, opts.ignoreKey);
     delta[i] = d;
     const a = Math.abs(d);
     usable++;
@@ -305,7 +316,7 @@ export function detectDeviations(ctx) {
   }
   const med = vals.length ? medianOf(vals) : NaN;
   const mad = vals.length ? madOf(vals, med) : NaN;
-  const thr = vals.length ? Math.max(med + 2.5 * mad, 1.3) : Infinity;
+  const thr = vals.length ? Math.max(med + 2.0 * mad, 1.3) : Infinity;
   for (const run of findRuns(n, (i) => eligible[i] && dm[i] > thr, { minLen: f(160), maxGap: 2 })) {
     let sum = 0;
     let cnt = 0;

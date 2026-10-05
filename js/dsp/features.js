@@ -5,12 +5,14 @@
 //   st      – pitch in fractional MIDI semitones (NaN when unvoiced), YIN + Viterbi
 //   conf    – 1 - CMNDF at the chosen period (0 when unvoiced)
 //   mfcc    – 12 mel-frequency cepstral coefficients c1..c12 per frame (row-major)
+//   mfccWarps – optional (takes only): the MFCCs again for each frequency warp in
+//               WARP_ALPHAS, so a comparison can allow for a different voice (see compare.js)
 
 import { createFFT, powerSpectrum } from './fft.js';
 import { fillGaps, dropShort, movingMedianNaN, bytesToBase64, base64ToBytes } from './util.js';
 import { activityThreshold } from './activity.js';
 
-export const FEAT_VERSION = 3;
+export const FEAT_VERSION = 4; // 4: MFCCs from a pitch-smoothed spectral envelope
 export const SR = 16000;
 export const HOP = 320;
 export const HOP_SEC = HOP / SR;
@@ -27,6 +29,15 @@ export const PRE_EMPH = 0.97;
 export const YIN_THRESHOLD = 0.15;
 export const VOICED_ON = 0.25;
 export const VOICED_OFF = 0.40;
+// Vocal-tract-length warps a take is analysed at (1 = as recorded). A child's formants sit
+// up to about 1.3× an adult man's; a deep voice against a light one needs the other way.
+export const WARP_ALPHAS = [0.74, 0.8, 0.86, 0.93, 1, 1.08, 1.16, 1.25, 1.35];
+export const WARP_UNITY = WARP_ALPHAS.indexOf(1);
+// Spectral-envelope smoothing: the running maximum of the power spectrum over this many FFT
+// bins (31.25 Hz each) either side. The same width for every frame of every recording, so
+// two voices get the same treatment; 250 Hz bridges the harmonics of any singing pitch up
+// to about 500 Hz while the vowel formants (300 Hz wide and more) keep their shape.
+export const ENVELOPE_BINS = 8;
 
 export const msToFrames = (ms) => Math.max(1, Math.round(ms / 1000 / HOP_SEC));
 export const hzToSt = (hz) => 69 + 12 * Math.log2(hz / 440);
@@ -55,12 +66,22 @@ export function detectActivity(rmsDb, samples = null, frameStart = null) {
 const melOf = (hz) => 2595 * Math.log10(1 + hz / 700);
 const hzOfMel = (m) => 700 * (Math.pow(10, m / 2595) - 1);
 
-function melFilterbank(nFft, sr, nMel, fLo = 0, fHi = sr / 2) {
+// Frequency warp for vocal-tract-length normalisation: the spectrum is read at alpha times
+// the frequency (a shorter vocal tract puts the same vowel's formants higher), piecewise
+// linear near Nyquist so nothing is read beyond it.
+function warpHz(hz, alpha, nyq) {
+  if (alpha === 1) return hz;
+  const fb = (0.85 * nyq) / Math.max(alpha, 1);
+  if (hz <= fb) return alpha * hz;
+  return alpha * fb + ((nyq - alpha * fb) * (hz - fb)) / (nyq - fb);
+}
+
+function melFilterbank(nFft, sr, nMel, fLo = 0, fHi = sr / 2, alpha = 1) {
   const nBins = nFft / 2 + 1;
   const mLo = melOf(fLo);
   const mHi = melOf(fHi);
   const pts = new Float64Array(nMel + 2);
-  for (let i = 0; i < nMel + 2; i++) pts[i] = (hzOfMel(mLo + ((mHi - mLo) * i) / (nMel + 1)) * nFft) / sr;
+  for (let i = 0; i < nMel + 2; i++) pts[i] = (warpHz(hzOfMel(mLo + ((mHi - mLo) * i) / (nMel + 1)), alpha, sr / 2) * nFft) / sr;
   const filters = [];
   for (let m = 0; m < nMel; m++) {
     const lo = pts[m];
@@ -179,7 +200,9 @@ function trackPitch(candList, st, cmndOut) {
 
 // ---------- main ----------
 
-export function extractFeatures(x, { onProgress } = {}) {
+// `warps`: also compute the MFCCs at every WARP_ALPHAS warp (for a take that will be compared
+// with a sloka sung by a different voice).
+export function extractFeatures(x, { onProgress, warps = false } = {}) {
   const len = x.length;
   const n = Math.max(1, Math.ceil(len / HOP));
   const padL = PITCH_WIN >> 1;
@@ -200,44 +223,7 @@ export function extractFeatures(x, { onProgress } = {}) {
   const loud = new Float32Array(n);
   for (let k = 0; k < n; k++) loud[k] = rmsDb[k] - act.peak;
 
-  // MFCC
-  const fft = createFFT(MFCC_WIN);
-  const re = new Float32Array(MFCC_WIN);
-  const im = new Float32Array(MFCC_WIN);
-  const pow = new Float32Array(MFCC_WIN / 2 + 1);
-  const frame = new Float32Array(MFCC_WIN);
-  const hann = new Float32Array(MFCC_WIN);
-  for (let i = 0; i < MFCC_WIN; i++) hann[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (MFCC_WIN - 1));
-  const filters = melFilterbank(MFCC_WIN, SR, N_MEL, 0, 8000);
-  const dct = dctTable(N_MFCC, N_MEL);
-  const logE = new Float64Array(N_MEL);
-  const mfcc = new Float32Array(n * N_MFCC);
-  for (let k = 0; k < n; k++) {
-    const s0 = padL + k * HOP - halfM;
-    for (let i = 0; i < MFCC_WIN; i++) frame[i] = (xp[s0 + i] - PRE_EMPH * xp[s0 + i - 1]) * hann[i];
-    powerSpectrum(fft, frame, re, im, pow);
-    for (let m = 0; m < N_MEL; m++) {
-      const f = filters[m];
-      let e = 0;
-      for (let b = 0; b < f.w.length; b++) e += pow[f.b0 + b] * f.w[b];
-      logE[m] = Math.log(e + 1e-10);
-    }
-    for (let c = 0; c < N_MFCC; c++) {
-      let v = 0;
-      for (let m = 0; m < N_MEL; m++) v += logE[m] * dct[c * N_MEL + m];
-      mfcc[k * N_MFCC + c] = v;
-    }
-  }
-  const mfccMean = new Float32Array(N_MFCC);
-  let nAct = 0;
-  for (let k = 0; k < n; k++) {
-    if (!active[k]) continue;
-    nAct++;
-    for (let c = 0; c < N_MFCC; c++) mfccMean[c] += mfcc[k * N_MFCC + c];
-  }
-  if (nAct) for (let c = 0; c < N_MFCC; c++) mfccMean[c] /= nAct;
-
-  // Pitch
+  // Pitch (first: the spectral envelope below is smoothed by the pitch)
   const halfP = PITCH_WIN >> 1;
   const d = new Float64Array(TAU_MAX + 1);
   const cmnd = new Float64Array(TAU_MAX + 1);
@@ -282,6 +268,62 @@ export function extractFeatures(x, { onProgress } = {}) {
     if (voiced[k]) nVoiced++;
   }
 
+  // MFCC, from a spectral envelope rather than the raw spectrum: the power spectrum's
+  // running maximum over ENVELOPE_BINS each way bridges the gaps between harmonics, so a
+  // high voice (whose harmonics are far apart) gives the same vowel shape as a low one
+  // instead of a comb the mel bands would sample at random.
+  const fft = createFFT(MFCC_WIN);
+  const re = new Float32Array(MFCC_WIN);
+  const im = new Float32Array(MFCC_WIN);
+  const nBins = MFCC_WIN / 2 + 1;
+  const pow = new Float32Array(nBins);
+  const env = new Float32Array(nBins);
+  const frame = new Float32Array(MFCC_WIN);
+  const hann = new Float32Array(MFCC_WIN);
+  for (let i = 0; i < MFCC_WIN; i++) hann[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (MFCC_WIN - 1));
+  const binHz = SR / MFCC_WIN;
+  const alphas = warps ? WARP_ALPHAS : [1];
+  const banks = alphas.map((a) => melFilterbank(MFCC_WIN, SR, N_MEL, 0, 8000, a));
+  const dct = dctTable(N_MFCC, N_MEL);
+  const logE = new Float64Array(N_MEL);
+  const mfccAll = new Float32Array(alphas.length * n * N_MFCC); // [warp][frame][coeff]
+  for (let k = 0; k < n; k++) {
+    const s0 = padL + k * HOP - halfM;
+    for (let i = 0; i < MFCC_WIN; i++) frame[i] = (xp[s0 + i] - PRE_EMPH * xp[s0 + i - 1]) * hann[i];
+    powerSpectrum(fft, frame, re, im, pow);
+    for (let b = 0; b < nBins; b++) {
+      let mx = 0;
+      for (let q = Math.max(0, b - ENVELOPE_BINS); q <= Math.min(nBins - 1, b + ENVELOPE_BINS); q++) if (pow[q] > mx) mx = pow[q];
+      env[b] = mx;
+    }
+    for (let a = 0; a < alphas.length; a++) {
+      const filters = banks[a];
+      for (let m = 0; m < N_MEL; m++) {
+        const f = filters[m];
+        let e = 0;
+        for (let b = 0; b < f.w.length; b++) e += env[f.b0 + b] * f.w[b];
+        logE[m] = Math.log(e + 1e-10);
+      }
+      const row = (a * n + k) * N_MFCC;
+      for (let c = 0; c < N_MFCC; c++) {
+        let v = 0;
+        for (let m = 0; m < N_MEL; m++) v += logE[m] * dct[c * N_MEL + m];
+        mfccAll[row + c] = v;
+      }
+    }
+  }
+  const unity = alphas.indexOf(1);
+  const mfcc = mfccAll.slice(unity * n * N_MFCC, (unity + 1) * n * N_MFCC);
+  const means = new Float32Array(alphas.length * N_MFCC);
+  let nAct = 0;
+  for (let k = 0; k < n; k++) {
+    if (!active[k]) continue;
+    nAct++;
+    for (let a = 0; a < alphas.length; a++) for (let c = 0; c < N_MFCC; c++) means[a * N_MFCC + c] += mfccAll[(a * n + k) * N_MFCC + c];
+  }
+  if (nAct) for (let i = 0; i < means.length; i++) means[i] /= nAct;
+  const mfccMean = means.slice(unity * N_MFCC, (unity + 1) * N_MFCC);
+
   // Trim
   let first = 0;
   while (first < n && !active[first]) first++;
@@ -306,6 +348,7 @@ export function extractFeatures(x, { onProgress } = {}) {
     conf,
     mfcc,
     mfccMean,
+    ...(warps ? { mfccWarps: mfccAll, mfccWarpMeans: means } : {}),
     trimStart,
     trimEnd,
     peakDb: act.peak,
@@ -318,7 +361,7 @@ export function extractFeatures(x, { onProgress } = {}) {
 
 // ---------- (de)serialisation for the on-disk cache ----------
 
-const TYPED = { rmsDb: Float32Array, loud: Float32Array, active: Uint8Array, st: Float32Array, conf: Float32Array, mfcc: Float32Array, mfccMean: Float32Array };
+const TYPED = { rmsDb: Float32Array, loud: Float32Array, active: Uint8Array, st: Float32Array, conf: Float32Array, mfcc: Float32Array, mfccMean: Float32Array, mfccWarps: Float32Array, mfccWarpMeans: Float32Array };
 
 export function serializeFeatures(f) {
   const out = {};

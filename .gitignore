@@ -4,6 +4,14 @@
 /quizzes/
 /local.json
 
+# Built packages (tools/package.mjs) and the Node runtime it downloads
+/dist/
+
+# Demo video production: generated sound, narration and captured frames
+/tools/demo/audio/
+/tools/demo/narration/
+/tools/demo/out/
+
 # Node
 node_modules/
 npm-debug.log*

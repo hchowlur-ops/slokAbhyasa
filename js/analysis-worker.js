@@ -11,7 +11,7 @@ self.onmessage = (e) => {
   try {
     if (msg.type === 'features') {
       const x = resample(msg.samples, msg.sampleRate, SR);
-      const features = extractFeatures(x, { onProgress: (p) => reply({ type: 'progress', value: p }) });
+      const features = extractFeatures(x, { warps: !!msg.warps, onProgress: (p) => reply({ type: 'progress', value: p }) });
       reply({ type: 'features', features });
     } else if (msg.type === 'compare') {
       const result = compareAuto(msg.base, msg.heard, msg.options || {});
