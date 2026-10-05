@@ -5,9 +5,12 @@
 // folder unless local.json or SLOKABHYASA_DATA says otherwise (see datadir.js).
 //
 //   node serve.js            → http://127.0.0.1:8787
+//   node serve.js --open     → the same, and the browser is opened on it (the launcher of
+//                              the packaged app uses this; see tools/package.mjs)
 //   PORT=9000 node serve.js  → custom port
 
 import http from 'node:http';
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
@@ -674,8 +677,30 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+const URL_HOME = `http://${HOST}:${PORT}/`;
+const OPEN = process.argv.includes('--open');
+
+// Opens the page in the default browser, without waiting for it.
+function openBrowser() {
+  // (the empty argument is start's window title; Node passes it to cmd as "")
+  const cmd = process.platform === 'win32' ? ['cmd', ['/c', 'start', '', URL_HOME]]
+    : process.platform === 'darwin' ? ['open', [URL_HOME]] : ['xdg-open', [URL_HOME]];
+  try { spawn(cmd[0], cmd[1], { stdio: 'ignore', detached: true }).unref(); } catch { console.log(`Open ${URL_HOME} in your browser.`); }
+}
+
 await ensureLibrary();
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    // Started twice (a double double-click, say): the first one is still serving.
+    console.log(`SlokAbhyasa is already running at ${URL_HOME}${OPEN ? ' — opening it.' : ''}`);
+    if (OPEN) openBrowser();
+    process.exit(0);
+  }
+  console.error(`The server could not start: ${err.message}`);
+  process.exit(1);
+});
 server.listen(PORT, HOST, () => {
-  console.log(`SlokAbhyasa is running at http://${HOST}:${PORT}`);
+  console.log(`SlokAbhyasa is running at ${URL_HOME}`);
   console.log(`Slokas are stored in ${LIB} (and its subfolders); quizzes in ${QUIZZES}`);
+  if (OPEN) openBrowser();
 });
