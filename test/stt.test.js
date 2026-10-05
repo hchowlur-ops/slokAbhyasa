@@ -142,6 +142,8 @@ test('degenerate output: nothing, or a word or two repeated to the token limit',
   assert.equal(looksDegenerate(' Ṣākāṁ'.repeat(55)), true);
   assert.equal(looksDegenerate(' Ṣākṣāraṁ nirādhāsāṁ'.repeat(20)), true);
   assert.equal(looksDegenerate(' "D"'.repeat(140)), true);
+  assert.equal(looksDegenerate('.'), true); // a cold GPU's first answer for a whole sloka
+  assert.equal(looksDegenerate(' ... , .'), true);
   // real answers, from the CPU
   assert.equal(looksDegenerate('Ṣākṣāraṁ ānir desh yam avyaktam parjupāsate sarvatra gama chintyam ca kūtasthamacalam truvam'), false);
   assert.equal(looksDegenerate('येत्वक्षरम निर्देश्यम अव्यक्तं पर्युपासते सर्वत्रगम चिंत्यम्चा गूटस्थम चलं थुवं।'), false);

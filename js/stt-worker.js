@@ -91,6 +91,7 @@ async function loadPipe(tier, dev, post) {
 export function looksDegenerate(text) {
   const words = String(text || '').trim().split(/\s+/).filter(Boolean);
   if (!words.length) return true;
+  if (!/\p{L}/u.test(words.join(''))) return true; // punctuation only, e.g. "." for a whole sloka
   if (words.length < 12) return false;
   const distinct = new Set(words.map((w) => w.toLowerCase())).size;
   return distinct / words.length < 0.2;
@@ -166,13 +167,21 @@ if (typeof self !== 'undefined') self.onmessage = async (e) => {
     if (!r) return;
     let fellBack = false;
     // A GPU that computes nonsense gives nothing, or a word or two repeated for the whole
-    // length. The CPU is slower but right; the client remembers the choice for this tier.
-    if (dev === 'webgpu' && looksDegenerate(r.text) && !MODELS[tier].webgpuOnly) {
-      post({ type: 'progress', id, stage: 'fallback' });
-      dev = 'wasm';
+    // length. The first answer after a cold model load is sometimes wrong on its own (seen
+    // on Intel Iris Xe: "." for a whole sloka, right the second time), so the GPU gets one
+    // more go; only a GPU that is wrong twice sends the job to the CPU, which is slower but
+    // right, and the client then remembers the choice for this tier.
+    if (dev === 'webgpu' && looksDegenerate(r.text)) {
+      post({ type: 'progress', id, stage: 'retry' });
       r = await run(dev);
       if (!r) return;
-      fellBack = true;
+      if (looksDegenerate(r.text) && !MODELS[tier].webgpuOnly) {
+        post({ type: 'progress', id, stage: 'fallback' });
+        dev = 'wasm';
+        r = await run(dev);
+        if (!r) return;
+        fellBack = true;
+      }
     }
     // Slokas are never silent, so an empty answer means the model failed; report it
     // instead of storing an empty transcript.
