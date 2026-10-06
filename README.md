@@ -154,8 +154,14 @@ show **content**, **missing / extra** and **pitch** deviations; the chips above 
 default view). Click any chip to show or hide that kind; the choice is remembered.
 
 Options: ignore an overall key difference (on by default, so singing in a different key is
-reported as a note but not penalised) and penalise overall tempo (off by default, since slow
-practice is the point).
+reported as a note but not penalised) and judge the speed of recitation (off by default).
+
+**Speed is not judged unless you ask.** Recite at any pace, steady or not: a sloka taken
+slowly throughout, or with its first line hurried and its last line drawn out, loses nothing.
+Pauses, skipped and added material still count, since those are not a matter of pace. Tick
+"Judge the speed of recitation" and rushed or dragged stretches (against your own overall
+tempo) count in the timing score, and the overall tempo is penalised too. The choice applies
+to quizzes as well.
 
 **A different voice is allowed for.** A child reciting after an adult, or a woman after a
 man, sings higher and, more to the point, with every vowel's resonances higher: the same
@@ -164,7 +170,12 @@ syllable has a different sound. Before anything is compared, the recording is re
 are reported; the report then says, for instance, "Your voice is lighter in character than
 the sloka's (25%); the comparison allowed for that." The key difference is ignored on top of
 that, and an octave slip of the pitch tracker (common with high or very deep voices) is not
-taken for a wrong note. Quizzes use the same comparison, so this applies to them too.
+taken for a wrong note. Quizzes use the same comparison, so this applies to them too. The
+tests pair a man's, a generic adult's, a woman's and a child's voice in every combination of
+sloka voice and learner voice: each scores as the same voice would, and a wrong syllable is
+found in every pairing. One honest limit: a high voice has its harmonics far apart, which
+blurs its vowels, so when the voices are far apart a very slight slip can hide in the voice
+difference; the report says so when that is the case.
 
 **Tolerance.** How much variation is acceptable in each category, as a percentage: a category
 is within tolerance when its score is at least 100 minus the tolerance. The defaults are
@@ -317,11 +328,13 @@ node tools/trim-library.mjs --dry-run  # only report what would change
 Both recordings are resampled to 16 kHz and described every 20 ms by loudness, an activity
 flag, pitch (YIN with an octave-error-resistant tracker), and 12 mel-frequency cepstral
 coefficients that capture the sound of the syllable being sung. The coefficients are taken
-from a smoothed spectral envelope (the running maximum of the spectrum over ±250 Hz), so the
-harmonics of a high voice, which are far apart, give the same vowel shape as those of a low
-one. The two sequences are then aligned with dynamic time warping (banded, with penalised open
-ends so extra sound at the start or a missing ending is reported rather than distorting the
-alignment).
+from a spectral envelope rather than the raw spectrum: the harmonics (peaks within 10 dB of
+the running maximum over ±250 Hz) are joined by straight lines in the log domain and lightly
+smoothed, and each frame's mel bands are clamped to 40 dB below its loudest, so the harmonics
+of a high voice, which are far apart, give the same vowel shape as those of a low one, and
+bands holding only room noise look alike in both recordings. The two sequences are then
+aligned with dynamic time warping (banded, with penalised open ends so extra sound at the
+start or a missing ending is reported rather than distorting the alignment).
 
 A take is also analysed at nine vocal-tract-length warps (its spectrum read at 0.74× to 1.35×
 the frequency). The warp whose spectral frames lie closest to the sloka's wins, judged by
@@ -335,7 +348,7 @@ Along the aligned path SlokAbhyasa looks for:
 | Type | What it means |
 | --- | --- |
 | Pitch | Sustained sharp or flat stretches after smoothing away vibrato and note attacks. |
-| Timing | Rushed or dragged spans between onsets, pauses that the sloka does not have. |
+| Timing | Pauses that the sloka does not have; rushed or dragged spans between onsets when speed is judged. |
 | Content | Places where the sound itself does not match the sloka (wrong syllable, note or vowel). |
 | Missing / extra | Sloka material with no counterpart, or sound you added. |
 | Dynamics | Notably louder or softer stretches (hidden by default; choose Dynamics above the list). |

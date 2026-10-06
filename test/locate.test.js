@@ -23,7 +23,7 @@ test('locate: finds a verse inside a recording of three, and knows when it is no
   assert.ok(present, 'located');
   assert.ok(Math.abs(present.start * HOP_SEC - B_START) < 0.35, `start ${present.start * HOP_SEC}`);
   assert.ok(Math.abs((present.end + 1) * HOP_SEC - B_END) < 0.35, `end ${(present.end + 1) * HOP_SEC}`);
-  assert.ok(present.contrast < 0.7, `contrast ${present.contrast}`); // real same-verse pairs: 0.2–0.5
+  assert.ok(present.contrast < MISMATCH_CONTRAST, `contrast ${present.contrast}`); // synthetic white noise at 30 dB; real same-verse pairs: 0.2–0.6
   const absent = locate(feat(verseD()), long);
   assert.ok(absent.contrast > present.contrast + 0.2, `absent ${absent.contrast} vs present ${present.contrast}`);
 });

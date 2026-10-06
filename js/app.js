@@ -1319,7 +1319,7 @@ async function analyseAttempt() {
     practice.heard = await analyzer.features(take.samples, take.sampleRate, (p) => practiceProgress.set(p * 0.6), { warps: true });
     practice.options = {
       ignoreKey: $('#practice-ignorekey').checked,
-      penalizeTempo: $('#practice-tempo').checked,
+      judgeSpeed: $('#practice-tempo').checked,
       flagDynamics: true, // everything is measured; the filter chips decide what is shown
       mode: 'chant',
     };

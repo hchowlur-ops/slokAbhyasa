@@ -8,7 +8,7 @@ import { resample } from '../js/dsp/resample.js';
 import { createFFT } from '../js/dsp/fft.js';
 import { medianOf } from '../js/dsp/util.js';
 import {
-  tone, melody, silence, concat, timeWarp, addNoise, noise, vowel, chant, VOWEL_A, VOWEL_I, SYLLABLES, midiToHz, insertSilence,
+  tone, melody, silence, concat, timeWarp, addNoise, noise, vowel, chant, VOWEL_A, VOWEL_I, VOWEL_U, SYLLABLES, midiToHz, insertSilence,
 } from './synth.js';
 
 const SCALE = [60, 62, 64, 65, 67, 69, 71, 72]; // C major, 400 ms notes
@@ -159,26 +159,46 @@ test('compare: "evaluate on" modes make the overall score that aspect alone', ()
   }
 });
 
-test('compare: globally slower performance → tempo ratio ≈ 1.3, no timing deviations', () => {
+test('compare: globally slower performance → tempo ratio ≈ 1.3, no timing deviations; the tempo counts only when speed is judged', () => {
   const B = feat(scaleSignal());
   const H = feat(concat(silence(300), melody(SCALE, 520), silence(300)));
   const res = compare(B, H);
   assert.ok(Math.abs(res.tempoRatio - 1.3) < 0.06, `tempo ratio ${res.tempoRatio}`);
   assert.equal(devsOfType(res, 'timing').length, 0, JSON.stringify(devsOfType(res, 'timing')));
   assert.ok(res.scores.timing >= 95);
-  const pen = compare(B, H, { penalizeTempo: true });
-  assert.ok(pen.scores.timing < res.scores.timing);
+  assert.ok(res.notes.some((n) => /longer than the sloka \(speed is not judged\)/.test(n)), JSON.stringify(res.notes));
+  const judged = compare(B, H, { judgeSpeed: true });
+  assert.ok(judged.scores.timing < res.scores.timing, `${judged.scores.timing} vs ${res.scores.timing}`);
+  assert.ok(judged.notes.some((n) => /longer than the sloka\.$/.test(n)), JSON.stringify(judged.notes));
+  assert.equal(compare(B, H, { penalizeTempo: true }).scores.timing, judged.scores.timing, 'the old option name still works');
 });
 
-test('compare: one note held longer → single timing deviation there', () => {
+test('compare: one note held longer counts only when speed is judged', () => {
   const B = feat(scaleSignal());
   const notes = SCALE.map((m, k) => (k === 3 ? [m, 800] : [m, 400]));
   const H = feat(concat(silence(300), ...notes.map(([m, ms]) => tone(midiToHz(m), ms)), silence(300)));
-  const res = compare(B, H);
+  const free = compare(B, H);
+  assert.equal(devsOfType(free, 'timing').length, 0, JSON.stringify(devsOfType(free, 'timing')));
+  assert.ok(free.scores.timing >= 95, `timing ${free.scores.timing}`);
+  const res = compare(B, H, { judgeSpeed: true });
   const timing = devsOfType(res, 'timing');
   assert.equal(timing.length, 1, JSON.stringify(timing));
   assert.ok(overlaps(timing[0], noteRange(3)), `range ${timing[0].tBase}`);
   assert.ok(timing[0].value > 1.5, `ratio ${timing[0].value}`);
+  assert.ok(res.scores.timing < free.scores.timing);
+});
+
+test('compare: speeding up and slowing down within a sloka is free by default, a criterion on request', () => {
+  const B = feat(chant(MAN));
+  // first half rushed (1.4× faster), second half dragged (0.75×): the same syllables, pitches and vowels
+  const paced = concat(silence(300), ...MAN.map((m, k) => vowel(midiToHz(m), k < 4 ? 400 / 1.4 : 400 / 0.75, SYLLABLES[k])), silence(300));
+  const H = feat(paced);
+  const free = compare(B, H);
+  assert.equal(devsOfType(free, 'timing').length, 0, JSON.stringify(devsOfType(free, 'timing')));
+  assert.ok(free.scores.timing >= 95 && free.scores.overall >= 95, JSON.stringify(free.scores));
+  const judged = compare(B, H, { judgeSpeed: true });
+  assert.ok(devsOfType(judged, 'timing').length >= 1, 'pace changes are reported when speed is judged');
+  assert.ok(judged.scores.timing < free.scores.timing, `${judged.scores.timing} vs ${free.scores.timing}`);
 });
 
 test('compare: leading silence / noise in the attempt changes nothing', () => {
@@ -301,6 +321,46 @@ test('compare: another voice (child, woman, deeper man) scores like the same voi
     assert.equal(Math.round(res.keyOffset), up, `${label}: key offset ${res.keyOffset}`);
     if (k !== 1) assert.ok((k > 1) === (res.voiceWarp > 1), `${label}: warp ${res.voiceWarp} for formants ×${k}`);
     assert.ok(res.notes.some((n) => /voice is (lighter|deeper)/.test(n)), `${label}: no voice note in ${JSON.stringify(res.notes)}`);
+  }
+});
+
+// Four voice ranges, each as the sloka's voice and as the learner's: a man (131–262 Hz), a
+// generic adult a little higher and lighter, a woman, a child. Every pairing must be judged
+// on the words alone.
+const VOICES = { man: [0, 1], adult: [4, 1.08], woman: [7, 1.15], child: [12, 1.3] };
+
+test('compare: man, adult, woman and child, in every pairing of sloka voice and learner voice', () => {
+  const slokas = Object.fromEntries(Object.entries(VOICES).map(([name, [up, k]]) => [name, feat(sungBy(MAN, up, k))]));
+  for (const [sv, [sUp, sK]] of Object.entries(VOICES)) {
+    for (const [lv, [lUp, lK]] of Object.entries(VOICES)) {
+      if (sv === lv) continue;
+      const res = compareAuto(slokas[sv], extractFeatures(sungBy(MAN, lUp, lK), { warps: true }));
+      const label = `${lv} after ${sv}`;
+      assert.ok(res.match.ok, `${label}: taken for different material (contrast ${res.match.contrast})`);
+      assert.equal(res.deviations.length, 0, `${label}: ${JSON.stringify(res.deviations.map((d) => d.label))}`);
+      assert.ok(res.scores.overall >= 95 && res.scores.content >= 95 && res.scores.pitch >= 95, `${label}: ${JSON.stringify(res.scores)}`);
+      assert.equal(Math.round(res.keyOffset), lUp - sUp, `${label}: key offset ${res.keyOffset}`);
+      const ratio = lK / sK;
+      if (Math.abs(ratio - 1) > 0.05) assert.ok((ratio > 1) === (res.voiceWarp > 1), `${label}: warp ${res.voiceWarp} for a formant ratio of ${ratio.toFixed(2)}`);
+    }
+  }
+});
+
+test('compare: a wrong syllable is found, and never misplaced, in every pairing of voices', () => {
+  // The fourth syllable is "e"; the learner sings "u". (A subtler slip, i for a, is still found
+  // in 15 of the 16 pairings; when the voices are far apart the report warns that small slips
+  // are harder to spot.)
+  const oneWrong = SYLLABLES.map((v, k) => (k === 3 ? VOWEL_U : v));
+  for (const [sv, [sUp, sK]] of Object.entries(VOICES)) {
+    const B = feat(sungBy(MAN, sUp, sK));
+    for (const [lv, [lUp, lK]] of Object.entries(VOICES)) {
+      const res = compareAuto(B, extractFeatures(sungBy(MAN, lUp, lK, oneWrong), { warps: true }));
+      const content = devsOfType(res, 'content');
+      const label = `${lv} after ${sv}`;
+      assert.ok(content.every((d) => overlaps(d, noteRange(3))), `${label}: content deviation elsewhere ${JSON.stringify(content.map((d) => d.tBase))}`);
+      assert.equal(res.deviations.filter((d) => !d.types.includes('content')).length, 0, `${label}: ${JSON.stringify(res.deviations.map((d) => d.label))}`);
+      assert.ok(content.some((d) => overlaps(d, noteRange(3))), `${label}: wrong syllable not found ${JSON.stringify(res.deviations)}`);
+    }
   }
 });
 

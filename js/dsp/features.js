@@ -12,7 +12,7 @@ import { createFFT, powerSpectrum } from './fft.js';
 import { fillGaps, dropShort, movingMedianNaN, bytesToBase64, base64ToBytes } from './util.js';
 import { activityThreshold } from './activity.js';
 
-export const FEAT_VERSION = 4; // 4: MFCCs from a pitch-smoothed spectral envelope
+export const FEAT_VERSION = 5; // 4: MFCCs from a smoothed spectral envelope; 5: harmonic peaks joined, 40 dB clamp
 export const SR = 16000;
 export const HOP = 320;
 export const HOP_SEC = HOP / SR;
@@ -198,6 +198,47 @@ function trackPitch(candList, st, cmndOut) {
   }
 }
 
+// ---------- spectral envelope ----------
+
+// Joins the harmonic peaks of a power spectrum: a peak is a local maximum within
+// ENVELOPE_PEAK_DB of the running maximum around it (which keeps the harmonics and drops the
+// noise between them); between peaks the log power is interpolated linearly, outside the
+// first and last it is held. A light running maximum (ENVELOPE_SMOOTH_BINS) then flattens
+// the ripple that remains where a band holds nothing but noise. Writes into `env`.
+export const ENVELOPE_PEAK_DB = 10;
+export const ENVELOPE_SMOOTH_BINS = 3;
+// A frame's mel bands are clamped to this many dB below its loudest band: bands holding
+// nothing but room noise then look alike in both recordings.
+export const MEL_DYNAMIC_RANGE_DB = 40;
+const MEL_DYNAMIC_RANGE_LN = (MEL_DYNAMIC_RANGE_DB / 10) * Math.LN10;
+const PEAK_RATIO = Math.pow(10, -ENVELOPE_PEAK_DB / 10);
+const envTmp = new Float32Array(4096);
+export function spectralEnvelope(pow, env, nBins) {
+  const raw = envTmp.subarray(0, nBins);
+  let prev = -1;
+  let prevLog = 0;
+  for (let b = 0; b < nBins; b++) {
+    let mx = 0;
+    for (let q = Math.max(0, b - ENVELOPE_BINS); q <= Math.min(nBins - 1, b + ENVELOPE_BINS); q++) if (pow[q] > mx) mx = pow[q];
+    const isPeak = pow[b] >= mx * PEAK_RATIO && (b === 0 || pow[b] >= pow[b - 1]) && (b === nBins - 1 || pow[b] >= pow[b + 1]);
+    if (!isPeak) continue;
+    const lg = Math.log(pow[b] + 1e-12);
+    if (prev < 0) { for (let q = 0; q < b; q++) raw[q] = pow[b]; } else {
+      for (let q = prev + 1; q < b; q++) raw[q] = Math.exp(prevLog + ((lg - prevLog) * (q - prev)) / (b - prev));
+    }
+    raw[b] = pow[b];
+    prev = b;
+    prevLog = lg;
+  }
+  if (prev < 0) raw.set(pow.subarray(0, nBins));
+  else for (let q = prev + 1; q < nBins; q++) raw[q] = pow[prev];
+  for (let b = 0; b < nBins; b++) {
+    let mx = 0;
+    for (let q = Math.max(0, b - ENVELOPE_SMOOTH_BINS); q <= Math.min(nBins - 1, b + ENVELOPE_SMOOTH_BINS); q++) if (raw[q] > mx) mx = raw[q];
+    env[b] = mx;
+  }
+}
+
 // ---------- main ----------
 
 // `warps`: also compute the MFCCs at every WARP_ALPHAS warp (for a take that will be compared
@@ -268,10 +309,12 @@ export function extractFeatures(x, { onProgress, warps = false } = {}) {
     if (voiced[k]) nVoiced++;
   }
 
-  // MFCC, from a spectral envelope rather than the raw spectrum: the power spectrum's
-  // running maximum over ENVELOPE_BINS each way bridges the gaps between harmonics, so a
-  // high voice (whose harmonics are far apart) gives the same vowel shape as a low one
-  // instead of a comb the mel bands would sample at random.
+  // MFCC, from a spectral envelope rather than the raw spectrum: the harmonics (the
+  // spectrum's peaks that stand out against the running maximum over ENVELOPE_BINS each
+  // way) are joined by straight lines in the log domain. A high voice, whose harmonics are
+  // far apart, then gives the same vowel shape as a low one instead of a comb that the mel
+  // bands would sample at random; holding the maximum between harmonics instead would leave
+  // a staircase whose steps move with the pitch.
   const fft = createFFT(MFCC_WIN);
   const re = new Float32Array(MFCC_WIN);
   const im = new Float32Array(MFCC_WIN);
@@ -291,19 +334,19 @@ export function extractFeatures(x, { onProgress, warps = false } = {}) {
     const s0 = padL + k * HOP - halfM;
     for (let i = 0; i < MFCC_WIN; i++) frame[i] = (xp[s0 + i] - PRE_EMPH * xp[s0 + i - 1]) * hann[i];
     powerSpectrum(fft, frame, re, im, pow);
-    for (let b = 0; b < nBins; b++) {
-      let mx = 0;
-      for (let q = Math.max(0, b - ENVELOPE_BINS); q <= Math.min(nBins - 1, b + ENVELOPE_BINS); q++) if (pow[q] > mx) mx = pow[q];
-      env[b] = mx;
-    }
+    spectralEnvelope(pow, env, nBins);
     for (let a = 0; a < alphas.length; a++) {
       const filters = banks[a];
+      let top = -Infinity;
       for (let m = 0; m < N_MEL; m++) {
         const f = filters[m];
         let e = 0;
         for (let b = 0; b < f.w.length; b++) e += env[f.b0 + b] * f.w[b];
         logE[m] = Math.log(e + 1e-10);
+        if (logE[m] > top) top = logE[m];
       }
+      const floorLog = top - MEL_DYNAMIC_RANGE_LN;
+      for (let m = 0; m < N_MEL; m++) if (logE[m] < floorLog) logE[m] = floorLog;
       const row = (a * n + k) * N_MFCC;
       for (let c = 0; c < N_MFCC; c++) {
         let v = 0;

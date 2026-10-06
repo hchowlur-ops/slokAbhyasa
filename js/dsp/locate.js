@@ -5,8 +5,10 @@
 import { N_MFCC, HOP_SEC } from './features.js';
 import { percentile, fillGaps, dropShort } from './util.js';
 
-// A self-consistent feature object for frames i0..i1 (inclusive) of F.
-export function sliceFeatures(F, i0, i1) {
+// A self-consistent feature object for frames i0..i1 (inclusive) of F. `core` (frame indices
+// into F, inside i0..i1) is the part the window was cut for: its peak is measured there, so
+// padding that reaches into a louder neighbour does not set the yardstick for a quiet sloka.
+export function sliceFeatures(F, i0, i1, core = null) {
   i0 = Math.max(0, Math.min(F.n - 1, Math.floor(i0)));
   i1 = Math.max(i0, Math.min(F.n - 1, Math.floor(i1)));
   const n = i1 - i0 + 1;
@@ -30,7 +32,9 @@ export function sliceFeatures(F, i0, i1) {
   }
   if (nAct) for (let c = 0; c < N_MFCC; c++) mfccMean[c] /= nAct;
   // loudness stays "relative to this recording's peak", where the recording is now the window
-  const peak = percentile(Array.from(rmsDb), 0.98);
+  const c0 = core ? Math.max(0, Math.floor(core[0]) - i0) : 0;
+  const c1 = core ? Math.min(n - 1, Math.floor(core[1]) - i0) : n - 1;
+  const peak = percentile(Array.from(c1 > c0 ? rmsDb.subarray(c0, c1 + 1) : rmsDb), 0.98);
   const loud = new Float32Array(n);
   for (let k = 0; k < n; k++) loud[k] = rmsDb[k] - peak;
   const pad = Math.max(1, Math.round(0.1 / HOP_SEC));

@@ -9,6 +9,12 @@ const f = msToFrames;
 const tStart = (i) => i * HOP_SEC;
 const tEnd = (i) => (i + 1) * HOP_SEC;
 
+// The least content distance (in pooled-std units) that can count as "sounds different".
+// Measured on real recordings: the same performance in two trims, the same sloka located in
+// a longer take, and the same recording resampled to a child-like or deeper voice all stay
+// below 1.0; a skipped phrase scores about 1.5, a different sloka 1.3 and up throughout.
+export const CONTENT_FLOOR = 1.1;
+
 // A pitch difference that is an octave give or take a little is almost always the pitch
 // tracker landing on the other octave of the same note (a child's or a deep voice does that
 // often), not a note sung an octave off: when the key is being ignored, fold it back.
@@ -215,6 +221,10 @@ export function detectDeviations(ctx) {
     else if (kind === 'slow') { label = `Slowed down (${ratio.toFixed(1)}× longer)`; detail = 'You lingered here longer than the sloka does.'; }
     else if (ratio < 0.4) { label = 'Skipped or rushed through'; detail = `This part took only ${Math.round(ratio * 100)}% of the sloka's time.`; }
     else { label = `Rushed (${(1 / ratio).toFixed(1)}× faster)`; detail = 'You moved through this part faster than the sloka does.'; }
+    // Merely slower or faster is a matter of pace, which only counts when speed is judged;
+    // a pause, a skip and an addition are not.
+    const paceOnly = (kind === 'slow' && pauseSec < 0.3 && ratio <= 2.5) || (kind === 'fast' && ratio >= 0.4);
+    if (paceOnly && !opts.judgeSpeed) continue;
     push({
       type: 'timing',
       bStart: b0,
@@ -316,7 +326,7 @@ export function detectDeviations(ctx) {
   }
   const med = vals.length ? medianOf(vals) : NaN;
   const mad = vals.length ? madOf(vals, med) : NaN;
-  const thr = vals.length ? Math.max(med + 2.0 * mad, 1.3) : Infinity;
+  const thr = vals.length ? Math.max(med + 2.0 * mad, CONTENT_FLOOR) : Infinity;
   for (const run of findRuns(n, (i) => eligible[i] && dm[i] > thr, { minLen: f(160), maxGap: 2 })) {
     let sum = 0;
     let cnt = 0;

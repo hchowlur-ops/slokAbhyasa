@@ -20,7 +20,11 @@ export const MODES = {
   pitch: { pitch: 1, timing: 0, content: 0 },
 };
 
-export const DEFAULT_OPTIONS = { ignoreKey: true, penalizeTempo: false, flagDynamics: false, mode: 'chant' };
+// judgeSpeed: whether the speed of recitation counts. Off, a sloka may be recited at any
+// pace, uniform or not; pauses, skipped and added material still count. On, stretches
+// rushed or dragged against the learner's own overall tempo count in the timing score, and
+// the overall tempo itself is penalised. (penalizeTempo is the old name of the option.)
+export const DEFAULT_OPTIONS = { ignoreKey: true, judgeSpeed: false, flagDynamics: false, mode: 'chant' };
 
 // Length ratio beyond which the shorter recording is searched for inside the longer one.
 export const LOCATE_RATIO = 1.5;
@@ -68,7 +72,7 @@ export function compareAuto(B, H, options = {}) {
     if (loc) {
       const i0 = Math.max(0, loc.start - LOCATE_PAD);
       const i1 = Math.min(L.n - 1, loc.end + LOCATE_PAD);
-      const Lc = sliceFeatures(L, i0, i1);
+      const Lc = sliceFeatures(L, i0, i1, [loc.start, loc.end]);
       const [Bw, Hw] = heardIsLong ? harmonise(B, Lc) : harmonise(Lc, H);
       res = compare(Bw, Hw, options);
       if (heardIsLong) shiftHeard(res, i0, H); else shiftBase(res, i0, B);
@@ -121,6 +125,7 @@ function shiftBase(res, i0, B) {
 
 export function compare(B, H, options = {}) {
   const opts = { ...DEFAULT_OPTIONS, ...options };
+  if (options.judgeSpeed === undefined && options.penalizeTempo !== undefined) opts.judgeSpeed = !!options.penalizeTempo;
   if (!isValidFeatures(B)) throw new Error('The sloka analysis is missing or outdated. Re-save the sloka.');
   if (!isValidFeatures(H)) throw new Error('The recording could not be analysed.');
   if (H.activeFrac < 0.05 || H.peakDb < -40) throw new Error('No audio was detected in your recording. Check the microphone and try again.');
@@ -353,7 +358,7 @@ function computeScores(ctx, dev) {
   activeBase = Math.max(1, activeBase);
   const ps = dev.pitchStats;
   const pitch = ps.usable >= 10 ? clamp(100 * ps.creditMean, 0, 100) : null;
-  const tempoFactor = opts.penalizeTempo ? Math.exp(-Math.pow(Math.log(tempoRatio) / 0.7, 2)) : 1;
+  const tempoFactor = opts.judgeSpeed ? Math.exp(-Math.pow(Math.log(tempoRatio) / 0.7, 2)) : 1;
   const timing = clamp(100 * (1 - covT / activeBase) * tempoFactor, 0, 100);
   const content = clamp(100 * (1 - covC / activeBase), 0, 100);
   const dynamics = opts.flagDynamics ? clamp(100 * (1 - covD / activeBase), 0, 100) : null; // only measured when asked for
@@ -394,11 +399,14 @@ function buildNotes(ctx, dev, key, offsetApplied) {
   }
   const pct = Math.round((tempoRatio - 1) * 100);
   if (Math.abs(pct) >= 5) {
-    notes.push(`Overall you took ${Math.abs(pct)}% ${pct > 0 ? 'longer' : 'less time'} than the sloka${opts.penalizeTempo ? '' : ' (not penalised)'}.`);
+    notes.push(`Overall you took ${Math.abs(pct)}% ${pct > 0 ? 'longer' : 'less time'} than the sloka${opts.judgeSpeed ? '' : ' (speed is not judged)'}.`);
   }
   const warp = ctx.H.voiceWarp ?? 1;
   if (Math.abs(Math.log(warp)) > 0.03) {
-    notes.push(`Your voice is ${warp > 1 ? 'lighter' : 'deeper'} in character than the sloka's (${Math.round(Math.abs(warp - 1) * 100)}%); the comparison allowed for that.`);
+    // A high voice has its harmonics far apart, which blurs its vowels: when the two voices
+    // are far apart, a slightly wrong syllable is harder to tell from the voice itself.
+    const blurred = !Number.isNaN(dev.contentFloor) && dev.contentFloor > 0.6;
+    notes.push(`Your voice is ${warp > 1 ? 'lighter' : 'deeper'} in character than the sloka's (${Math.round(Math.abs(warp - 1) * 100)}%); the comparison allowed for that${blurred ? ', though small slips in the words are harder to spot across voices this far apart' : ''}.`);
   }
   if (!Number.isNaN(dev.contentFloor) && dev.contentFloor > 1.3) {
     notes.push('Your recording sounds quite different from the sloka overall (voice, microphone or room), so content deviations may be less precise.');
