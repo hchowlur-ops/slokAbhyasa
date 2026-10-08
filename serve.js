@@ -18,14 +18,16 @@ import { fileURLToPath } from 'node:url';
 import { trimSilence } from './js/dsp/trim.js';
 import { decodeWav, encodeWavBytes } from './js/wav.js';
 import { cleanFolder, parseBaselineFilename, nameFromSlug, parseWavHeader, RESERVED_FOLDERS } from './js/libutil.js';
-import { normalizeCategories, correctness } from './js/quizscore.js';
+import { normalizeCategories, normalizeTolerance, correctness } from './js/quizscore.js';
 import { resolveDataDir } from './datadir.js';
+import { readMeta, writeMeta, removeMeta, moveMeta, ensureMeta, sanitizeMeta, audioInfo, withBext, bextDescription, readProfiles, writeProfiles, sanitizeProfile } from './meta-store.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const DATA = resolveDataDir(ROOT);
 const LIB = path.join(DATA, 'library');
 const INDEX = path.join(LIB, 'index.json');
 const QUIZZES = path.join(DATA, 'quizzes');
+const PROFILES = path.join(DATA, 'profiles.json');
 const HOST = '127.0.0.1';
 const PORT = Number(process.env.PORT) || 8787;
 const MAX_UPLOAD = 512 * 1024 * 1024; // 512 MB
@@ -152,6 +154,10 @@ async function syncIndex() {
     }
   });
   for (const c of changes) console.log(`library: ${c}`);
+  // every sloka gets its metadata sidecar (slokas from before metadata existed, drop-ins)
+  for (const r of await readIndex()) {
+    try { await ensureMeta(r, audioPath(r)); } catch (err) { console.log(`library: no metadata for "${r.name}": ${err.message}`); }
+  }
   return changes.length;
 }
 
@@ -165,6 +171,7 @@ async function moveRecord(r, folder) {
   for (const fn of [audioPath, featuresPath, transcriptPath, textPath]) {
     if (await fileExists(fn(oldRec))) await fsp.rename(fn(oldRec), fn(newRec));
   }
+  await moveMeta(audioPath(oldRec), audioPath(newRec));
   r.file = newFile;
   return r;
 }
@@ -250,9 +257,32 @@ async function writeTranscript(rec, tr) {
   await fsp.writeFile(transcriptPath(rec), JSON.stringify(tr));
 }
 
-function publicRecord(rec) {
+function publicRecord(rec, meta = undefined) {
   const { id, name, file, createdAt, duration, sampleRate, source } = rec;
-  return { id, name, file, folder: folderOf(file), createdAt, duration, sampleRate, source };
+  const out = { id, name, file, folder: folderOf(file), createdAt, duration, sampleRate, source };
+  if (meta !== undefined) out.meta = meta;
+  return out;
+}
+
+// The record with its sidecar (created if missing).
+async function withMeta(rec) {
+  let meta = null;
+  try { meta = await ensureMeta(rec, audioPath(rec)); } catch { meta = null; }
+  return publicRecord(rec, meta);
+}
+
+// Keeps the sidecar's name and the WAV's bext chunk in line with a renamed record.
+async function renameMeta(rec, name) {
+  const meta = await readMeta(audioPath(rec));
+  if (!meta || meta.name === name) return;
+  meta.name = name;
+  await writeMeta(audioPath(rec), meta);
+}
+
+// Writes the WAV with a fresh bext chunk describing `meta`; the PCM identity is unchanged.
+async function writeWavWithBext(rec, bytes, meta) {
+  const out = withBext(bytes, { description: bextDescription(meta), originatorRef: rec.id, date: meta.createdAt || new Date(), sampleRate: (meta.audio && meta.audio.sampleRate) || rec.sampleRate || 48000 });
+  await fsp.writeFile(audioPath(rec), out);
 }
 
 // ---------- quizzes ----------
@@ -281,8 +311,8 @@ async function listQuizzes() {
 function quizSummary(q) {
   const attempts = Array.isArray(q.attempts) ? q.attempts : [];
   const last = attempts[attempts.length - 1] || null;
-  // correctness on the quiz's current categories and the fixed quiz tolerance, for every attempt
-  const scoreOf = (a) => (Array.isArray(a.items) && a.items.length ? correctness(a.items, q.categories).pct : a.score == null ? null : a.score);
+  // correctness on the quiz's current categories and the tolerance the attempt was judged with
+  const scoreOf = (a) => (Array.isArray(a.items) && a.items.length ? correctness(a.items, q.categories, a.tolerance ? normalizeTolerance(a.tolerance) : undefined).pct : a.score == null ? null : a.score);
   return {
     id: q.id, name: q.name, createdAt: q.createdAt, folders: q.folders, mode: q.mode, maxFiles: q.maxFiles,
     items: q.items, categories: q.categories, attempts: attempts.length,
@@ -340,6 +370,11 @@ async function handleQuizzes(req, res, parts) {
       recited: Number(a.recited) || 0,
       items: Array.isArray(a.items) ? a.items : [],
     };
+    // the tolerance and the learner it was judged with (a child's allowances differ)
+    if (a.tolerance && typeof a.tolerance === 'object') attempt.tolerance = normalizeTolerance(a.tolerance);
+    if (a.learner && typeof a.learner === 'object') {
+      attempt.learner = { profileId: typeof a.learner.profileId === 'string' ? a.learner.profileId.slice(0, 40) : null, voiceType: String(a.learner.voiceType || 'preferNotToSay').slice(0, 20), ageGroup: String(a.learner.ageGroup || 'unspecified').slice(0, 20) };
+    }
     q.attempts = Array.isArray(q.attempts) ? q.attempts : [];
     q.attempts.push(attempt);
     await writeQuiz(q);
@@ -428,22 +463,79 @@ async function fileExists(p) {
 
 // ---------- API ----------
 
+// ---------- speaker profiles ----------
+// GET /api/profiles · POST /api/profiles {name, voiceType, ageGroup, roles}
+// PATCH /api/profiles/:id · DELETE /api/profiles/:id
+
+let profilesLock = Promise.resolve();
+function withProfiles(fn) {
+  const run = profilesLock.then(async () => {
+    const list = await readProfiles(PROFILES);
+    const before = JSON.stringify(list);
+    const out = await fn(list);
+    if (JSON.stringify(list) !== before) await writeProfiles(PROFILES, list);
+    return out;
+  });
+  profilesLock = run.catch(() => {});
+  return run;
+}
+
+async function handleProfiles(req, res, parts) {
+  const id = parts[2];
+  const json = async () => { try { return JSON.parse((await readBody(req, 1e5)).toString('utf8')); } catch { return null; } };
+  if (!id && req.method === 'GET') return sendJson(res, 200, await readProfiles(PROFILES));
+  if (!id && req.method === 'POST') {
+    const body = await json();
+    if (!body) return sendJson(res, 400, { error: 'Invalid JSON' });
+    const { profile, error } = sanitizeProfile(body);
+    if (error) return sendJson(res, 400, { error });
+    await withProfiles((list) => { list.push(profile); });
+    return sendJson(res, 201, profile);
+  }
+  if (!id) return sendJson(res, 405, { error: 'Method not allowed' });
+  if (req.method === 'PATCH') {
+    const body = await json();
+    if (!body) return sendJson(res, 400, { error: 'Invalid JSON' });
+    const updated = await withProfiles((list) => {
+      const i = list.findIndex((p) => p.id === id);
+      if (i < 0) return null;
+      const { profile, error } = sanitizeProfile(body, list[i]);
+      if (error) return { error };
+      list[i] = profile;
+      return profile;
+    });
+    if (!updated) return sendJson(res, 404, { error: 'No such profile' });
+    if (updated.error) return sendJson(res, 400, { error: updated.error });
+    return sendJson(res, 200, updated);
+  }
+  if (req.method === 'DELETE') {
+    await withProfiles((list) => { const i = list.findIndex((p) => p.id === id); if (i >= 0) list.splice(i, 1); });
+    return sendJson(res, 200, { ok: true });
+  }
+  return sendJson(res, 405, { error: 'Method not allowed' });
+}
+
 async function handleApi(req, res, url) {
   const parts = url.pathname.split('/').filter(Boolean); // ['api','baselines',id?,sub?]
   if (parts[1] === 'quizzes') return handleQuizzes(req, res, parts);
   if (parts[1] === 'folders') return handleFolders(req, res);
+  if (parts[1] === 'profiles') return handleProfiles(req, res, parts);
   if (parts[1] !== 'baselines') return sendJson(res, 404, { error: 'Not found' });
   const id = parts[2];
   const sub = parts[3];
 
-  // GET /api/baselines  (also picks up files moved or added with Explorer)
+  // GET /api/baselines  (also picks up files moved or added with Explorer); each record
+  // carries its metadata sidecar as `meta`
   if (!id && req.method === 'GET') {
     await syncIndex();
     const list = await readIndex();
-    return sendJson(res, 200, list.map(publicRecord));
+    const out = [];
+    for (const r of list) out.push(await withMeta(r));
+    return sendJson(res, 200, out);
   }
 
   // POST /api/baselines?name=&duration=&sampleRate=&source=   (body: WAV bytes)
+  // The sidecar starts with what the file says; the app fills in the rest with PUT …/meta.
   if (!id && req.method === 'POST') {
     const body = await readBody(req);
     if (!isWav(body)) return sendJson(res, 400, { error: 'Body must be a RIFF/WAVE file' });
@@ -462,9 +554,11 @@ async function handleApi(req, res, url) {
     };
     rec.file = `${folder ? folder + '/' : ''}${slug(name)}-${rec.id}.wav`;
     await fsp.mkdir(path.join(LIB, folder), { recursive: true });
-    await fsp.writeFile(audioPath(rec), body);
+    const meta = sanitizeMeta({ name, source: rec.source }, { id: rec.id, createdAt: rec.createdAt, audio: audioInfo(body) });
+    await writeWavWithBext(rec, body, meta);
+    await writeMeta(audioPath(rec), meta);
     await withIndex((list) => { list.push(rec); });
-    return sendJson(res, 201, publicRecord(rec));
+    return sendJson(res, 201, publicRecord(rec, meta));
   }
 
   if (!id) return sendJson(res, 405, { error: 'Method not allowed' });
@@ -536,8 +630,16 @@ async function handleApi(req, res, url) {
       const backupDir = path.join(LIB, 'backup');
       await fsp.mkdir(backupDir, { recursive: true });
       const backup = path.join(backupDir, rec.file);
-      if (!(await fileExists(backup))) await fsp.copyFile(audioPath(rec), backup);
-      await fsp.writeFile(audioPath(rec), encodeWavBytes(t.samples, sampleRate));
+      if (!(await fileExists(backup))) { await fsp.mkdir(path.dirname(backup), { recursive: true }); await fsp.copyFile(audioPath(rec), backup); }
+      const trimmed = encodeWavBytes(t.samples, sampleRate);
+      // the sidecar records the edit and follows the new audio
+      const meta = (await readMeta(audioPath(rec))) || sanitizeMeta({ name: rec.name, source: rec.source }, { id: rec.id, createdAt: rec.createdAt });
+      meta.edit = { trimStartSec: Number((((meta.edit && meta.edit.trimStartSec) || 0) + t.removedStart).toFixed(3)), trimEndSec: Number((((meta.edit && meta.edit.trimEndSec) || 0) + t.removedEnd).toFixed(3)) };
+      meta.audio = audioInfo(Buffer.from(trimmed.buffer, trimmed.byteOffset, trimmed.byteLength));
+      if (meta.measured) meta.measured.durationSec = Number(duration.toFixed(2));
+      if (meta.voice) { meta.voice.leadSilenceSec = Math.max(0, Number((((meta.voice.leadSilenceSec || 0) - t.removedStart)).toFixed(2))); meta.voice.trailSilenceSec = Math.max(0, Number((((meta.voice.trailSilenceSec || 0) - t.removedEnd)).toFixed(2))); }
+      await writeWavWithBext(rec, trimmed, meta);
+      await writeMeta(audioPath(rec), meta);
       await fsp.rm(featuresPath(rec), { force: true });
       // A stored transcript keeps its words; only its timestamps shift.
       try {
@@ -575,6 +677,29 @@ async function handleApi(req, res, url) {
     return sendJson(res, 405, { error: 'Method not allowed' });
   }
 
+  // GET / PUT / PATCH /api/baselines/:id/meta  — the metadata sidecar. PUT replaces what
+  // the app may set (speaker, style, text, voice, measured, capture, consent, notes);
+  // PATCH changes only the keys given. id, audio and software stay the server's.
+  if (sub === 'meta') {
+    const current = await ensureMeta(rec, audioPath(rec));
+    if (req.method === 'GET') return sendJson(res, 200, current);
+    if (req.method === 'PUT' || req.method === 'PATCH') {
+      let body;
+      try { body = JSON.parse((await readBody(req, 2e6)).toString('utf8')); } catch { return sendJson(res, 400, { error: 'Metadata must be JSON' }); }
+      if (!body || typeof body !== 'object') return sendJson(res, 400, { error: 'Metadata must be an object' });
+      const input = req.method === 'PATCH' ? body : { text: null, voice: null, measured: null, capture: null, ...body };
+      const meta = sanitizeMeta(input, current);
+      meta.name = rec.name; // the name is the library's
+      await writeMeta(audioPath(rec), meta);
+      // the bext chunk describes the sloka; refresh it when what it says has changed
+      if (bextDescription(meta) !== bextDescription(current)) {
+        try { await writeWavWithBext(rec, await fsp.readFile(audioPath(rec)), meta); } catch { /* audio missing */ }
+      }
+      return sendJson(res, 200, meta);
+    }
+    return sendJson(res, 405, { error: 'Method not allowed' });
+  }
+
   // POST /api/baselines/:id/move  {folder}
   if (sub === 'move' && req.method === 'POST') {
     let body;
@@ -590,7 +715,7 @@ async function handleApi(req, res, url) {
   if (sub) return sendJson(res, 404, { error: 'Not found' });
 
   // GET /api/baselines/:id
-  if (req.method === 'GET') return sendJson(res, 200, publicRecord(rec));
+  if (req.method === 'GET') return sendJson(res, 200, await withMeta(rec));
 
   // PATCH /api/baselines/:id  {name}
   if (req.method === 'PATCH') {
@@ -610,13 +735,15 @@ async function handleApi(req, res, url) {
         if (await fileExists(featuresPath(oldRec))) await fsp.rename(featuresPath(oldRec), featuresPath(newRec));
         if (await fileExists(transcriptPath(oldRec))) await fsp.rename(transcriptPath(oldRec), transcriptPath(newRec));
         if (await fileExists(textPath(oldRec))) await fsp.rename(textPath(oldRec), textPath(newRec));
+        await moveMeta(audioPath(oldRec), audioPath(newRec));
         r.file = newFile;
       }
       r.name = name;
+      await renameMeta(r, name);
       return r;
     });
     if (!updated) return sendJson(res, 404, { error: 'No such sloka' });
-    return sendJson(res, 200, publicRecord(updated));
+    return sendJson(res, 200, await withMeta(updated));
   }
 
   // DELETE /api/baselines/:id
@@ -629,6 +756,7 @@ async function handleApi(req, res, url) {
         await fsp.rm(featuresPath(r), { force: true });
         await fsp.rm(transcriptPath(r), { force: true });
         await fsp.rm(textPath(r), { force: true });
+        await removeMeta(audioPath(r));
         l.splice(idx, 1);
       }
     });

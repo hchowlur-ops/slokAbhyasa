@@ -90,13 +90,15 @@ export function itemScores(result, { wordSimilarity = null, sttAvailable = false
     return { matched: false, missing: false, content: 0, pronunciation: sttAvailable ? 0 : null, timing: 0, pitch: 0, dynamics: 0 };
   }
   const s = result.scores;
+  // recited text (weight 0): pitch is a matter of style, shown but never judged
+  const pitchJudged = s.pitch != null && !(s.weights && s.weights.pitch === 0);
   return {
     matched: true,
     missing: false,
     content: r(s.content),
     pronunciation: wordSimilarity == null ? null : r(100 * wordSimilarity),
     timing: r(s.timing),
-    pitch: s.pitch == null ? null : r(s.pitch),
+    pitch: pitchJudged ? r(s.pitch) : null,
     dynamics: s.dynamics == null ? null : r(s.dynamics),
   };
 }

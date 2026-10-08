@@ -29,9 +29,11 @@ export const PRE_EMPH = 0.97;
 export const YIN_THRESHOLD = 0.15;
 export const VOICED_ON = 0.25;
 export const VOICED_OFF = 0.40;
-// Vocal-tract-length warps a take is analysed at (1 = as recorded). A child's formants sit
-// up to about 1.3× an adult man's; a deep voice against a light one needs the other way.
-export const WARP_ALPHAS = [0.74, 0.8, 0.86, 0.93, 1, 1.08, 1.16, 1.25, 1.35];
+// Vocal-tract-length warps a take is analysed at (1 = as recorded). A five-year-old's
+// formants sit up to 1.5× an adult man's (warp 0.67); a deep voice against a light one
+// needs the other way. Which of these a comparison may choose from depends on the pairing
+// of voices (see presetsFor in meta.js).
+export const WARP_ALPHAS = [0.67, 0.74, 0.8, 0.86, 0.93, 1, 1.08, 1.16, 1.25, 1.35, 1.5];
 export const WARP_UNITY = WARP_ALPHAS.indexOf(1);
 // Spectral-envelope smoothing: the running maximum of the power spectrum over this many FFT
 // bins (31.25 Hz each) either side. The same width for every frame of every recording, so

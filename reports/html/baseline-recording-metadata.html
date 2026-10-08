@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Type the text, measure the voice, derive the rest · Baseline recording metadata</title>
+<style>
+:root {
+  --bg: #fbfaf7; --surface: #ffffff; --text: #1f2328; --muted: #5b6168; --accent: #0f766e;
+  --border: #e4e1da; --row: #f4f2ec; --link: #0b5f59; --mark: #fff3bf;
+  --body-size: 19px; --measure: 74ch;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15171a; --surface: #1d2024; --text: #e6e3dc; --muted: #a2a8b0; --accent: #5fd3c6;
+    --border: #2e3237; --row: #22262b; --link: #7ee0d4; --mark: #4a4300;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #15171a; --surface: #1d2024; --text: #e6e3dc; --muted: #a2a8b0; --accent: #5fd3c6;
+  --border: #2e3237; --row: #22262b; --link: #7ee0d4; --mark: #4a4300;
+}
+* { box-sizing: border-box; }
+html { font-size: var(--body-size); }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font-family: Georgia, "Noto Serif", "Nirmala UI", "Tunga", serif;
+  line-height: 1.6; -webkit-font-smoothing: antialiased;
+}
+.page { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; }
+@media (min-width: 1180px) { .page { grid-template-columns: 300px minmax(0, 1fr); } }
+nav.toc {
+  position: sticky; top: 0; align-self: start; max-height: 100vh; overflow-y: auto;
+  padding: 28px 22px 40px 28px; font-family: system-ui, "Segoe UI", sans-serif; font-size: 0.78rem;
+  border-right: 1px solid var(--border); background: var(--surface);
+}
+@media (max-width: 1179px) { nav.toc { position: static; max-height: none; border-right: 0; border-bottom: 1px solid var(--border); } }
+nav.toc .home { display: inline-block; margin-bottom: 18px; color: var(--muted); text-decoration: none; }
+nav.toc .home:hover { color: var(--accent); }
+nav.toc .toc-title { font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; font-size: 0.7rem; margin-bottom: 10px; }
+nav.toc ul { list-style: none; margin: 0; padding: 0; }
+nav.toc ul ul { padding-left: 14px; margin: 2px 0 6px; }
+nav.toc li { margin: 4px 0; }
+nav.toc a { color: var(--text); text-decoration: none; display: block; padding: 3px 8px; border-radius: 6px; line-height: 1.35; }
+nav.toc a:hover { background: var(--row); color: var(--accent); }
+nav.toc a.active { background: var(--row); color: var(--accent); font-weight: 600; }
+main { padding: 36px 24px 90px; }
+article { max-width: var(--measure); margin: 0 auto; }
+h1, h2, h3, h4 { font-family: system-ui, "Segoe UI", "Nirmala UI", sans-serif; line-height: 1.2; letter-spacing: -0.01em; scroll-margin-top: 20px; }
+h1 { font-size: 2.1rem; margin: 0 0 .4em; }
+h2 { font-size: 1.45rem; margin: 2.2em 0 .6em; padding-top: 1.2em; border-top: 1px solid var(--border); }
+h3 { font-size: 1.12rem; margin: 1.8em 0 .5em; }
+h4 { font-size: 1rem; margin: 1.4em 0 .4em; color: var(--muted); }
+p { margin: 0 0 1.05em; }
+a { color: var(--link); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+article > p:first-of-type { font-size: 1.05rem; }
+strong { color: var(--text); }
+blockquote { margin: 1.2em 0; padding: .2em 1.2em; border-left: 4px solid var(--accent); color: var(--muted); }
+code { font-family: ui-monospace, Consolas, monospace; font-size: 0.85em; background: var(--row); padding: .1em .35em; border-radius: 4px; }
+pre { background: var(--row); padding: 14px 16px; border-radius: 10px; overflow-x: auto; font-size: 0.8rem; line-height: 1.5; }
+pre code { background: none; padding: 0; font-size: inherit; }
+ul, ol { padding-left: 1.4em; }
+li { margin: .3em 0; }
+hr { border: 0; border-top: 1px solid var(--border); margin: 2em 0; }
+.table-wrap { overflow-x: auto; margin: 1.4em 0; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-family: system-ui, "Segoe UI", "Nirmala UI", sans-serif; font-size: 0.82rem; line-height: 1.4; }
+th, td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--border); }
+th { background: var(--row); font-weight: 600; position: sticky; top: 0; }
+tbody tr:nth-child(even) { background: color-mix(in srgb, var(--row) 55%, transparent); }
+.meta { color: var(--muted); font-family: system-ui, "Segoe UI", sans-serif; font-size: 0.8rem; margin: 0 0 2.2em; }
+.controls { position: fixed; right: 16px; bottom: 16px; display: flex; gap: 6px; font-family: system-ui, sans-serif; }
+.controls button { border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 999px; width: 40px; height: 40px; font-size: 1rem; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+.controls button:hover { color: var(--accent); }
+.index-list { list-style: none; padding: 0; }
+.index-list li { margin: 0 0 18px; }
+.index-list a { font-family: system-ui, "Segoe UI", sans-serif; font-size: 1.1rem; font-weight: 600; text-decoration: none; }
+.index-list .lede { color: var(--muted); margin: .25em 0 0; }
+@media print {
+  nav.toc, .controls { display: none; }
+  .page { display: block; }
+  body { background: #fff; color: #000; font-size: 11pt; }
+  article { max-width: none; }
+  a { color: inherit; text-decoration: none; }
+  a[href^="http"]::after { content: ""; }
+  .table-wrap { border: 0; overflow: visible; }
+  h2 { break-after: avoid; }
+  tr, blockquote, pre { break-inside: avoid; }
+}
+</style>
+</head>
+<body>
+<div class="page">
+<nav class="toc" aria-label="Contents">
+<a class="home" href="index.html">← All reports</a>
+<div class="toc-title">Contents</div>
+<div class="toc">
+<ul>
+<li><a href="#a-shared-text-record-and-a-per-wav-sidecar-carry-different-truths">A shared text record and a per-WAV sidecar carry different truths</a></li>
+<li><a href="#material-type-changes-the-text-record-far-more-than-the-baseline">Material type changes the text record far more than the baseline</a><ul>
+<li><a href="#recitation-metre-weights-pauses-and-variants-are-derived-not-typed">Recitation: metre, weights, pauses and variants are derived, not typed</a></li>
+<li><a href="#poems-and-prose-lines-punctuation-and-stanzas-are-the-whole-prosodic-contract">Poems and prose: lines, punctuation and stanzas are the whole prosodic contract</a></li>
+<li><a href="#singing-tonic-first-then-tala-and-sections-notation-last">Singing: tonic first, then tāla and sections, notation last</a></li>
+</ul>
+</li>
+<li><a href="#sidecar-json-is-the-truth-the-wav-carries-only-its-key">Sidecar JSON is the truth; the WAV carries only its key</a></li>
+<li><a href="#ask-six-things-at-record-time-measure-the-rest-confirm-after-the-first-take">Ask six things at record time, measure the rest, confirm after the first take</a></li>
+<li><a href="#the-evidence-is-thinnest-exactly-where-the-apps-users-live">The evidence is thinnest exactly where the app&rsquo;s users live</a></li>
+<li><a href="#conclusion">Conclusion</a></li>
+</ul>
+</div>
+
+</nav>
+<main>
+<article>
+<p class="meta">Baseline recording metadata · research report · SlokAbhyasa</p>
+<h1 id="type-the-text-measure-the-voice-derive-the-rest">Type the text, measure the voice, derive the rest</h1>
+<p>A baseline should be described by two records, not one: a <strong>text item record</strong> shared by every recording of the same sloka, poem or song, holding everything that can be derived from the words (script, pāda split, akṣara weights, metre, licensed pause positions, accepted pronunciation variants, Vedic tone marks, or for a song the rāga, tāla, section plan, notation and lyrics), and a <strong>per-WAV sidecar JSON</strong> holding what is true of that one performance: who recorded it (an opaque profile id with a voice type and a coarse age bucket, never a name or birth date), what the audio measures (median F0 and its 10th–90th percentiles, active speech level, integrated loudness, true peak, noise floor, SNR, clipping, lead and trail silence, syllables per second), how the browser captured it (sample rate, channels, and whether echo cancellation, noise suppression and automatic gain control were on), the time-aligned tiers the DTW, timing and pronunciation steps consume, and provenance (schema version, feature version plus parameter hash, SHA-256 of the PCM, trim and lineage history, consent). Of roughly forty fields the teacher types about six — the text, its title or citation, the genre and recitation mode, the tradition, their own voice type and age bucket (asked once), and consent — and everything else is measured from the audio at save time or derived from the text by published rules; the split mirrors how Common Voice separates sentence from clip (<a href="https://www.tensorflow.org/datasets/catalog/common_voice">TFDS</a>), how Saraga keeps editorial JSON beside tonic, pitch and sama files (<a href="https://mtg.github.io/saraga/organization.html">Saraga</a>), and how Praat and the Montreal Forced Aligner express text against time as tiers (<a href="https://www.fon.hum.uva.nl/praat/manual/TextGrid_file_formats.html">Praat</a>; <a href="https://montreal-forced-aligner.readthedocs.io/en/latest/user_guide/corpus_structure.html">MFA</a>). The three material types differ almost entirely inside the text record: recitation needs metre, laghu/guru weights, pause licences at the daṇḍas, a Chinmaya-style variant table and a mode flag that tells the pitch step whether pitch is prescribed; a poem needs only line and stanza boundaries with punctuation-licensed pauses; singing adds a per-recording tonic with its method and confidence, a scale or rāga, a tāla definition with sama timestamps and tempo in the tradition&rsquo;s own unit, sections with speed factors, and later notation, ornaments and measured swara centres. Store the sidecar JSON as the source of truth next to the WAV under the same basename, embed only the record&rsquo;s 32-hex id and a pointer in a <code>bext</code> chunk so a stray or renamed WAV can be re-associated, hash the PCM payload and re-check it on every load so that an edit made in Audacity — which drops <code>bext</code> and iXML — is detected and spawns a derived record instead of silently corrupting the old one. Gather the metadata in three moments: folder-level defaults once, a record-time screen that measures rather than asks, and a confirmation pass after the first learner take; treat any child&rsquo;s recording as requiring a named adult&rsquo;s consent and no personal identifiers inside the files, which positions a local-only app for India&rsquo;s DPDP Rules that take effect in May 2027. The honest caveats are that no corpus or published system stores recitation metadata of this kind, that the tempo-class thresholds and tolerance presets proposed here have no empirical basis in Indian recitation, and that the legal reading of a local-only app rests on a statutory exemption no authority has yet interpreted.</p>
+<h2 id="a-shared-text-record-and-a-per-wav-sidecar-carry-different-truths">A shared text record and a per-WAV sidecar carry different truths</h2>
+<p>The app today keeps one small record per WAV (<code>id, name, folder, duration, sampleRate, source, createdAt</code>), a cached analysis and an optional transcript, which is adequate for a single teacher recording a single sloka but breaks down the moment the library holds several baselines of the same verse — a teacher&rsquo;s slow and medium takes, a child-voice version, the learner&rsquo;s own best attempt — because the text, its pāda boundaries and its pronunciation rules are then copied into each record and drift apart when one is corrected. Every recitation dataset examined avoids this by making the text a first-class item: Common Voice gives each sentence its own <code>sentence_id</code> and <code>sentence_domain</code> separate from the clip, and validates clips against sentences by crowd votes (<a href="https://mozilladatacollective.com/datasets/cmu5xcvp800eao107zfex7alc">Mozilla Data Collective</a>); Ar-DAD allocates <strong>one folder per Quranic verse containing 30 clips from 30 reciters</strong> covering identical text (<a href="https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7689366/">Ar-DAD</a>); Lee and Glass had every script read by four native teachers and 21 students and averaged scores over teacher–student pairs (<a href="https://people.csail.mit.edu/jrg/2013/lee-slate13.pdf">Lee &amp; Glass 2013</a>). The app&rsquo;s folder-per-chapter with several baselines per sloka is already this shape; the metadata should follow it with a <code>textId</code> link, a <code>text.version</code> pinned on each baseline so a later correction to the text (a fixed pause position, a transliteration typo) does not retroactively change what old reports were computed against, and a <code>changeLog</code> on the text record modelled on the revision table the Chinmaya chanting guide keeps inside its own document (<a href="http://chinmayamadhuvan.org/chinmayamadhuvan/wp-content/uploads/2024/11/GitaChantingGuide_Generic_Ver6.pdf">Chinmaya guide v6</a>).</p>
+<p>The second principle is that text is optional for the content step and mandatory for the pronunciation and timing-weight steps, so the schema must degrade gracefully. Lee and Glass scored learners against teachers with <strong>no phonetic transcription at all</strong>, aligning MFCC and posteriorgram frames by DTW and segmenting the reference with an unsupervised phoneme-like segmenter (<a href="https://people.csail.mit.edu/jrg/2013/lee-slate13.pdf">Lee &amp; Glass 2013</a>), which is exactly what the app&rsquo;s content category does; the text becomes necessary only to say <em>which</em> akṣara was wrong, to compute expected relative syllable durations, and to know where a pause is licensed. The table below gives the common core — fields every baseline carries regardless of material type — and for each states its type and unit, how it is obtained, whether it is required, and which evaluation step reads it. Field names are proposals; units are encoded in the names because JSON Schema has no units keyword (<a href="https://json-schema.org/specification">JSON Schema</a>).</p>
+<table>
+<thead>
+<tr>
+<th>Block / field</th>
+<th>Type, unit</th>
+<th>How obtained</th>
+<th>Required</th>
+<th>Consumed by</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Identity</strong> <code>id</code></td>
+<td>32-hex UUID v4</td>
+<td>generated</td>
+<td>yes</td>
+<td>primary key for attempts, quizzes, reports; written to <code>bext OriginatorReference</code></td>
+</tr>
+<tr>
+<td><code>schemaVersion</code></td>
+<td>semver string</td>
+<td>generated</td>
+<td>yes</td>
+<td>loader migration</td>
+</tr>
+<tr>
+<td><code>name</code>, <code>folder</code>, <code>source</code> (<code>mic</code>/<code>file</code>)</td>
+<td>string; enum</td>
+<td>existing</td>
+<td>yes</td>
+<td>UI, library</td>
+</tr>
+<tr>
+<td><code>createdAt</code>, <code>modifiedAt</code></td>
+<td>ISO 8601 with offset (<code>+05:30</code>)</td>
+<td>generated</td>
+<td>yes</td>
+<td>sorting; re-baseline reminders for adolescent voices</td>
+</tr>
+<tr>
+<td><code>role</code></td>
+<td>enum <code>teacher</code>, <code>learner_self</code>, <code>guardian</code>, <code>other</code></td>
+<td>typed</td>
+<td>yes</td>
+<td>multi-baseline report labels; reference choice</td>
+</tr>
+<tr>
+<td><code>text.id</code>, <code>text.version</code></td>
+<td>string; integer</td>
+<td>chosen from library</td>
+<td>required for pronunciation and pause/weight checks, otherwise optional</td>
+<td>links the text record; pins the version aligned to</td>
+</tr>
+<tr>
+<td><strong>Speaker</strong> <code>speaker.profileId</code></td>
+<td>opaque UUID</td>
+<td>generated once per local profile</td>
+<td>yes</td>
+<td>grouping; the display name lives in a separate profile file</td>
+</tr>
+<tr>
+<td><code>speaker.voiceType</code></td>
+<td>enum <code>child</code>, <code>female</code>, <code>male</code>, <code>preferNotToSay</code></td>
+<td>typed once per profile; asked only from age 12 up; suggested from measured F0</td>
+<td>optional</td>
+<td>VTLN search range by pairing; pitch-tracker range; octave-fold policy; cross-type warnings</td>
+</tr>
+<tr>
+<td><code>speaker.ageGroup</code></td>
+<td>enum <code>under8</code>, <code>8to11</code>, <code>12to15</code>, <code>16to17</code>, <code>18to39</code>, <code>40to59</code>, <code>60plus</code>, <code>unspecified</code></td>
+<td>typed, self- or guardian-reported</td>
+<td>optional (required to unlock age presets)</td>
+<td>pitch threshold, pronunciation tolerance, speed band, content floor class; <code>isChild</code> derivation; re-baseline reminder</td>
+</tr>
+<tr>
+<td><code>speaker.nativeLanguage</code>, <code>speaker.region</code></td>
+<td>BCP-47; free text</td>
+<td>typed</td>
+<td>optional</td>
+<td>explains variant realisations; default tradition</td>
+</tr>
+<tr>
+<td><code>speaker.trainingLevel</code></td>
+<td>enum <code>beginner</code>, <code>intermediate</code>, <code>advanced</code>, <code>professional</code></td>
+<td>typed</td>
+<td>optional</td>
+<td>tolerance preset (singing)</td>
+</tr>
+<tr>
+<td><strong>Measured voice</strong> <code>voice.medianF0Hz</code>, <code>voice.f0P10Hz</code>, <code>voice.f0P90Hz</code></td>
+<td>float Hz over voiced frames</td>
+<td>measured from cached pitch track</td>
+<td>yes</td>
+<td>key-offset / tonic seed; semitone-relative contours; &ldquo;voice close to yours&rdquo; picker; tracker sanity</td>
+</tr>
+<tr>
+<td><code>voice.trackerRangeHz</code></td>
+<td><code>[low, high]</code> Hz</td>
+<td>derived from <code>voiceType</code>/<code>ageGroup</code>, else ±1 octave around median</td>
+<td>yes (analysis parameter)</td>
+<td>pitch tracker search range</td>
+</tr>
+<tr>
+<td><code>voice.activeSpeechLevelDbov</code></td>
+<td>float dBov (ITU-T P.56)</td>
+<td>measured</td>
+<td>yes</td>
+<td>level normalisation before loudness comparison</td>
+</tr>
+<tr>
+<td><code>voice.integratedLoudnessLufs</code>, <code>voice.loudnessRangeLu</code>, <code>voice.maxTruePeakDbtp</code></td>
+<td>float (EBU R128)</td>
+<td>measured</td>
+<td>recommended</td>
+<td>dynamics; mirrored into <code>bext</code> v2</td>
+</tr>
+<tr>
+<td><code>voice.tempoSylPerSec</code></td>
+<td>float = akṣaras ÷ voiced duration</td>
+<td>measured (needs text)</td>
+<td>required when text present, else <code>null</code></td>
+<td>tempo ratio in timing; tempo class</td>
+</tr>
+<tr>
+<td><code>voice.tempoClass</code></td>
+<td>enum <code>slow_teaching</code>, <code>medium</code>, <code>fast</code></td>
+<td>derived with teacher override</td>
+<td>optional</td>
+<td>baseline choice; Teach speed chips</td>
+</tr>
+<tr>
+<td><code>voice.leadSilenceSec</code>, <code>voice.trailSilenceSec</code></td>
+<td>float s</td>
+<td>measured (VAD)</td>
+<td>yes</td>
+<td>locate/trim</td>
+</tr>
+<tr>
+<td><strong>Capture</strong> <code>capture.sampleRateHz</code>, <code>capture.channelCount</code>, <code>capture.sampleSizeBits</code></td>
+<td>int Hz; int; int or <code>null</code></td>
+<td><code>MediaStreamTrack.getSettings()</code> or file header</td>
+<td>yes (bits optional)</td>
+<td>resample both sides to one analysis rate; warn on mismatch</td>
+</tr>
+<tr>
+<td><code>capture.echoCancellation</code>, <code>capture.noiseSuppression</code>, <code>capture.autoGainControl</code></td>
+<td>boolean or <code>null</code> (unknown)</td>
+<td><code>getSettings()</code></td>
+<td>yes, <code>null</code> allowed</td>
+<td>&ldquo;processed capture&rdquo; flag; AGC disables absolute-level comparison</td>
+</tr>
+<tr>
+<td><code>capture.deviceLabel</code>, <code>capture.userAgent</code></td>
+<td>string</td>
+<td><code>MediaDeviceInfo.label</code>, <code>navigator.userAgent</code></td>
+<td>optional</td>
+<td>grouping, debugging</td>
+</tr>
+<tr>
+<td><code>capture.environment</code></td>
+<td>enum <code>quiet_room</code>, <code>classroom</code>, <code>outdoor</code>, <code>noisy</code></td>
+<td>typed</td>
+<td>optional</td>
+<td>quality context</td>
+</tr>
+<tr>
+<td><strong>Measured quality</strong> <code>measured.durationSec</code>, <code>measured.sampleCount</code></td>
+<td>float s; int</td>
+<td>from <code>fmt</code>/<code>data</code></td>
+<td>yes</td>
+<td>integrity; DTW length checks</td>
+</tr>
+<tr>
+<td><code>measured.peakDbfs</code>, <code>measured.rmsDbfs</code>, <code>measured.noiseFloorDbfs</code>, <code>measured.snrDb</code>, <code>measured.clippedSampleCount</code>, <code>measured.bandwidthHz</code></td>
+<td>float; float; float; float; int; float</td>
+<td>measured</td>
+<td>recommended</td>
+<td>quality gate: re-record on clipping or SNR below 15 dB; narrowband detection</td>
+</tr>
+<tr>
+<td><code>quality.flags[]</code>, <code>quality.approvedBy</code>, <code>quality.approvedAt</code></td>
+<td>enum list <code>clipping</code>, <code>noise</code>, <code>extra_speech</code>, <code>breath</code>, <code>truncated</code>; profile id; ISO 8601</td>
+<td>measured + teacher</td>
+<td>optional</td>
+<td>exclude unapproved baselines from quizzes</td>
+</tr>
+<tr>
+<td><strong>Style</strong> <code>style.mode</code></td>
+<td>enum <code>plain_sloka</code>, <code>vedic_accented</code>, <code>sung_stotra</code>, <code>poem_recital</code>, <code>read_prose</code>, <code>song</code>, <code>classical</code></td>
+<td>typed, defaulted from text genre</td>
+<td>yes</td>
+<td>pitch step strictness; analysis profile</td>
+</tr>
+<tr>
+<td><code>style.pitchPrescribed</code></td>
+<td>boolean</td>
+<td>derived from mode and text svara, teacher override</td>
+<td>yes</td>
+<td>pitch in pass/fail path or style report</td>
+</tr>
+<tr>
+<td><code>style.tradition</code></td>
+<td>free string with suggestions</td>
+<td>typed, folder default</td>
+<td>optional</td>
+<td>variant table; grouping</td>
+</tr>
+<tr>
+<td><code>style.deliveryPattern</code></td>
+<td>enum <code>whole_verse</code>, <code>line_by_line_repeat</code>, <code>call_and_response</code></td>
+<td>typed</td>
+<td>optional</td>
+<td>alignment segmentation</td>
+</tr>
+<tr>
+<td><strong>Tiers</strong> <code>tiers[]</code></td>
+<td><code>[{name, intervals:[{xmin, xmax, text, ref}]}]</code>, seconds, names <code>utterance</code>, <code>sloka</code>, <code>pada</code>, <code>phrase</code>, <code>word</code>, <code>akshara</code>, <code>section</code>, <code>lyricLine</code></td>
+<td>tapped at record time, derived from pauses and daṇḍas, or aligned later</td>
+<td>a <code>pada</code>/<code>phrase</code> tier recommended</td>
+<td>timing (licensed pause test), pronunciation localisation, per-verse key offset, TextGrid export</td>
+</tr>
+<tr>
+<td><strong>Audio integrity</strong> <code>audio.file</code>, <code>audio.pcmSha256</code>, <code>audio.sizeBytes</code>, <code>audio.encodingFormat</code></td>
+<td>string; hex-64 of the <code>data</code> chunk; int; MIME</td>
+<td>generated</td>
+<td>yes</td>
+<td>re-association; stale-cache detection; edit detection</td>
+</tr>
+<tr>
+<td><code>audio.codecHistory[]</code></td>
+<td><code>[{stage, algorithm, sampleRateHz, bitDepth, channels, tool}]</code></td>
+<td>generated</td>
+<td>recommended</td>
+<td>resampling chain; copied to <code>bext CodingHistory</code></td>
+</tr>
+<tr>
+<td><code>software.app</code>, <code>software.version</code></td>
+<td>string</td>
+<td>generated</td>
+<td>yes</td>
+<td>reproducibility</td>
+</tr>
+<tr>
+<td><strong>Analysis cache</strong> <code>analysis.file</code>, <code>analysis.featureVersion</code>, <code>analysis.paramsHash</code>, <code>analysis.inputSha256</code>, <code>analysis.computedAt</code>, <code>analysis.profile</code></td>
+<td>string; string; sha256 of canonical params JSON; hex; ISO 8601; enum <code>recitation</code>, <code>recital</code></td>
+<td>generated</td>
+<td>required when a cache exists</td>
+<td>invalidate when extractor version, parameters or audio changed; choose tracker hop and smoothing</td>
+</tr>
+<tr>
+<td><strong>Transcript</strong> <code>transcript.file</code>, <code>transcript.sha256</code>, <code>transcript.source</code>, <code>transcript.model</code></td>
+<td>string; hex; enum <code>typed</code>, <code>imported</code>, <code>asr</code>; string</td>
+<td>generated</td>
+<td>optional</td>
+<td>pronunciation (phonetic key comparison)</td>
+</tr>
+<tr>
+<td><strong>Lineage</strong> <code>lineage.derivedFrom</code>, <code>lineage.replaces</code>, <code>lineage.replacedBy</code>, <code>lineage.copyOf</code></td>
+<td>record ids or <code>null</code></td>
+<td>generated</td>
+<td>optional</td>
+<td>edited, re-recorded or duplicated baseline chains</td>
+</tr>
+<tr>
+<td><code>edit.trimStartSec</code>, <code>edit.trimEndSec</code>, <code>edit.originalKept</code>, <code>edit.history[]</code></td>
+<td>float s; float s; boolean; <code>[{at, action, params, softwareVersion}]</code></td>
+<td>generated</td>
+<td>optional</td>
+<td>map old reports and cue points onto the original</td>
+</tr>
+<tr>
+<td><strong>Consent</strong> <code>consent.givenBy</code>, <code>consent.at</code>, <code>consent.textVersion</code>, <code>consent.parentVerified</code>, <code>consent.verificationMethod</code>, <code>consent.shareScope</code></td>
+<td>enum <code>self</code>, <code>parent</code>, <code>guardian</code>, <code>teacher</code>, <code>unspecified</code>; ISO 8601; string; boolean; enum <code>none</code>, <code>selfDeclared</code>, <code>documentCheck</code>, <code>digiLocker</code>; enum <code>private</code>, <code>folder</code>, <code>shared</code></td>
+<td>typed</td>
+<td>required when <code>ageGroup</code> is a child bucket</td>
+<td>export and sharing gate</td>
+</tr>
+</tbody>
+</table>
+<p>Three design decisions inside this table deserve explanation. The first is the speaker profile. Corpora store age and gender as <strong>typed, optional, bucketed self-report</strong>: Common Voice&rsquo;s age vocabulary is <code>teens … nineties, Unspecified</code> and its gender vocabulary <code>male_masculine, female_feminine, transgender, non-binary, do_not_wish_to_say, Unspecified</code>, reported &ldquo;only if the speaker opted in&rdquo;, which about 72–74 % of contributors did in a recent release (<a href="https://mozilladatacollective.com/datasets/cmu5xcvp800eao107zfex7alc">Mozilla Data Collective</a>); IMDI records an actor&rsquo;s age as <code>YY;MM.DD</code> or an approximation and sex from a closed vocabulary (<a href="https://www.mpi.nl/corpus/html/deprecated/imdi_editor/ch02s04s01.html">IMDI Actor</a>). Decade buckets are useless for this app, because every learner under 19 falls into &ldquo;teens&rdquo; while the acoustics change fastest there; children&rsquo;s corpora bucket by grade or year of age instead (<a href="https://catalog.ldc.upenn.edu/LDC97S63">CMU Kids</a>). The buckets proposed above are drawn where the voice actually changes and where the law draws its line: conversational F0 is the same for both sexes at <strong>223 Hz from 5.5 to 10.5 years</strong>, splits at 10.5–14.5 (boys 187 Hz, girls 214 Hz) and reaches adult values by 14.5–17.5 (boys 122 Hz, girls 206 Hz) (<a href="https://www.voicescience.org/lexicon/average-speaking-frequencies/">voicescience.org</a>); boys&rsquo; F0 then falls by roughly an octave between 12 and 15 (<a href="https://sail.usc.edu/publications/files/LeeJASA1999.pdf">Lee et al. 1999</a>); women lose about 3 semitones between the 20–30 and 40–60 cohorts (<a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC5832520/">Eichhorn et al. 2018</a>); and a child under the DPDP Act is anyone under 18 (<a href="https://www.dpdpa.com/dpdpa2023/chapter-2/section9.html">DPDP s.2 and s.9</a>), so a bucket boundary at 18 lets <code>isChild</code> be derived without storing a birth date. Storing <code>voiceType</code> instead of sex follows the same proportionality logic: before 12 there is no reliable sex difference in F0 or formants (<a href="https://sail.usc.edu/publications/files/LeeJASA1999.pdf">Lee et al. 1999</a>), so the app never needs to ask a young child&rsquo;s sex; from 12 on it asks for the voice category because the warp search range and pitch-offset expectation depend on it (roughly 0.88–1.12 for same-type adults, 0.78–1.28 across adult types, 0.67–1.50 for a child against an adult), and because Lee and Glass found it necessary to restrict comparison-based scoring to <strong>same-gender teacher–student alignments</strong> to keep speaker differences out of the pronunciation score (<a href="https://people.csail.mit.edu/jrg/2013/lee-slate13.pdf">Lee &amp; Glass 2013</a>). The measured F0 fields make the typed fields non-essential for the pitch step itself — both sides are converted to semitones relative to their own median — but F0 is a poor proxy for vocal-tract length (a woman and a twelve-year-old boy can share a median F0 and differ by 15 % in formant scale), which is why the warp range needs the typed class and not just the number.</p>
+<p>The second decision is to treat capture conditions as measured facts rather than user answers. The W3C Media Capture specification exposes <code>deviceId</code>, <code>groupId</code>, <code>sampleRate</code>, <code>sampleSize</code>, <code>channelCount</code>, <code>latency</code>, <code>echoCancellation</code>, <code>autoGainControl</code> and <code>noiseSuppression</code> through <code>MediaStreamTrack.getSettings()</code>, which &ldquo;returns the values the user agent is actually using&rdquo; rather than what was requested (<a href="https://www.w3.org/TR/mediacapture-streams/">W3C</a>), and Chrome, Firefox and Safari all default the three processing stages to <strong>on</strong> (<a href="https://blog.addpipe.com/getusermedia-audio-constraints/">addpipe</a>). That matters because &ldquo;energy-based normalization techniques fail for smartphone microphones due to the nonlinearity gain of amplifiers and the presence of automatic gain control&rdquo; (<a href="https://arxiv.org/pdf/1905.11785">arXiv 1905.11785</a>), noise, microphone and sample-rate degradation are &ldquo;the most dominating factors&rdquo; in MFCC-based speaker comparison (<a href="https://www.researchgate.net/publication/228721919_On_Factors_Affecting_MFCC-Based_Speaker_Recognition_Accuracy">Factors affecting MFCC accuracy</a>), and wideband models perform poorly on narrowband audio because of the missing high band (<a href="https://arxiv.org/pdf/1909.02667">arXiv 1909.02667</a>) — a point with extra force for children, whose recognisers lost 54 % more accuracy at age six when bandwidth fell from 4 to 3 kHz (<a href="https://www.isca-archive.org/interspeech_2005/darcy05_interspeech.pdf">D&rsquo;Arcy &amp; Russell 2005</a>), so <code>capture.sampleRateHz</code> of at least 16 000 and a measured <code>bandwidthHz</code> are not bureaucratic. The level fields use standard definitions: ITU-T P.56 active speech level is the power during speech-active intervals, excluding silences, expressed in dBov (<a href="https://www.itu.int/rec/dologin_pub.asp?lang=s&amp;id=T-REC-P.56-201103-T!!PDF-E&amp;type=items">ITU-T P.56</a>), and is &ldquo;accurate for SNR levels of above 15 dB&rdquo; (<a href="https://www.commsp.ee.ic.ac.uk/~sap/uploads/publications/Gonzalez2013.pdf">Gonzalez &amp; Brookes 2013</a>), which is the natural threshold for a &ldquo;re-record&rdquo; warning; the EBU loudness set (integrated LUFS, range in LU, maximum true peak in dBTP) is what Broadcast WAV version 2 carries as five 16-bit integers scaled by 100 (<a href="https://tech.ebu.ch/docs/tech/tech3285.pdf">EBU Tech 3285</a>). The user&rsquo;s own calibration (laptop-mic peaks at −25 to −32 dBFS, room noise at −49 to −55 dBFS with mains hum, half a second to a second of lead-in) shows why lead silence and noise floor must be stored per baseline rather than assumed: the library already mixes noisy laptop takes with a much quieter imported recording, and the multi-baseline comparison had to harmonise silence thresholds to cope.</p>
+<p>The third decision is provenance, and here existing vocabularies already name every relation the app needs. W3C PROV-O distinguishes <code>wasDerivedFrom</code> (a transformation or update producing a new entity), <code>wasRevisionOf</code>, <code>wasGeneratedBy</code>, <code>used</code> and <code>SoftwareAgent</code>, with <code>generatedAtTime</code> typed as <code>xsd:dateTime</code> (<a href="https://www.w3.org/TR/prov-o/">PROV-O</a>); Dublin Core adds <code>created</code>, <code>modified</code>, <code>source</code>, <code>replaces</code> and <code>isReplacedBy</code> (<a href="https://www.dublincore.org/specifications/dublin-core/dcmi-terms/">DCMI Terms</a>); schema.org&rsquo;s <code>AudioObject</code> carries <code>sha256</code>, <code>encodingFormat</code>, <code>contentSize</code> and <code>duration</code> (<a href="https://schema.org/AudioObject">schema.org</a>). The record should use plain camelCase names with these semantics rather than the IRIs, and should store the analysis <strong>parameter hash, not just the extractor version</strong>: the app has already bumped its feature version five times, and two builds with the same version string but different window, hop or mel settings produce incompatible features, so a hash of the canonical parameter JSON makes &ldquo;comparable&rdquo; a cheap equality test. The hash of the audio should cover the PCM <code>data</code> chunk, not the whole file, so that writing or updating metadata chunks never changes the identity of the sound.</p>
+<h2 id="material-type-changes-the-text-record-far-more-than-the-baseline">Material type changes the text record far more than the baseline</h2>
+<p>Almost everything that distinguishes a sloka from a poem from a kriti is a property of the item, not the recording, so it belongs in the shared text (or composition) record; the baseline record acquires only a handful of performance-level fields per type (the mode flag and pāda tier for recitation; the tonic, sama timestamps, section times and drone facts for singing). This section gives the additions for each type and marks what a first version needs against what can wait.</p>
+<h3 id="recitation-metre-weights-pauses-and-variants-are-derived-not-typed">Recitation: metre, weights, pauses and variants are derived, not typed</h3>
+<p>The Sanskrit prosodic layers are cheap to derive and should never be asked of the teacher. Chandojnanam&rsquo;s pipeline shows the full chain: transliteration with scheme auto-detection into an internal Devanagari form, pāda split on &ldquo;standard line-end markers, such as &lsquo;\n&rsquo;, &lsquo;।&rsquo;, &lsquo;॥&rsquo; and &lsquo;.&rsquo;&rdquo;, syllabification by the rule that &ldquo;every vowel signifies an end of a syllable&rdquo;, and laghu/guru marking by standard prosody rules, with the pāda-final syllable deliberately not forced to guru because some metres have pādānta-laghu (<a href="https://arxiv.org/abs/2209.14924">Chandojnanam</a>). Its metre record has the fields a text record needs — <code>Vṛtta</code> name, <code>Pāda</code> index, <code>Lakṣaṇa</code> (the L/G signature), optional <code>Gaṇa</code>, syllables per pāda, mātrās per pāda and <code>Yati</code> caesura indices — and it encodes anuṣṭubh as regexes requiring eight syllables per pāda with the fifth laghu, the sixth guru and the seventh laghu in even pādas, with over 200 metre definitions shipped and edit-distance suggestions for near misses (<a href="https://arxiv.org/abs/2209.14924">Chandojnanam</a>). Why derive all this if no published evaluator consumes metre? Because the one duration rule the tradition prescribes is a ratio — hrasva one mātrā, dīrgha two, pluta three (<a href="https://dharmawiki.org/index.php/Shiksha_(%E0%A4%B6%E0%A4%BF%E0%A4%95%E0%A5%8D%E0%A4%B7%E0%A4%BE)">Dharmawiki: Śikṣā</a>) — and a per-akṣara weight lets the timing report say &ldquo;you shortened a long vowel&rdquo; rather than merely &ldquo;you were faster here&rdquo;, a relative check that works within the learner&rsquo;s own pāda regardless of age-related tempo. Pause licences are equally textual: in the only quantitative corpus of classical chant &ldquo;there are no audible gaps between words within a quarter-verse, so each quarter is one continuous breath group, and a pause occurs only at a daṇḍa&rdquo;, long metres take one breath at the caesura, and spurious internal pauses, dropped final visargas and repeated syllables were the real defects its quality gates caught (<a href="https://arxiv.org/pdf/2608.26146">Vāgdhenu</a>). That is what lets the app replace &ldquo;pause not in the reference&rdquo; with &ldquo;pause not at a licensed boundary&rdquo;, tolerating a child&rsquo;s or elder&rsquo;s breath at a pāda end the teacher did not take.</p>
+<p>The accepted-variant table is the one text-level structure that must exist before pronunciation is ever compared against canonical text rather than against the teacher&rsquo;s transcript. The judge-reviewed Chinmaya guide states that a final visarga is echoed with the preceding vowel (rāmaḥ → &ldquo;raamaha&rdquo;, agniḥ → &ldquo;agnihi&rdquo;), that visarga before ś/ṣ/s &ldquo;may be replaced with ś, ṣ, or s&rdquo;, before k/kh &ldquo;may be replaced with a jihvāmūlīyaḥ&rdquo; and before p/ph &ldquo;with an upadhmānīyaḥ&rdquo;, that anusvāra &ldquo;may be optionally replaced with the nasal version of the consonant that follows it&rdquo;, and that the avagraha &ldquo;does not impact the pronunciation of the joined words, in any way&rdquo; (<a href="http://chinmayamadhuvan.org/chinmayamadhuvan/wp-content/uploads/2024/11/GitaChantingGuide_Generic_Ver6.pdf">Chinmaya guide v6</a>). Without these equivalence classes, a South Indian teacher&rsquo;s baseline will mismatch a North Indian learner on exactly the segments the tradition says are free, which is also why a <code>pronunciationTradition</code> key is justified: regional sources document jña as &ldquo;gya&rdquo;, &ldquo;dnya&rdquo; or &ldquo;gnya&rdquo;, vocalic ṛ as &ldquo;ri&rdquo; in the north and &ldquo;ru&rdquo; in the south, and distinct lineages in Kerala, Maharashtra, Tamil Nadu and Varanasi (<a href="http://jayarava.blogspot.com/2020/03/on-pronunciation-of-jna.html">Jayarava</a>; <a href="https://www.iias.asia/the-newsletter/article/vedic-chanting-kerala">IIAS</a>). Vedic tone is the last layer: U+0951 and U+0952 are combining udātta and anudātta marks that &ldquo;may also occur in the representation of Vedic texts written in other scripts&rdquo; (<a href="https://codepoints.net/U+0951">codepoints.net</a>), so <code>svara.prescribed</code> can be derived from the presence of these marks in the body, and the pitch step then switches from semitone comparison to a three-level tone-class check, since udātta is &ldquo;the normal pitch note in one&rsquo;s voice&rdquo; with anudātta below and svarita above across roughly a minor third (<a href="https://vedavms.in/docs/articles/01Basics%20of%20Veda%20Swaras.pdf">vedavms.in</a>). For Gītā and stotra text, which carry no accent marks and whose only judge-reviewed guide has no rule on pitch, tune or tempo (<a href="http://chinmayamadhuvan.org/chinmayamadhuvan/wp-content/uploads/2024/11/GitaChantingGuide_Generic_Ver6.pdf">Chinmaya guide v6</a>), <code>style.mode = plain_sloka</code> sends pitch to the style report instead of the pass/fail path — the single most consequential bit in the whole schema, because one expert&rsquo;s own renditions of the same verse correlate only 0.40–0.54 in pitch contour (<a href="https://arxiv.org/pdf/2608.26146">Vāgdhenu</a>).</p>
+<table>
+<thead>
+<tr>
+<th>Recitation field (text record unless noted)</th>
+<th>Type</th>
+<th>Obtained</th>
+<th>Consumer</th>
+<th>Version</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>textId</code>, <code>title</code>, <code>citation {work, chapter, verse}</code>, <code>genre</code> (<code>sloka</code>, <code>stotra</code>, <code>vedic_mantra</code>)</td>
+<td>string; string; object; enum</td>
+<td>generated; typed</td>
+<td>all; quiz; mode default</td>
+<td>v1</td>
+</tr>
+<tr>
+<td><code>language</code> (BCP-47 <code>sa</code>), <code>script</code> (ISO 15924 <code>Deva</code>, <code>Knda</code>, <code>Latn</code>)</td>
+<td>string</td>
+<td>typed folder default; derived from Unicode block</td>
+<td>pronunciation rules; display</td>
+<td>v1</td>
+</tr>
+<tr>
+<td><code>body</code></td>
+<td>canonical text with daṇḍas, avagraha, anusvāra and visarga preserved</td>
+<td>typed or pasted</td>
+<td>pronunciation; pāda and akṣara derivation</td>
+<td>v1 (required for pronunciation)</td>
+</tr>
+<tr>
+<td><code>translit {scheme, body}</code></td>
+<td>enum <code>IAST</code>, <code>ISO15919</code>, <code>ITRANS</code>, <code>HK</code>; string</td>
+<td>derived</td>
+<td>display; script-independent phonetic key</td>
+<td>v1</td>
+</tr>
+<tr>
+<td><code>padas[] {index, text, charStart, charEnd, boundaryType}</code></td>
+<td><code>boundaryType</code> ∈ <code>pada</code>, <code>ardha</code>, <code>sloka</code></td>
+<td>derived on <code>।</code>, <code>॥</code>, newline</td>
+<td>licensed pauses; seed for the baseline <code>pada</code> tier</td>
+<td>v1</td>
+</tr>
+<tr>
+<td><code>pauses[] {afterAksharaIndex, kind, licensed}</code></td>
+<td><code>kind</code> ∈ <code>pada</code>, <code>ardha</code>, <code>sloka</code>, <code>yati</code>, <code>breath</code></td>
+<td>derived from <code>padas</code> and <code>metre.yati</code>; teacher may add</td>
+<td>timing: flag pauses ≥ 0.3 s at unlicensed positions, never score pause length</td>
+<td>v1</td>
+</tr>
+<tr>
+<td><code>aksharas[] {index, text, padaIndex, weight, matra}</code></td>
+<td><code>weight</code> ∈ <code>L</code>, <code>G</code>; <code>matra</code> 1 or 2</td>
+<td>derived (vowel-terminated syllabification + prosody rules)</td>
+<td>syllable-weight check; <code>tempoSylPerSec</code>; pronunciation granularity</td>
+<td>v1.1</td>
+</tr>
+<tr>
+<td><code>metre {name, lgSignature[], syllablesPerPada, matraPerPada, yati[], vrittaClass}</code></td>
+<td>strings, arrays, enum <code>sama</code>, <code>ardhasama</code>, <code>vishama</code></td>
+<td>derived by dictionary/regex match; teacher confirms</td>
+<td>yati pauses; UI; reference selection</td>
+<td>later</td>
+</tr>
+<tr>
+<td><code>words[] {index, text, padaIndex, avagrahaResolved}</code></td>
+<td>objects</td>
+<td>derived + teacher edit</td>
+<td>pronunciation report labels</td>
+<td>later</td>
+</tr>
+<tr>
+<td><code>acceptedVariants[] {aksharaIndex, canonical, accepted[], rule}</code></td>
+<td>objects</td>
+<td>derived from a rule table keyed by <code>pronunciationTradition</code>; teacher editable</td>
+<td>pronunciation equivalence classes</td>
+<td>later (needed when comparing to canonical text)</td>
+</tr>
+<tr>
+<td><code>svara {prescribed, marks[] {aksharaIndex, tone}}</code></td>
+<td><code>tone</code> ∈ <code>udatta</code>, <code>anudatta</code>, <code>svarita</code></td>
+<td>derived from U+0951/U+0952, or typed</td>
+<td>pitch: tone-class check instead of semitones</td>
+<td>later; required when <code>genre = vedic_mantra</code></td>
+</tr>
+<tr>
+<td><code>pronunciationTradition</code></td>
+<td>free string (<code>south_indian</code>, <code>north_indian</code>, <code>chinmaya_gita</code>, <code>vedic_&lt;shakha&gt;</code> …)</td>
+<td>typed, folder default</td>
+<td>selects the variant table</td>
+<td>v1 (capture now, consume later)</td>
+</tr>
+<tr>
+<td><code>version</code>, <code>changeLog[] {version, date, author, note}</code></td>
+<td>int; objects</td>
+<td>generated/typed</td>
+<td>report provenance</td>
+<td>v1</td>
+</tr>
+<tr>
+<td>Baseline: <code>style.mode</code>, <code>style.pitchPrescribed</code>, <code>style.tradition</code>, <code>style.deliveryPattern</code></td>
+<td>see core table</td>
+<td>typed/derived</td>
+<td>pitch strictness; variant table; segmentation</td>
+<td>v1</td>
+</tr>
+<tr>
+<td>Baseline: <code>tiers.sloka</code> (one interval per verse with <code>ref = textId</code>), <code>tiers.pada</code></td>
+<td>seconds</td>
+<td>tapped at daṇḍas or derived from pauses</td>
+<td>multi-verse baselines for quizzes; per-verse key offset; licensed-pause test</td>
+<td>v1 (<code>sloka</code> and <code>pada</code>)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="poems-and-prose-lines-punctuation-and-stanzas-are-the-whole-prosodic-contract">Poems and prose: lines, punctuation and stanzas are the whole prosodic contract</h3>
+<p>Plain-text material needs much less, and what it needs is again derivable from the text. The stable, judged features of verse recital are pause placement at structural boundaries and relative syllable weight; everything else is expressive. Over 90 % of pause time in read poetry falls at punctuation (<a href="https://shc.stanford.edu/arcade/interventions/after-scansion-visualizing-deforming-and-listening-poetic-prosody">Stanford Arcade</a>), read-passage boundary pauses run <strong>0.38–0.78 s at commas and about 1.4 s at sentence ends</strong> (<a href="https://www.frontiersin.org/journals/psychology/articles/10.3389/fpsyg.2022.778018/full">Liu et al. 2022</a>), and metrical stress in read verse is carried by only 41 ms and 0.74 dB (<a href="https://www.frontiersin.org/journals/psychology/articles/10.3389/fpsyg.2023.1043651/full">Beck &amp; Konieczny 2023</a>), so the text record needs <code>lines[]</code>, <code>stanzas[]</code> and a <code>pauses[]</code> list derived from line ends and punctuation (<code>,</code> <code>;</code> <code>.</code> <code>?</code> <code>!</code> and the daṇḍa in Kannada or Hindi text), each marked licensed, while pause duration is never scored. Pitch is style for poems and <code>style.mode = poem_recital</code> or <code>read_prose</code> excludes it from pass/fail by default; emotion moves register, range and rate in Kannada sentence reading (<a href="https://journals.asianresassoc.org/index.php/ijll/article/view/2904">Kannada affective prosody</a>), so a learner reading with different feeling must not fail. Syllable weights for Kannada, Hindi or English verse were not researched and the <code>aksharas[]</code> block should simply be absent for these texts in a first version; <code>language</code> and <code>script</code> remain required because the pronunciation step&rsquo;s phonetic key and the ASR model depend on them, and because the same poem may be stored in Kannada script and in Latin transliteration by different teachers.</p>
+<h3 id="singing-tonic-first-then-tala-and-sections-notation-last">Singing: tonic first, then tāla and sections, notation last</h3>
+<p>Singing inverts the recitation priorities: pitch becomes the correctness core and the recording acquires a reference pitch of its own. Every Indian-art-music dataset treats the tonic as the single most important per-recording field and stores it as <strong>one float in Hz for the lead artist</strong> — Saraga as &ldquo;a text file with a single float value&rdquo;, the CompMusic tonic dataset as a tab-separated line of path, tonic (Hz), Carnatic/Hindustani, artist, singer gender and vocal/instrumental (<a href="https://mtg.github.io/saraga/organization.html">Saraga</a>; <a href="https://zenodo.org/records/1257114">Tonic dataset</a>) — and the vocal tonic &ldquo;spans more than one octave, typically between 100–260 Hz&rdquo;, with estimators restricting their search to 100–195 Hz for men and 135–250 Hz for women when the sex is known (<a href="https://www.justinsalamon.com/uploads/4/3/9/4/4394963/gulati_tonicid_jnmr_14.pdf">Gulati et al. 2014</a>). The only teacher–learner dataset in the tradition records each file&rsquo;s tonic in its metadata, normalises every contour by it, folds to one octave because &ldquo;octave errors are not treated as mistakes in musicology&rdquo;, and pitch-shifted the teacher&rsquo;s voice to the learner&rsquo;s tonic for in-ear playback (<a href="https://www.arxiv.org/pdf/2602.06917">Kumar et al. 2026</a>). The baseline therefore needs <code>tonic.hz</code> as the authoritative value with <code>tonic.method</code> recording how it was obtained — a sung Sa marker at the start of the take, a detected drone, an estimation algorithm on the voice, or typed from the shruti-box setting — plus a confidence and the span of audio used, following the tonic dataset&rsquo;s own distinction between manually annotated and automatically extracted values. Swara targets should be measured, not assumed: over 233 Carnatic recordings the interval histogram peaks sit within 0–9 cents of just intonation but up to 34 cents from equal temperament, whereas Hindustani recordings lean toward equal temperament (<a href="https://ismir2011.ismir.net/papers/OS2-2.pdf">Serra et al. 2011</a>), so <code>pitch.intonationModel = measured</code> with a Koduri-style tonic-normalised histogram giving <code>swaraCentersCents</code> per swara is the right default, with <code>12tet</code> reserved for simple songs in a Western key. Rāga is stored everywhere as a label with an identifier, not as a scale formula (<a href="https://mirdata.readthedocs.io/en/stable/_modules/mirdata/datasets/saraga_carnatic.html">mirdata Saraga</a>); the app should store both the label and a usable <code>arohana</code>/<code>avarohana</code> in swara tokens so the pitch step can flag a wrong swara as distinct from an off-cents one.</p>
+<p>Time metadata follows the rhythm datasets. Saraga&rsquo;s Carnatic tempo rows are <code>tempo_apm, tempo_bpm, sama_interval, beats_per_cycle, subdivisions</code> (akṣaras per minute, beats per minute, median cycle duration, beats per cycle, akṣaras per beat), its Hindustani rows carry tempo in mātrās per minute with <code>matras_per_cycle</code>, and &ldquo;-1 indicates a section/recording without rhythmic content&rdquo;; sama annotations are &ldquo;a non-decreasing series of time instants&rdquo; in seconds, and sections are rows of start time, duration and a name such as &ldquo;Anupallavi&rdquo; or &ldquo;Ālāp&rdquo; (<a href="https://mtg.github.io/saraga/organization.html">Saraga</a>). The Carnatic Rhythm dataset adds the two Carnatic-specific facts the timing step must not penalise — <code>edupu</code>, &ldquo;offset of the start of the piece, relative to the sama, measured in aksharas&rdquo;, and <code>kalai</code>, &ldquo;the cycle length scaling factor&rdquo; — and labels beats with a position where &ldquo;Sama &hellip; are indicated using the numeral 1&rdquo; (<a href="https://zenodo.org/records/1264394">CMR</a>; <a href="https://mirdata.readthedocs.io/en/0.3.9/_modules/mirdata/datasets/compmusic_carnatic_rhythm.html">mirdata CMR</a>). Sections need a <code>speedFactor</code> and <code>repeatOf</code> because varnams sing the pallavi, anupallavi and chiṭṭa swaram &ldquo;in a relatively slow pace and repeated immediately after in double the speed&rdquo; (<a href="https://en.wikipedia.org/wiki/Varnam">Wikipedia: Varnam</a>), which DTW would otherwise read as rushing; the Varnam dataset also records whether 2 or 4 swaras fall per tāla tick (<a href="https://zenodo.org/records/7726167">Varnam dataset</a>). Hindustani laya runs <strong>10–60 mātrās per minute in vilambit, 60–150 in madhya and over 150 in drut</strong>, with mātrā periods from under 150 ms to over 6 s (<a href="https://www.frontiersin.org/journals/digital-humanities/articles/10.3389/fdigh.2017.00020/full">Srinivasamurthy et al. 2017</a>), so timing errors must be expressed as fractions of a mātrā after the learner&rsquo;s own tempo is found, which is why the teacher&rsquo;s BPM, tāla and first-beat onset belong in metadata exactly as the M3 dataset stores them (<a href="https://www.arxiv.org/pdf/2602.06917">Kumar et al. 2026</a>). Notation and ornaments are the layer that can wait: machine-readable sargam exists only in bespoke forms (the Varnam dataset&rsquo;s YAML of sections → cycles → divisions → swaras; Saraga&rsquo;s phrase rows with the 12-symbol alphabet <code>S r R g G m M P d D n N</code>), gamaka annotation is just emerging as event spans in six unnamed classes (<a href="https://arxiv.org/abs/2505.04419">ROD</a>), and MusicXML and MEI have no sargam, shruti or tāla primitives, so the app should keep its own JSON notation and export to JAMS-like structures only for research (<a href="https://jams.readthedocs.io/en/stable/namespace.html">JAMS namespaces</a>). When notation does arrive, the two-regime tolerance from the earlier report applies — professional Carnatic singers hold steady notes with an SD of about 10 cents above 0.5 s and 20 cents at 200 ms, while gamaka turning points scatter 45–85 cents (<a href="https://archives.ismir.net/ismir2018/paper/000120.pdf">Viraraghavan et al. 2018</a>) — and <code>analysis.profile = recital</code> must switch the pitch tracker to a 5–10 ms hop and disable the 250 ms smoothing that recitation uses. The drone belongs with the pitch reference, not with recording conditions: the Varnam dataset recorded &ldquo;without accompanying instruments, except the drone&rdquo; and M3 kept a tanpura in the room (<a href="https://zenodo.org/records/7726167">Varnam dataset</a>; <a href="https://zenodo.org/records/8332078">M3</a>), and a drone mixed into the WAV both anchors the tonic and contaminates loudness and MFCC frames, so <code>drone.inReferenceAudio</code> decides whether those steps mask drone-only frames.</p>
+<table>
+<thead>
+<tr>
+<th>Singing field</th>
+<th>Record</th>
+<th>Type</th>
+<th>Obtained</th>
+<th>Consumer</th>
+<th>Version</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>item.kind</code></td>
+<td>text</td>
+<td>enum <code>phrase_call_response</code>, <code>exercise_alankar</code>, <code>geetam</code>, <code>varnam</code>, <code>kriti</code>, <code>bhajan</code>, <code>song</code>, <code>stotra</code>, <code>alapana</code></td>
+<td>typed</td>
+<td>scoring profile (frame-wise vs section DTW)</td>
+<td>v1</td>
+</tr>
+<tr>
+<td><code>item.tradition</code>, <code>item.form</code>, <code>item.composer</code></td>
+<td>text</td>
+<td>enum <code>carnatic</code>, <code>hindustani</code>, <code>light</code>, <code>western</code>, <code>chant</code>; strings</td>
+<td>typed</td>
+<td>vocabularies; intonation default; display</td>
+<td>v1 (tradition)</td>
+</tr>
+<tr>
+<td><code>scale.system</code></td>
+<td>text</td>
+<td>enum <code>carnatic_raga</code>, <code>hindustani_raag</code>, <code>western_key</code>, <code>none</code></td>
+<td>typed</td>
+<td>pitch regime</td>
+<td>v1</td>
+</tr>
+<tr>
+<td><code>raga {name, id, parent}</code> or <code>key {tonic, mode}</code></td>
+<td>text</td>
+<td>string; UUID/MBID; melakarta 1–72 or thaat; note + mode</td>
+<td>typed, from a rāga table</td>
+<td>display; content</td>
+<td>v1</td>
+</tr>
+<tr>
+<td><code>raga.arohana[]</code>, <code>raga.avarohana[]</code>, <code>raga.vadi</code>, <code>raga.samvadi</code>, <code>raga.nyas[]</code>, <code>raga.varjya[]</code></td>
+<td>text</td>
+<td>swara tokens (<code>S R1 R2 R3 G1 G2 G3 M1 M2 P D1 D2 D3 N1 N2 N3</code> or <code>S r R g G m M P d D n N</code>)</td>
+<td>table lookup, teacher confirms</td>
+<td>legal-swara set; phrase weighting</td>
+<td>later</td>
+</tr>
+<tr>
+<td><code>tala {system, name, id}</code></td>
+<td>text</td>
+<td>enum <code>carnatic</code>, <code>hindustani</code>, <code>western</code>, <code>free</code>; string</td>
+<td>typed</td>
+<td>timing grid; Teach mode</td>
+<td>v1</td>
+</tr>
+<tr>
+<td><code>tala.beatsPerCycle</code>, <code>tala.aksharasPerBeat</code>, <code>tala.kalai</code>, <code>tala.jati</code> or <code>tala.matrasPerCycle</code>, <code>tala.vibhags[]</code>, <code>tala.tali[]</code>, <code>tala.khali[]</code>, <code>tala.theka</code> or <code>meter {beatsPerBar, beatUnit}</code></td>
+<td>text</td>
+<td>ints, arrays, strings</td>
+<td>from a tāla table</td>
+<td>cycle grid; mātrā-relative tolerances</td>
+<td>v1 (cycle length and subdivision), later (kalai, jati, theka)</td>
+</tr>
+<tr>
+<td><code>sections[] {id, name, speedFactor, repeatOf, swaraOnly, metric}</code></td>
+<td>text</td>
+<td>name from tradition vocabulary (<code>pallavi</code>, <code>anupallavi</code>, <code>charanam</code>, <code>alap</code>, <code>sthayi</code>, <code>antara</code>, <code>verse</code>, <code>chorus</code>); 1, 1.5 or 2; id; boolean; boolean</td>
+<td>typed</td>
+<td>2:1 tempo change at boundaries; skip pronunciation in swara-only sections; skip grid in alap</td>
+<td>v1 for compositions</td>
+</tr>
+<tr>
+<td><code>lyrics {text, language, script, transliterationScheme, lines[]}</code></td>
+<td>text</td>
+<td>string; BCP-47 (<code>te</code>, <code>ta</code>, <code>kn</code>, <code>sa</code>); ISO 15924; enum</td>
+<td>typed</td>
+<td>pronunciation; content (missing/extra lines)</td>
+<td>v1 (language and script)</td>
+</tr>
+<tr>
+<td><code>notation.events[] {swara, octave, durationAksharas, gamaka {type, extentCents}, syllable, cycle, beatInCycle}</code>, <code>notation.source</code>, <code>notation.svarasPerBeat</code></td>
+<td>text</td>
+<td>objects; enum <code>typed_sargam</code>, <code>imported</code>, <code>transcribed</code>; 2 or 4</td>
+<td>typed sargam</td>
+<td>note targets; tempo-independent expected durations; Teach display</td>
+<td>later (required only for exercises)</td>
+</tr>
+<tr>
+<td><code>phrases[] {swaraString, flag}</code></td>
+<td>text</td>
+<td><code>flag</code> ∈ <code>recording</code>, <code>raga_characteristic</code></td>
+<td>typed</td>
+<td>per-phrase weights</td>
+<td>later</td>
+</tr>
+<tr>
+<td><code>tonic {hz, midi, noteName, method, confidence, sourceSpanSec}</code></td>
+<td>baseline</td>
+<td>float; float; string; enum <code>sung_sa_marker</code>, <code>drone_detected</code>, <code>estimated</code>, <code>typed</code>; 0–1; <code>[s, s]</code></td>
+<td>measured or typed</td>
+<td>cents-above-tonic normalisation; octave check (near 2× or 0.5× is transposition)</td>
+<td>v1</td>
+</tr>
+<tr>
+<td><code>drone {present, hz, type, tuning, inReferenceAudio}</code></td>
+<td>baseline</td>
+<td>boolean; Hz; enum <code>tanpura</code>, <code>shruti_box</code>, <code>electronic</code>, <code>app</code>; enum <code>Pa</code>, <code>Ma</code>, <code>Ni</code>; boolean</td>
+<td>measured/typed</td>
+<td>tonic trust; masking of drone-only frames</td>
+<td>v1 (flags), later (tuning)</td>
+</tr>
+<tr>
+<td><code>tempo {value, unit, bpmEquivalent, layaLabel, samaIntervalSec, segments[]}</code></td>
+<td>baseline</td>
+<td>float; enum <code>aksharas_per_min</code>, <code>matras_per_min</code>, <code>bpm</code>; float; enum (<code>vilamba</code>, <code>madhyama</code>, <code>durita</code> / <code>vilambit</code>, <code>madhya</code>, <code>drut</code>); float; <code>[{startSec, endSec, value}]</code></td>
+<td>derived from sama times</td>
+<td>mātrā-relative timing tolerance; DTW slope prior; metronome</td>
+<td>v1</td>
+</tr>
+<tr>
+<td><code>rhythm {samaTimesSec[], beatTimes[] {t, position}, samaMethod, eduppuAksharas}</code></td>
+<td>baseline</td>
+<td>floats; objects; enum <code>tapped</code>, <code>typed_grid</code>, <code>detected</code>, <code>none</code>; signed float</td>
+<td>tapped during recording or typed grid</td>
+<td>cycle-level timing; section alignment; start offset</td>
+<td>v1 (sama times), later (eduppu)</td>
+</tr>
+<tr>
+<td><code>tiers.section</code>, <code>tiers.lyricLine</code>, <code>leadInSec</code></td>
+<td>baseline</td>
+<td>seconds</td>
+<td>typed on the waveform; measured</td>
+<td>DTW segmentation; alignment from first sung onset</td>
+<td>v1</td>
+</tr>
+<tr>
+<td><code>pitch {intonationModel, swaraCentersCents {swara: {cents, spreadCents}}}</code></td>
+<td>baseline</td>
+<td>enum <code>measured</code>, <code>just</code>, <code>12tet</code>, <code>22shruti</code>; map</td>
+<td>measured histogram</td>
+<td>per-swara targets and tolerance</td>
+<td>later</td>
+</tr>
+<tr>
+<td><code>ornaments[] {startSec, endSec, type, extentCents}</code></td>
+<td>baseline</td>
+<td>open enum (<code>kampita</code>, <code>jaru</code>, <code>meend</code>, <code>andolan</code> …)</td>
+<td>typed or detected</td>
+<td>relaxed tolerance inside spans</td>
+<td>later</td>
+</tr>
+<tr>
+<td><code>singer.voiceRange {lowHz, highHz}</code>, <code>singer.comfortableSaHz</code></td>
+<td>profile</td>
+<td>Hz</td>
+<td>range test (Riyaz-style)</td>
+<td>transposition; register warnings</td>
+<td>later</td>
+</tr>
+<tr>
+<td><code>tolerances {pitchCentsSteady, pitchCentsGamaka, onsetMs, samaMs, loudnessDb}</code></td>
+<td>baseline preset</td>
+<td>numbers</td>
+<td>editable preset</td>
+<td>all singing scores</td>
+<td>v1 as editable placeholders</td>
+</tr>
+</tbody>
+</table>
+<p>A first singing version thus needs the tonic with its method, the item kind and tradition, the scale system with a rāga or key name, the tāla name with cycle length and sama timestamps (or <code>free</code>), sections with speed factors and times, the lyrics&rsquo; language and script, and the drone flags; everything else degrades to &ldquo;unknown&rdquo;. The minimum differs by tradition: Carnatic items need akṣaras per beat and kalai for the grid, Hindustani items need mātrās per cycle and a laya label with the ālāp marked non-metric, and a simple song or stotra needs only a key or <code>scale.system = none</code>, a <code>meter</code> or <code>tala.system = free</code>, sections and lyrics.</p>
+<h2 id="sidecar-json-is-the-truth-the-wav-carries-only-its-key">Sidecar JSON is the truth; the WAV carries only its key</h2>
+<p>The storage question has a clear answer for a folder-of-files library that users copy with Explorer, and it is the one the broadcast-archive community reached: externally maintained metadata as the authority, with a small embedded pointer. FADGI recommends the 256-character <code>bext Description</code> &ldquo;as a container for identifiers for the work at hand and/or as pointers to additional, non-embedded (externally maintained) metadata&rdquo; and warns &ldquo;do not embed identifiers that could pose a possible security risk, e.g., by exposing exact pathnames&rdquo; (<a href="https://www.digitizationguidelines.gov/audio-visual/documents/BWF_Embed_Guideline_v3_2021.pdf">FADGI v3</a>). The embedded chunks are too weak to be the record: <code>bext</code> has fixed ASCII fields (<code>Description[256]</code>, <code>Originator[32]</code>, <code>OriginatorReference[32]</code>, <code>OriginationDate[10]</code>, <code>OriginationTime[8]</code> with no timezone, a 64-bit sample-count <code>TimeReference</code>, five loudness integers in version 2 and a free-text <code>CodingHistory</code>) (<a href="https://tech.ebu.ch/docs/tech/tech3285.pdf">EBU Tech 3285</a>); RIFF <code>INFO</code> holds short strings; <code>cue</code> may appear at most once per file and its ids get renumbered by editors (<a href="https://www.recordingblogs.com/wiki/cue-chunk-of-a-wave-file">recordingblogs</a>); and no chunk can hold a hash of the file that contains it. Worse, the editors a teacher is likely to reach for discard them: Audacity edits only <code>INFO</code> and ID3 tags, and asked whether iXML survives export a forum regular answered &ldquo;I&rsquo;m pretty sure it will be lost&rdquo; (<a href="https://wavmetadata.blogspot.com/">WAV &amp; BWF Metadata Guide</a>; <a href="https://forum.audacityteam.org/t/ixml-data-in-exported-wave-file/132168">Audacity forum</a>); Praat sets a WAV&rsquo;s start time to zero on read and keeps all annotation in a separate TextGrid paired by filename (<a href="https://github.com/praat/praat.github.io/issues/2796">praat issue 2796</a>). Sidecar JSON is human-readable, typed, unlimited, timezone-aware and trivial to write from vanilla JS, and it survives editing in the sense that matters — the file is untouched, and the audio hash tells you the WAV beneath it changed.</p>
+<p>The recommended layout keeps everything a baseline needs in its folder so an Explorer copy of the folder is complete: <code>&lt;name&gt;.wav</code>, <code>&lt;name&gt;.json</code> (the sidecar, source of truth), <code>&lt;name&gt;.analysis.json</code> (cache), the existing <code>&lt;name&gt;.transcript.json</code> and <code>&lt;name&gt;.txt</code>, and <code>&lt;slug&gt;.text.json</code> for each text item in the same folder so that a chapter folder carries its own slokas&rsquo; text records; the server&rsquo;s <code>index.json</code> becomes a derived cache rebuilt from sidecars on every listing, which the server already does for folders. Display names of people live in a <code>profiles.json</code> in the data directory root, never inside <code>library/</code>, so that copying a folder of slokas to another device never carries a child&rsquo;s name. The WAV should receive a <code>bext</code> chunk at write time — the app writes its own PCM WAV, so adding ~602 bytes plus history costs nothing — with <code>OriginatorReference</code> = the 32-hex record id (36 hyphenated characters do not fit), <code>Originator</code> = &ldquo;SlokAbhyasa <version>&ldquo;, <code>OriginationDate</code>/<code>Time</code> = local creation time, <code>Description</code> = a FADGI-style labelled string such as <code>3f1a7c2e…, local, baseline id; see bg-2-47-teacher.json</code> with no absolute path, <code>CodingHistory</code> lines in the R98 syntax (<code>A=PCM,F=48000,W=16,M=mono,T=SlokAbhyasa 0.9; getUserMedia EC=0 NS=0 AGC=0</code>) and the five loudness integers; <code>INFO INAM</code> and <code>ISFT</code> so Explorer and media players show a title; and optionally <code>cue</code> + <code>labl</code> markers at pāda boundaries for users who open the file elsewhere, with the authoritative marker list staying in the JSON <code>tiers</code>. With this in place the server can reconcile four Explorer events: a <strong>folder copy</strong> carries sidecars and ids intact (a duplicate id with an identical <code>pcmSha256</code> inside one library is recorded as a copy with a new id and <code>lineage.copyOf</code>); a <strong>renamed WAV</strong> is matched by the <code>bext</code> id or by <code>pcmSha256</code> and its <code>audio.file</code> updated; a <strong>bare WAV dropped in</strong> gets its sidecar rebuilt from <code>bext</code> if the chunk survived, or a fresh minimal record flagged &ldquo;metadata missing&rdquo; if it did not; and a <strong>WAV edited outside the app</strong> — detected because the recomputed <code>pcmSha256</code> no longer matches — is treated the way PROV treats derivation: the sidecar is archived as the previous entity, a new record with <code>lineage.derivedFrom</code> pointing to it is created, the analysis cache is invalidated through <code>analysis.inputSha256</code>, and the user is told the baseline changed. A trim inside the app writes a new WAV and a new record with <code>edit.trimStartSec</code>/<code>trimEndSec</code> so that old reports and cue points can be mapped onto the original; a re-recording sets <code>lineage.replaces</code> on the new record and <code>lineage.replacedBy</code> on the old, keeping the old one&rsquo;s reports valid. Reports should store the tuple they were computed against — baseline <code>id</code> and <code>pcmSha256</code>, <code>textId</code> and <code>text.version</code>, <code>analysis.featureVersion</code> and <code>paramsHash</code>, and the tolerance profile — so that any later change is visible rather than silent.</p>
+<p>The three records below are concrete examples, one per material type, abbreviated where the pattern is obvious. The recitation example shows both the text record and the baseline sidecar; the poem and song examples show only what differs.</p>
+<pre><code class="language-json">// CH-02/bg-2-47.text.json  (text record, shared by every baseline of this verse)
+{
+  &quot;schemaVersion&quot;: &quot;1.0.0&quot;,
+  &quot;textId&quot;: &quot;t-bg-02-047&quot;,
+  &quot;title&quot;: &quot;BG 2.47&quot;,
+  &quot;citation&quot;: { &quot;work&quot;: &quot;bhagavad-gita&quot;, &quot;chapter&quot;: 2, &quot;verse&quot;: 47 },
+  &quot;genre&quot;: &quot;sloka&quot;,
+  &quot;language&quot;: &quot;sa&quot;,
+  &quot;script&quot;: &quot;Deva&quot;,
+  &quot;body&quot;: &quot;कर्मण्येवाधिकारस्ते मा फलेषु कदाचन ।\nमा कर्मफलहेतुर्भूर्मा ते सङ्गोऽस्त्वकर्मणि ॥&quot;,
+  &quot;translit&quot;: { &quot;scheme&quot;: &quot;IAST&quot;, &quot;body&quot;: &quot;karmaṇyevādhikāraste mā phaleṣu kadācana |\nmā karmaphalaheturbhūrmā te saṅgo'stvakarmaṇi ||&quot; },
+  &quot;pronunciationTradition&quot;: &quot;south_indian&quot;,
+  &quot;padas&quot;: [
+    { &quot;index&quot;: 1, &quot;text&quot;: &quot;कर्मण्येवाधिकारस्ते&quot;, &quot;charStart&quot;: 0, &quot;charEnd&quot;: 19, &quot;boundaryType&quot;: &quot;pada&quot; },
+    { &quot;index&quot;: 2, &quot;text&quot;: &quot;मा फलेषु कदाचन&quot;, &quot;charStart&quot;: 20, &quot;charEnd&quot;: 35, &quot;boundaryType&quot;: &quot;ardha&quot; },
+    { &quot;index&quot;: 3, &quot;text&quot;: &quot;मा कर्मफलहेतुर्भूर्&quot;, &quot;charStart&quot;: 38, &quot;charEnd&quot;: 57, &quot;boundaryType&quot;: &quot;pada&quot; },
+    { &quot;index&quot;: 4, &quot;text&quot;: &quot;मा ते सङ्गोऽस्त्वकर्मणि&quot;, &quot;charStart&quot;: 57, &quot;charEnd&quot;: 80, &quot;boundaryType&quot;: &quot;sloka&quot; }
+  ],
+  &quot;aksharas&quot;: [
+    { &quot;index&quot;: 0, &quot;text&quot;: &quot;क&quot;, &quot;padaIndex&quot;: 1, &quot;weight&quot;: &quot;G&quot;, &quot;matra&quot;: 2 },
+    { &quot;index&quot;: 1, &quot;text&quot;: &quot;र्म&quot;, &quot;padaIndex&quot;: 1, &quot;weight&quot;: &quot;G&quot;, &quot;matra&quot;: 2 },
+    { &quot;index&quot;: 2, &quot;text&quot;: &quot;ण्ये&quot;, &quot;padaIndex&quot;: 1, &quot;weight&quot;: &quot;G&quot;, &quot;matra&quot;: 2 },
+    { &quot;index&quot;: 3, &quot;text&quot;: &quot;वा&quot;, &quot;padaIndex&quot;: 1, &quot;weight&quot;: &quot;G&quot;, &quot;matra&quot;: 2 },
+    { &quot;index&quot;: 4, &quot;text&quot;: &quot;धि&quot;, &quot;padaIndex&quot;: 1, &quot;weight&quot;: &quot;L&quot;, &quot;matra&quot;: 1 },
+    { &quot;index&quot;: 5, &quot;text&quot;: &quot;का&quot;, &quot;padaIndex&quot;: 1, &quot;weight&quot;: &quot;G&quot;, &quot;matra&quot;: 2 },
+    { &quot;index&quot;: 6, &quot;text&quot;: &quot;र&quot;, &quot;padaIndex&quot;: 1, &quot;weight&quot;: &quot;G&quot;, &quot;matra&quot;: 2 },
+    { &quot;index&quot;: 7, &quot;text&quot;: &quot;स्ते&quot;, &quot;padaIndex&quot;: 1, &quot;weight&quot;: &quot;G&quot;, &quot;matra&quot;: 2 }
+    // … 24 more, 8 per pāda, all derived
+  ],
+  &quot;metre&quot;: { &quot;name&quot;: &quot;anushtubh&quot;, &quot;lgSignature&quot;: [&quot;GGGGLGGG&quot;, &quot;GLGLLGLL&quot;, &quot;GGLLLGGG&quot;, &quot;GGGGLGLL&quot;],
+             &quot;syllablesPerPada&quot;: 8, &quot;yati&quot;: [], &quot;vrittaClass&quot;: &quot;sama&quot;, &quot;confirmedBy&quot;: &quot;p-7d3e…&quot; },
+  &quot;pauses&quot;: [
+    { &quot;afterAksharaIndex&quot;: 7,  &quot;kind&quot;: &quot;pada&quot;,  &quot;licensed&quot;: true },
+    { &quot;afterAksharaIndex&quot;: 15, &quot;kind&quot;: &quot;ardha&quot;, &quot;licensed&quot;: true },
+    { &quot;afterAksharaIndex&quot;: 23, &quot;kind&quot;: &quot;pada&quot;,  &quot;licensed&quot;: true },
+    { &quot;afterAksharaIndex&quot;: 31, &quot;kind&quot;: &quot;sloka&quot;, &quot;licensed&quot;: true }
+  ],
+  &quot;acceptedVariants&quot;: [
+    { &quot;aksharaIndex&quot;: 7, &quot;canonical&quot;: &quot;ste&quot;, &quot;accepted&quot;: [&quot;ste&quot;], &quot;rule&quot;: &quot;none&quot; },
+    { &quot;aksharaIndex&quot;: 18, &quot;canonical&quot;: &quot;saṅ&quot;, &quot;accepted&quot;: [&quot;saṅ&quot;, &quot;saṃ&quot;], &quot;rule&quot;: &quot;anusvara_homorganic_nasal&quot; }
+  ],
+  &quot;svara&quot;: { &quot;prescribed&quot;: false, &quot;marks&quot;: [] },
+  &quot;version&quot;: 2,
+  &quot;changeLog&quot;: [
+    { &quot;version&quot;: 1, &quot;date&quot;: &quot;2026-10-06&quot;, &quot;author&quot;: &quot;p-7d3e…&quot;, &quot;note&quot;: &quot;pasted from Gita Press edition&quot; },
+    { &quot;version&quot;: 2, &quot;date&quot;: &quot;2026-10-07&quot;, &quot;author&quot;: &quot;p-7d3e…&quot;, &quot;note&quot;: &quot;confirmed anushtubh match; added anusvara variant&quot; }
+  ]
+}
+</code></pre>
+<pre><code class="language-json">// CH-02/bg-2-47-teacher.json  (baseline sidecar, next to bg-2-47-teacher.wav)
+{
+  &quot;schemaVersion&quot;: &quot;1.0.0&quot;,
+  &quot;id&quot;: &quot;3f1a7c2e9b4d4e0f8a6b1c2d3e4f5a6b&quot;,
+  &quot;name&quot;: &quot;BG 2.47 teacher slow&quot;,
+  &quot;folder&quot;: &quot;CH-02&quot;,
+  &quot;source&quot;: &quot;mic&quot;,
+  &quot;role&quot;: &quot;teacher&quot;,
+  &quot;createdAt&quot;: &quot;2026-10-06T18:42:10+05:30&quot;,
+  &quot;modifiedAt&quot;: &quot;2026-10-07T09:15:02+05:30&quot;,
+  &quot;text&quot;: { &quot;id&quot;: &quot;t-bg-02-047&quot;, &quot;version&quot;: 2 },
+  &quot;style&quot;: { &quot;mode&quot;: &quot;plain_sloka&quot;, &quot;pitchPrescribed&quot;: false, &quot;tradition&quot;: &quot;south_indian&quot;, &quot;deliveryPattern&quot;: &quot;whole_verse&quot; },
+  &quot;speaker&quot;: { &quot;profileId&quot;: &quot;p-7d3e…&quot;, &quot;voiceType&quot;: &quot;female&quot;, &quot;ageGroup&quot;: &quot;40to59&quot;, &quot;nativeLanguage&quot;: &quot;kn&quot;, &quot;region&quot;: &quot;Karnataka&quot; },
+  &quot;voice&quot;: { &quot;medianF0Hz&quot;: 198.4, &quot;f0P10Hz&quot;: 171.0, &quot;f0P90Hz&quot;: 236.5, &quot;f0RangeSemitones&quot;: 5.6,
+             &quot;trackerRangeHz&quot;: [120, 400], &quot;activeSpeechLevelDbov&quot;: -26.1,
+             &quot;integratedLoudnessLufs&quot;: -24.3, &quot;loudnessRangeLu&quot;: 5.8, &quot;maxTruePeakDbtp&quot;: -3.1,
+             &quot;tempoSylPerSec&quot;: 2.9, &quot;tempoClass&quot;: &quot;slow_teaching&quot;, &quot;leadSilenceSec&quot;: 0.82, &quot;trailSilenceSec&quot;: 0.35 },
+  &quot;capture&quot;: { &quot;sampleRateHz&quot;: 48000, &quot;channelCount&quot;: 1, &quot;sampleSizeBits&quot;: null,
+               &quot;echoCancellation&quot;: false, &quot;noiseSuppression&quot;: false, &quot;autoGainControl&quot;: false,
+               &quot;deviceLabel&quot;: &quot;Microphone Array (Realtek(R) Audio)&quot;, &quot;userAgent&quot;: &quot;Mozilla/5.0 … Chrome/141&quot;, &quot;environment&quot;: &quot;quiet_room&quot; },
+  &quot;measured&quot;: { &quot;durationSec&quot;: 14.62, &quot;sampleCount&quot;: 701760, &quot;peakDbfs&quot;: -8.9, &quot;rmsDbfs&quot;: -27.4,
+                &quot;noiseFloorDbfs&quot;: -52.0, &quot;snrDb&quot;: 24.6, &quot;clippedSampleCount&quot;: 0, &quot;bandwidthHz&quot;: 7900 },
+  &quot;quality&quot;: { &quot;flags&quot;: [], &quot;approvedBy&quot;: &quot;p-7d3e…&quot;, &quot;approvedAt&quot;: &quot;2026-10-07T09:15:02+05:30&quot; },
+  &quot;tiers&quot;: [
+    { &quot;name&quot;: &quot;sloka&quot;, &quot;intervals&quot;: [ { &quot;xmin&quot;: 0.82, &quot;xmax&quot;: 14.27, &quot;text&quot;: &quot;BG 2.47&quot;, &quot;ref&quot;: &quot;t-bg-02-047&quot; } ] },
+    { &quot;name&quot;: &quot;pada&quot;, &quot;intervals&quot;: [
+        { &quot;xmin&quot;: 0.82, &quot;xmax&quot;: 3.95,  &quot;text&quot;: &quot;कर्मण्येवाधिकारस्ते&quot;, &quot;ref&quot;: 1 },
+        { &quot;xmin&quot;: 4.41, &quot;xmax&quot;: 7.30,  &quot;text&quot;: &quot;मा फलेषु कदाचन&quot;, &quot;ref&quot;: 2 },
+        { &quot;xmin&quot;: 8.10, &quot;xmax&quot;: 11.02, &quot;text&quot;: &quot;मा कर्मफलहेतुर्भूर्&quot;, &quot;ref&quot;: 3 },
+        { &quot;xmin&quot;: 11.35, &quot;xmax&quot;: 14.27, &quot;text&quot;: &quot;मा ते सङ्गोऽस्त्वकर्मणि&quot;, &quot;ref&quot;: 4 } ],
+      &quot;provenance&quot;: { &quot;method&quot;: &quot;tapped_then_snapped_to_pause&quot;, &quot;annotator&quot;: &quot;teacher&quot;, &quot;verified&quot;: true } }
+  ],
+  &quot;audio&quot;: { &quot;file&quot;: &quot;bg-2-47-teacher.wav&quot;, &quot;encodingFormat&quot;: &quot;audio/wav&quot;, &quot;sizeBytes&quot;: 1403564,
+             &quot;pcmSha256&quot;: &quot;a3f9…&quot;, 
+             &quot;codecHistory&quot;: [
+               { &quot;stage&quot;: &quot;capture&quot;, &quot;algorithm&quot;: &quot;FLOAT&quot;, &quot;sampleRateHz&quot;: 48000, &quot;bitDepth&quot;: 32, &quot;channels&quot;: 1, &quot;tool&quot;: &quot;Chrome 141 getUserMedia&quot; },
+               { &quot;stage&quot;: &quot;store&quot;,   &quot;algorithm&quot;: &quot;PCM&quot;,   &quot;sampleRateHz&quot;: 48000, &quot;bitDepth&quot;: 16, &quot;channels&quot;: 1, &quot;tool&quot;: &quot;SlokAbhyasa 0.9.3&quot; } ] },
+  &quot;software&quot;: { &quot;app&quot;: &quot;SlokAbhyasa&quot;, &quot;version&quot;: &quot;0.9.3&quot; },
+  &quot;analysis&quot;: { &quot;file&quot;: &quot;bg-2-47-teacher.analysis.json&quot;, &quot;featureVersion&quot;: &quot;5&quot;, &quot;paramsHash&quot;: &quot;9c2e…&quot;,
+                &quot;inputSha256&quot;: &quot;a3f9…&quot;, &quot;computedAt&quot;: &quot;2026-10-06T18:42:12+05:30&quot;, &quot;profile&quot;: &quot;recitation&quot; },
+  &quot;transcript&quot;: { &quot;file&quot;: &quot;bg-2-47-teacher.transcript.json&quot;, &quot;sha256&quot;: &quot;77b1…&quot;, &quot;source&quot;: &quot;asr&quot;, &quot;model&quot;: &quot;whisper-small-q8&quot; },
+  &quot;lineage&quot;: { &quot;derivedFrom&quot;: null, &quot;replaces&quot;: null, &quot;replacedBy&quot;: null, &quot;copyOf&quot;: null },
+  &quot;edit&quot;: { &quot;trimStartSec&quot;: 0, &quot;trimEndSec&quot;: 0, &quot;originalKept&quot;: false, &quot;history&quot;: [] },
+  &quot;consent&quot;: { &quot;givenBy&quot;: &quot;self&quot;, &quot;at&quot;: &quot;2026-10-06T18:40:00+05:30&quot;, &quot;textVersion&quot;: &quot;2026-09&quot;,
+               &quot;parentVerified&quot;: false, &quot;verificationMethod&quot;: &quot;none&quot;, &quot;shareScope&quot;: &quot;folder&quot; }
+}
+</code></pre>
+<pre><code class="language-json">// Poems/mind-without-fear.text.json  (differences from the sloka text record)
+{
+  &quot;textId&quot;: &quot;t-tagore-gitanjali-35&quot;, &quot;title&quot;: &quot;Where the Mind is Without Fear&quot;, &quot;genre&quot;: &quot;poem&quot;,
+  &quot;language&quot;: &quot;en-IN&quot;, &quot;script&quot;: &quot;Latn&quot;,
+  &quot;body&quot;: &quot;Where the mind is without fear and the head is held high\nWhere knowledge is free\n…&quot;,
+  &quot;lines&quot;: [ { &quot;index&quot;: 1, &quot;text&quot;: &quot;Where the mind is without fear and the head is held high&quot;, &quot;stanza&quot;: 1 },
+             { &quot;index&quot;: 2, &quot;text&quot;: &quot;Where knowledge is free&quot;, &quot;stanza&quot;: 1 } ],
+  &quot;pauses&quot;: [ { &quot;afterLine&quot;: 1, &quot;kind&quot;: &quot;line&quot;, &quot;licensed&quot;: true },
+              { &quot;afterLine&quot;: 2, &quot;kind&quot;: &quot;line&quot;, &quot;licensed&quot;: true } ],
+  &quot;version&quot;: 1
+}
+// The poem's baseline sidecar is the sloka sidecar with
+//   &quot;style&quot;: { &quot;mode&quot;: &quot;poem_recital&quot;, &quot;pitchPrescribed&quot;: false },
+//   a &quot;line&quot; tier instead of &quot;pada&quot;, and no aksharas-derived tempo (tempoSylPerSec from the ASR word count instead).
+</code></pre>
+<pre><code class="language-json">// Geetams/sri-gananatha.text.json  (composition record) and sri-gananatha-teacher.json (performance fields)
+{
+  &quot;textId&quot;: &quot;t-geetam-sri-gananatha&quot;, &quot;title&quot;: &quot;Sri Gananatha&quot;, &quot;genre&quot;: &quot;song&quot;,
+  &quot;item&quot;: { &quot;kind&quot;: &quot;geetam&quot;, &quot;tradition&quot;: &quot;carnatic&quot;, &quot;composer&quot;: &quot;Purandara Dasa&quot; },
+  &quot;scale&quot;: { &quot;system&quot;: &quot;carnatic_raga&quot; },
+  &quot;raga&quot;: { &quot;name&quot;: &quot;Malahari&quot;, &quot;parent&quot;: 15,
+            &quot;arohana&quot;: [&quot;S&quot;, &quot;R1&quot;, &quot;M1&quot;, &quot;P&quot;, &quot;D1&quot;, &quot;S'&quot;], &quot;avarohana&quot;: [&quot;S'&quot;, &quot;D1&quot;, &quot;P&quot;, &quot;M1&quot;, &quot;G3&quot;, &quot;R1&quot;, &quot;S&quot;] },
+  &quot;tala&quot;: { &quot;system&quot;: &quot;carnatic&quot;, &quot;name&quot;: &quot;Rupaka&quot;, &quot;beatsPerCycle&quot;: 3, &quot;aksharasPerBeat&quot;: 4, &quot;kalai&quot;: 1 },
+  &quot;sections&quot;: [ { &quot;id&quot;: &quot;s1&quot;, &quot;name&quot;: &quot;pallavi&quot;, &quot;speedFactor&quot;: 1, &quot;swaraOnly&quot;: false, &quot;metric&quot;: true },
+                { &quot;id&quot;: &quot;s2&quot;, &quot;name&quot;: &quot;charanam&quot;, &quot;speedFactor&quot;: 1, &quot;swaraOnly&quot;: false, &quot;metric&quot;: true } ],
+  &quot;lyrics&quot;: { &quot;language&quot;: &quot;kn&quot;, &quot;script&quot;: &quot;Knda&quot;, &quot;transliterationScheme&quot;: &quot;ISO15919&quot;, &quot;text&quot;: &quot;…&quot;, &quot;lines&quot;: [] },
+  &quot;notation&quot;: { &quot;source&quot;: &quot;none&quot; },
+  &quot;version&quot;: 1
+}
+{
+  &quot;id&quot;: &quot;b7c0…&quot;, &quot;text&quot;: { &quot;id&quot;: &quot;t-geetam-sri-gananatha&quot;, &quot;version&quot;: 1 },
+  &quot;style&quot;: { &quot;mode&quot;: &quot;classical&quot;, &quot;pitchPrescribed&quot;: true },
+  &quot;tonic&quot;: { &quot;hz&quot;: 196.0, &quot;midi&quot;: 55.0, &quot;noteName&quot;: &quot;G3&quot;, &quot;method&quot;: &quot;sung_sa_marker&quot;, &quot;confidence&quot;: 0.96, &quot;sourceSpanSec&quot;: [0.0, 2.8] },
+  &quot;drone&quot;: { &quot;present&quot;: true, &quot;hz&quot;: 196.0, &quot;type&quot;: &quot;shruti_box&quot;, &quot;tuning&quot;: &quot;Pa&quot;, &quot;inReferenceAudio&quot;: false },
+  &quot;tempo&quot;: { &quot;value&quot;: 288, &quot;unit&quot;: &quot;aksharas_per_min&quot;, &quot;bpmEquivalent&quot;: 72, &quot;layaLabel&quot;: &quot;madhyama&quot;, &quot;samaIntervalSec&quot;: 2.5, &quot;segments&quot;: [] },
+  &quot;rhythm&quot;: { &quot;samaTimesSec&quot;: [3.1, 5.6, 8.1, 10.6], &quot;samaMethod&quot;: &quot;tapped&quot;, &quot;eduppuAksharas&quot;: 0 },
+  &quot;leadInSec&quot;: 3.1,
+  &quot;tiers&quot;: [ { &quot;name&quot;: &quot;section&quot;, &quot;intervals&quot;: [ { &quot;xmin&quot;: 3.1, &quot;xmax&quot;: 23.2, &quot;text&quot;: &quot;pallavi&quot;, &quot;ref&quot;: &quot;s1&quot; },
+                                                 { &quot;xmin&quot;: 23.2, &quot;xmax&quot;: 43.0, &quot;text&quot;: &quot;charanam&quot;, &quot;ref&quot;: &quot;s2&quot; } ] } ],
+  &quot;pitch&quot;: { &quot;intonationModel&quot;: &quot;measured&quot;, &quot;swaraCentersCents&quot;: { &quot;R1&quot;: { &quot;cents&quot;: 108, &quot;spreadCents&quot;: 14 }, &quot;M1&quot;: { &quot;cents&quot;: 497, &quot;spreadCents&quot;: 11 } } },
+  &quot;analysis&quot;: { &quot;profile&quot;: &quot;recital&quot;, &quot;featureVersion&quot;: &quot;5&quot;, &quot;paramsHash&quot;: &quot;…&quot; },
+  &quot;tolerances&quot;: { &quot;pitchCentsSteady&quot;: 25, &quot;pitchCentsGamaka&quot;: 60, &quot;onsetMs&quot;: 80, &quot;samaMs&quot;: 200, &quot;loudnessDb&quot;: 10 }
+}
+</code></pre>
+<p>The schema itself should be JSON Schema 2020-12 with <code>required</code> on identity and integrity fields only, <code>enum</code> for every categorical with an explicit <code>unspecified</code> or <code>preferNotToSay</code> member, <code>format: date-time</code> for timestamps (asserted, since in 2020-12 format is annotation-only unless the Format Assertion vocabulary is enabled), JSON <code>null</code> for unknown rather than sentinel values, physical bounds as <code>minimum</code>/<code>maximum</code>, and an <code>x</code> extension object for experiments (<a href="https://json-schema.org/specification">JSON Schema</a>). Nothing demographic should be required.</p>
+<h2 id="ask-six-things-at-record-time-measure-the-rest-confirm-after-the-first-take">Ask six things at record time, measure the rest, confirm after the first take</h2>
+<p>The workflow follows from the table: the fewer questions at record time the better, and the questions that remain should be asked of the adult, once, at the folder level. Comparison-based CAPT corpora recorded students who &ldquo;listened to the reference audio first and then did the recording&rdquo; and allowed re-recording (<a href="https://people.csail.mit.edu/jrg/2013/lee-slate13.pdf">Lee &amp; Glass 2013</a>), and the M3 pedagogy dataset models the lesson as a short teacher phrase followed by the learner&rsquo;s imitation (<a href="https://zenodo.org/records/8332078">M3</a>); both argue for a recording screen that is mostly a level meter and a play button.</p>
+<p><strong>Before recording, once per folder or text.</strong> The teacher pastes the text and gives it a title or citation; the app detects the script, splits pādas on daṇḍas, syllabifies, marks weights and proposes a metre, showing the result for a yes/no rather than asking the teacher to type any of it. The folder carries defaults for <code>language</code>, <code>genre</code>, <code>style.mode</code>, <code>pronunciationTradition</code> and <code>shareScope</code> so that individual slokas inherit them. The teacher&rsquo;s own profile — <code>voiceType</code>, <code>ageGroup</code>, optional native language and region — is created once in <code>profiles.json</code> and attached to every baseline they record; for a child learner the adult creates the profile, and the app asks for <code>voiceType</code> only when the bucket is <code>12to15</code> or above, because below that the field has no acoustic use. Consent is part of profile creation: when the bucket is a child bucket the screen requires <code>consent.givenBy</code> to be a parent, guardian or teacher, shows the consent text whose version is stored, and records that <code>parentVerified</code> is false in local mode, where no verification is possible or (on the reading below) required.</p>
+<p><strong>At record time.</strong> The app requests <code>echoCancellation</code>, <code>noiseSuppression</code> and <code>autoGainControl</code> off and a 48 kHz mono track, then stores what <code>getSettings()</code> actually reports rather than what was requested, with <code>null</code> where a browser omits a key so that unknown is distinguishable from off (<a href="https://www.w3.org/TR/mediacapture-streams/">W3C</a>). The teacher sees a level meter calibrated to the measured noise floor and a single optional interaction: a tap at each daṇḍa (or, for singing, a tap on each sama and a sung Sa before the piece), which the app snaps to the nearest detected pause to produce the <code>pada</code> or <code>section</code> tier and the <code>samaTimesSec</code> list with <code>provenance.method = tapped_then_snapped</code>. Nothing else is asked. For a child recording a self-baseline the adult performs the taps or skips them, and the app derives the tier later from pauses and the ASR transcript.</p>
+<p><strong>Immediately after, automatically.</strong> On save the app computes the measured blocks — P.56 level, LUFS and true peak, sample peak and RMS, clipping count, noise floor and SNR, bandwidth, lead and trail silence, median and percentile F0 with the tracker range chosen from the profile, syllables per second against the akṣara count — runs the ASR transcript, derives the phonetic key, writes the sidecar and the <code>bext</code> chunk, and shows a quality card. Three conditions trigger a &ldquo;re-record?&rdquo; prompt rather than a silent save: any clipped run, SNR below the 15 dB at which the level estimator itself becomes unreliable (<a href="https://www.commsp.ee.ic.ac.uk/~sap/uploads/publications/Gonzalez2013.pdf">Gonzalez &amp; Brookes 2013</a>), and a transcript whose syllable count disagrees with the text by more than the age-appropriate tolerance, which usually means a skipped or repeated line — the defect class the Vāgdhenu gates caught most often (<a href="https://arxiv.org/pdf/2608.26146">Vāgdhenu</a>). Two warnings are informational: a processed capture (any of the three DSP flags on, or unknown), and a register mismatch for the folder&rsquo;s intended learners — a male teacher recording for under-eights should be told that a child&rsquo;s formants will sit at 1.37–1.5× his and offered either a second, higher-register take or pitch-shifted playback, as the singing-accuracy field gives children a female model by default (<a href="https://sail.usc.edu/publications/files/LeeJASA1999.pdf">Lee et al. 1999</a>; <a href="https://ubwp.buffalo.edu/apal-pfordresher/wp-content/uploads/sites/79/2022/01/PfordresherDemorest_2021_JRME.pdf">Pfordresher &amp; Demorest 2021</a>).</p>
+<p><strong>Later, to confirm.</strong> Three things are better judged after the first learner take than at save time. The pāda tier is confirmed by viewing the alignment path: if the DTW consistently bends at a boundary the teacher did not tap, the app proposes it. The metre match and any accepted variant the ASR keeps &ldquo;mis-hearing&rdquo; are confirmed from the first few evaluations, and <code>quality.approvedBy</code> is set only then, so that unapproved baselines are excluded from quizzes. And the calibration the earlier report asked for happens here: when a teacher accepts a learner&rsquo;s take, the app logs the content distance, transcript mismatch and pitch deviation together with the learner&rsquo;s <code>ageGroup</code> and the pairing&rsquo;s voice types, so that each tolerance floor can be set where no more than a tenth of accepted recitations would be flagged, per age class — the rule pronunciation-assessment designers use because &ldquo;erroneously rejecting correct pronunciations would be more detrimental for learners than erroneously accepting mispronunciations&rdquo; (<a href="https://www.isca-archive.org/slate_2009/kanters09_slate.pdf">Kanters et al. 2009</a>). Adolescent boys are the one group whose baselines expire: F0 fell 105 Hz between 7 and 14 in a longitudinal series (<a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC5098980/">Fouquet et al. 2016</a>), so a self-baseline with <code>ageGroup = 12to15</code> should carry a re-record reminder at three to six months computed from <code>createdAt</code>.</p>
+<p>The children&rsquo;s-data posture deserves a direct statement, with the caveat that none of it is legal advice and all of it needs Indian counsel. Under the DPDP Act a child is anyone under eighteen and a Data Fiduciary &ldquo;shall, before processing any personal data of a child &hellip; obtain verifiable consent of the parent&rdquo; and &ldquo;shall not undertake tracking or behavioural monitoring of children&rdquo; (<a href="https://www.dpdpa.com/dpdpa2023/chapter-2/section9.html">DPDP s.9</a>); the Rules notified on 13 November 2025 phase the operational duties, including Rule 10 on children, in to <strong>13 May 2027</strong>, and Rule 10 requires due diligence that the consenting person is an identifiable adult, by reference to identity details already held, details voluntarily provided, or a virtual token such as DigiLocker (<a href="https://dpdprules.org/">dpdprules.org</a>; <a href="https://www.dpdpa.com/dpdparules/rule10.html">Rule 10</a>). The Act does &ldquo;not apply to personal data processed by an individual for any personal or domestic purpose&rdquo; (<a href="https://www.dpdpa.com/dpdpa2023/chapter-1/section3.html">DPDP s.3</a>), which is the clause a local-only app with no account, no sync and no telemetry relies on: the developer never receives the data, and the family processes it for a domestic purpose. The moment the app adds backup, sync or telemetry, the developer becomes a fiduciary and s.9 applies in full, and whether in-app progress tracking of a child&rsquo;s recitation counts as &ldquo;behavioural monitoring&rdquo; has not been tested by any authority. The parallels point the same way: GDPR Article 8 sets the consent age at 16 with a member-state floor of 13 and requires &ldquo;reasonable efforts to verify&rdquo; parental authorisation (<a href="https://gdpr-info.eu/art-8-gdpr/">GDPR Art. 8</a>); the FTC&rsquo;s 2025 COPPA rule lists <strong>voiceprints</strong> among biometric identifiers and exempts voice captures only when deleted &ldquo;immediately after completion of the service&rdquo; (<a href="https://www.gibsondunn.com/ftc-updates-to-coppa-rule-impose-new-compliance-obligations-for-online-services-that-collect-data-from-children/">Gibson Dunn</a>; <a href="https://securiti.ai/ftc-coppa-final-rule-amendments/">Securiti</a>); and Common Voice requires that anyone 19 or under &ldquo;must have your parent or guardian&rsquo;s consent and they must supervise your participation&rdquo; while leaving demographics voluntary (<a href="https://commonvoice.mozilla.org/ka/terms">Common Voice Terms</a>; <a href="https://commonvoice.mozilla.org/privacy">Privacy Notice</a>). The schema consequences are concrete and cheap: no birth date, exact age, name, device serial or location anywhere in <code>library/</code>; an opaque <code>profileId</code> in the sidecar and the name only in the root-level profile file; the <code>consent</code> block populated at profile creation and stamped on each baseline; <code>shareScope = private</code> as the default for any child&rsquo;s recording so exports and future sharing are gated; and a one-click delete that follows <code>lineage</code> to remove the WAV, sidecar, analysis cache, transcript and every attempt and report derived from them.</p>
+<h2 id="the-evidence-is-thinnest-exactly-where-the-apps-users-live">The evidence is thinnest exactly where the app&rsquo;s users live</h2>
+<p>The field inventory above is well grounded in corpus and format precedent and poorly grounded in recitation-specific measurement, and the reader should know which is which. No published evaluation system consumes metre or laghu/guru weights for scoring: Chandojnanam and the other metre tools are text-only, and Vāgdhenu uses metre only to select a reference clip, concluding that &ldquo;the reference clip and a voice-steering retrain are the only working prosody levers&rdquo; (<a href="https://arxiv.org/abs/2608.26146">Vāgdhenu</a>) — so the syllable-weight check proposed for the timing step is a design inference from Śikṣā&rsquo;s mātrā ratios, not a replicated method, and the guru ≈ 2 mātrā expectation is a prosodic convention rather than a measured duration ratio. No machine-readable standard for licensed pause positions exists beyond the daṇḍa split; the pause rule rests on one engineering report about one expert reciter whose material was Mahābhārata Tātparya Nirṇaya and Bhāgavatam, not the Gītā, and every sloka-specific number in this and the earlier report (3.0–3.6 semitones excursion, 0.40–0.54 self-correlation, about 3.1 syllables per second) comes from that single voice (<a href="https://arxiv.org/pdf/2608.26146">Vāgdhenu</a>). No source gives chanting tempo in syllables per second across reciters, so the <code>tempoClass</code> cut-offs implied here (below 3 syl/s slow, 3–4 medium, above 4 fast) are proposals calibrated loosely on conversational norms of 2.6–3.3 syl/s for children and about 4 for adults (<a href="https://en.wikipedia.org/wiki/Speech_tempo">Wikipedia: Speech tempo</a>); they must be re-fitted on the app&rsquo;s own library. No controlled vocabulary of Sanskrit recitation traditions exists in any corpus or metadata standard, so <code>pronunciationTradition</code> and <code>style.tradition</code> start as free text with suggestions, and the regional variant list draws on community and secondary sources rather than phonetic surveys.</p>
+<p>The speaker and privacy design inherits a gap the earlier report already named: there are <strong>no F0 or formant norms for Indian children by age</strong>, the only Indian adult norms disagree with each other on men&rsquo;s F0, and the age-bucket boundaries therefore rest on American English samples (<a href="https://sail.usc.edu/publications/files/LeeJASA1999.pdf">Lee et al. 1999</a>; <a href="https://www.voicescience.org/lexicon/average-speaking-frequencies/">voicescience.org</a>). Common Voice&rsquo;s handling of free-text accents by locale and the exact per-speaker table layouts of the children&rsquo;s corpora could not be read, and the Quran dataset field lists rest on search-engine summaries of dataset cards that returned HTTP 401. On the capture side, no controlled study quantifies the effect of WebRTC&rsquo;s <code>autoGainControl</code> or <code>noiseSuppression</code> on MFCC distance, F0 error or DTW cost; the recommendation to record and prefer to disable them is grounded in general AGC and noise literature and one anecdotal report that phone DSP &ldquo;mangles the pitch&rdquo;, and no fetched source tests whether browser-generated WAVs preserve any chunks. No surveyed dataset records microphone distance, room or device, so <code>capture.environment</code> has no precedent and no validated vocabulary. The iXML specification could not be fetched, so its lineage elements are unverified and the embedding recommendation is confined to <code>bext</code>, <code>INFO</code> and <code>cue</code>.</p>
+<p>In singing, the gaps are larger still. No public dataset encodes a rāga as an arohana/avarohana formula; the Varnam dataset&rsquo;s YAML grammar, the Saraga tonic annotation protocol for female voices, the six ROD ornament classes, the full Suladi Sapta Tāla anga table, published mātrā-per-minute ranges for Carnatic kālas and the harmonium kaṭṭai-to-note mapping were all inaccessible or absent, and the gamaka enum offered here is unverified. Riyaz, Smule, Yousician and the rest publish no lesson schema or tolerances, and whether Riyaz pitch-shifts the reference or only the displayed graph is undocumented; the numeric tolerance presets in the song example are placeholders transferred from two Hindustani teachers&rsquo; grid-searched thresholds and from professional singers&rsquo; steady-note precision, not from any study of learners by age or training (<a href="https://www.arxiv.org/pdf/2602.06917">Kumar et al. 2026</a>; <a href="https://archives.ismir.net/ismir2018/paper/000120.pdf">Viraraghavan et al. 2018</a>). Finally, the legal reading is the least settled piece of all: the texts of DPDP s.2(t), s.2(i) and s.8 were not retrieved, the commencement dates come from a rules-tracking site rather than the Gazette, the COPPA quotations come from law-firm summaries because the Federal Register page could not be fetched, and no Indian authority has said whether a local learning app&rsquo;s progress tracking is &ldquo;behavioural monitoring&rdquo; or whether a classroom deployment on a teacher&rsquo;s device falls under the Fourth Schedule&rsquo;s exemption for educational institutions.</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>The practical shift this schema asks for is from describing a recording to describing a comparison. Nearly every field that matters to evaluation is either a property of the text that two speakers share, or a measurement that makes two speakers commensurable — median F0 for the key offset, voice type and age bucket for the warp range and tolerance class, active speech level for loudness, licensed pause positions for timing, the tonic for a sung piece — and almost none of it is something a teacher should have to type. Once the text record is separate and versioned, a multi-baseline library stops being a set of unrelated WAVs and becomes what Ar-DAD and Common Voice are: many performances of one item, each tagged with enough about its speaker and capture that the evaluator can choose the right reference, restrict the right warp range, apply the right age preset and explain, in the report, which differences were speaker physics and which were errors.</p>
+<p>The second implication is that the metadata is the app&rsquo;s calibration instrument. The earlier report concluded that Indian child and Sanskrit recitation norms do not exist and that the app&rsquo;s own corpus of teacher-accepted recordings is the best available calibration set; that is only true if every accepted take carries the learner&rsquo;s age bucket, the pairing&rsquo;s voice types, the capture flags and the text version against which it was judged. The consent block, the opaque profile id and the no-names-in-the-folder rule are what make that corpus legitimate to keep. Build the sidecar first, let <code>index.json</code> become a cache, write the <code>bext</code> key into every WAV the app produces, and the remaining questions — which tempo cut-offs, which content floor for under-eights, whether pitch for a sung stotra is style or correctness — become empirical ones the library can answer.</p>
+</article>
+</main>
+</div>
+<div class="controls" aria-label="Reading controls">
+<button id="smaller" title="Smaller text" aria-label="Smaller text">A−</button>
+<button id="bigger" title="Larger text" aria-label="Larger text">A+</button>
+<button id="theme" title="Light or dark" aria-label="Switch light or dark">◐</button>
+</div>
+<script>
+(() => {
+  // remember the reader's text size and theme (per browser)
+  const root = document.documentElement;
+  try { const s = localStorage.getItem('report-size'); if (s) root.style.setProperty('--body-size', s); } catch {}
+  try { const t = localStorage.getItem('report-theme'); if (t) root.dataset.theme = t; } catch {}
+  const size = (d) => {
+    const cur = parseFloat(getComputedStyle(root).getPropertyValue('--body-size')) || 19;
+    const next = Math.min(28, Math.max(14, cur + d)) + 'px';
+    root.style.setProperty('--body-size', next);
+    try { localStorage.setItem('report-size', next); } catch {}
+  };
+  document.getElementById('bigger')?.addEventListener('click', () => size(1));
+  document.getElementById('smaller')?.addEventListener('click', () => size(-1));
+  document.getElementById('theme')?.addEventListener('click', () => {
+    const dark = root.dataset.theme === 'dark' || (!root.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches);
+    root.dataset.theme = dark ? 'light' : 'dark';
+    try { localStorage.setItem('report-theme', root.dataset.theme); } catch {}
+  });
+  // highlight the section being read
+  const links = [...document.querySelectorAll('nav.toc a[href^="#"]')];
+  const byId = new Map(links.map((a) => [a.getAttribute('href').slice(1), a]));
+  const heads = [...document.querySelectorAll('article h2, article h3')].filter((h) => byId.has(h.id));
+  const mark = () => {
+    let cur = heads[0];
+    for (const h of heads) if (h.getBoundingClientRect().top < 120) cur = h;
+    links.forEach((a) => a.classList.toggle('active', cur && a === byId.get(cur.id)));
+  };
+  addEventListener('scroll', mark, { passive: true });
+  mark();
+  // tables scroll sideways rather than overflowing the page
+  for (const t of document.querySelectorAll('article table')) {
+    const w = document.createElement('div'); w.className = 'table-wrap'; t.replaceWith(w); w.appendChild(t);
+  }
+  // sources open beside the report
+  for (const a of document.querySelectorAll('article a[href^="http"]')) { a.target = '_blank'; a.rel = 'noopener'; }
+})();
+</script>
+</body>
+</html>

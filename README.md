@@ -65,6 +65,16 @@ the same and wins over the file. The server prints both locations when it starts
 existing library, stop the server, move the `library` and `quizzes` folders to the new place,
 write `local.json`, and start again; nothing inside the files refers to where they are.
 
+Each sloka is a WAV with sidecar files of the same name beside it: `<name>.json` holds its
+**details** (who recorded it, how it is judged, its text, what was measured in the voice, how
+it was captured, a hash of the audio), `<name>.features.json` the cached analysis and
+`<name>.transcript.json` / `<name>.txt` the transcript. The details file is the source of
+truth and travels with the WAV when you move or copy it with Explorer; the WAV itself also
+carries a Broadcast Wave `bext` chunk with the name, style and date, so a file that gets
+separated from its sidecar still says what it is. The names of people are kept out of the
+library altogether, in `profiles.json` at the data root: a sloka refers to a person by id and
+stores only their voice type and age group.
+
 The server binds to localhost only. Microphone access requires a "secure context", which
 localhost is, so do not open `index.html` directly from the file system.
 
@@ -93,6 +103,26 @@ A short lead-in (about a tenth of a second) and the natural decay at the end are
 
 Saving also analyses the recording once and caches the result next to the WAV, so evaluating
 yourself against it later starts instantly.
+
+**Details of a sloka.** Under the name and folder, three optional fields are saved with the
+sloka and used when it is evaluated against:
+
+* **Recorded by** – the person whose voice this is, from the People list (see "Who's
+  reciting" under Self Evaluation; "Someone new…" opens it). The evaluation uses their voice
+  type and age group to decide how far apart the two voices can be, so a mispronunciation is
+  never explained away as a voice difference.
+* **How it is judged** – the style of the material: a sloka or stotra *recited* (pitch is a
+  matter of style, shown but not scored), Vedic with svaras (pitch counts as a melody), a
+  stotra or bhajan *sung*, a poem, prose, a song, Indian classical. A tradition or school
+  (Śṛṅgeri, Kāñcī…) can be noted beside it.
+* **Text** – the words as they should be recited, one pāda or line per row. SlokAbhyasa
+  derives the script, the number of akṣaras and the pādas (on `।` and `॥`), measures the pace
+  of the recording in akṣaras per second, and uses the text as the reference for the
+  pronunciation score instead of the recording's own transcript, which may itself have errors.
+
+The last person and style used are remembered. Slokas saved before these fields existed get a
+details file on the next start, with nothing guessed: open **Details** in the Library to fill
+them in; until a style is chosen such a sloka is judged as before (chanting, with pitch).
 
 ### Teach
 Learning one sloka at a time. The list is the same as in Self Evaluation, grouped by folder,
@@ -177,13 +207,41 @@ found in every pairing. One honest limit: a high voice has its harmonics far apa
 blurs its vowels, so when the voices are far apart a very slight slip can hide in the voice
 difference; the report says so when that is the case.
 
+**Who's reciting.** The sidebar has a "Who's reciting" choice and a **People…** button. Add
+the people who use this installation with a voice type (child; woman or girl; man or boy
+with a changed voice; prefer not to say) and an age group (under 8, 8–11, 12–15, 16–17,
+18–39, 40–59, 60 and over; prefer not to say). Nothing else is stored, and no birth dates.
+The chosen person is the learner: Self Evaluation, Teach and quizzes judge with the
+allowances their voice calls for, following the research summarised in
+`reports/Voice characteristics by age and gender.md`:
+
+| Learner | Pitch counts as off beyond | Pace band (when speed is judged) | Pronunciation tolerance |
+| --- | --- | --- | --- |
+| Adult (or no one chosen) | 0.5 semitone | 0.75–1.33× | 10 % |
+| Under 8 | 1 semitone | 0.67–1.5× | 30 % |
+| 8 to 11 | ¾ semitone | 0.67–1.5× | 20 % |
+| 12 to 15 | 0.6 semitone | 0.75–1.33× | 15 % |
+| 60 and over | 0.5 semitone | 0.67–1.33× | 10 % |
+
+A sustained pitch difference has to last a quarter of a second to be reported (an older
+voice's tremor averages out at that scale), the content detector's floor is raised for young
+children, whose articulation is still maturing, and the voice-warp search is confined to the
+range the pairing of learner and recorder can need (narrow for two adults of the same voice
+type, wide when a child is involved). The report lists the allowances it used. For 12 to 15
+year olds the note reminds you that a voice changes fast at that age: re-record your own
+baselines every few months. When the sloka's style says it is *recited*, the pitch tile shows
+the figure "for interest, not judged" and the overall score is content 60 %, timing 40 %.
+
 **Tolerance.** How much variation is acceptable in each category, as a percentage: a category
 is within tolerance when its score is at least 100 minus the tolerance. The defaults are
-content 10 %, pronunciation 10 %, and 60 % for timing, pitch and dynamics. Change them in the
-"Tolerance" row under the recording options (Self Evaluation and Teach share the setting, which
-is remembered); "Defaults" puts them back. Verdicts on screen follow a change at once. In the
-list of reports each row says "Within tolerance" or which categories are outside it. A quiz
-always judges on the default tolerances and its fields are locked.
+content 10 %, pronunciation 10 % (wider for a child learner, see the table above: speech
+recognition is 2–5 times less accurate on children's voices), and 60 % for timing, pitch and
+dynamics. Change them in the "Tolerance" row under the recording options (Self Evaluation and
+Teach share the setting, which is remembered); "Defaults" puts them back. Verdicts on screen
+follow a change at once. In the list of reports each row says "Within tolerance" or which
+categories are outside it. A quiz always judges on the default tolerances for the chosen
+learner, its fields are locked, and every attempt records the tolerance and learner it was
+judged with, so changing the learner later never rewrites old scores.
 
 ### Transcripts (speech to text)
 * **Learn** – after a take (or when you pick a file) the words are transcribed automatically
@@ -303,6 +361,16 @@ that quiz's averages.
 Play, rename, move, delete, or jump straight into evaluating yourself against a sloka. The WAV files live in
 `library/` and its subfolders with a small `index.json`; feel free to copy or back them up.
 
+Under each sloka's name a row of tags sums up its details file: who recorded it, how it is
+judged (or "style not set · judged as chant" for a sloka from before details existed), the
+number of akṣaras of its text and the median pitch of the voice. **Details** opens the same
+fields as in Learn (recorded by, how it is judged, tradition, text), editable, with what was
+measured underneath: the voice's median pitch and range, the pace in akṣaras per second, the
+recording's peak, noise floor and signal-to-noise ratio, the microphone and whether the
+browser processed the sound, how much silence was trimmed, and the first characters of the
+audio hash. A sloka that was saved without these measurements gets them the first time it is
+loaded for an evaluation.
+
 **Folders.** Slokas are grouped by folder, and "Move…" puts one into another folder (or a
 new one); "New folder" makes an empty one. Folders are ordinary subfolders of `library/`, up to
 three levels deep, and `library/backup` is reserved. Every sloka belongs to a folder: nothing
@@ -336,12 +404,20 @@ bands holding only room noise look alike in both recordings. The two sequences a
 aligned with dynamic time warping (banded, with penalised open ends so extra sound at the
 start or a missing ending is reported rather than distorting the alignment).
 
-A take is also analysed at nine vocal-tract-length warps (its spectrum read at 0.74× to 1.35×
-the frequency). The warp whose spectral frames lie closest to the sloka's wins, judged by
+A take is also analysed at eleven vocal-tract-length warps (its spectrum read at 0.67× to
+1.5× the frequency). The warp whose spectral frames lie closest to the sloka's wins, judged by
 nearest-neighbour distance over a sample of frames of each, which needs no alignment and so
 works before the search below; the unwarped reading keeps its place unless another is clearly
-better (4 %), so a same-voice take is never warped on a whim. This is what lets a child be
-judged against an adult's recording on the words, not the voice.
+better (4 %), so a same-voice take is never warped on a whim. When the learner and the
+recorder of the sloka are known, the search is confined to the warps their pairing can need
+(0.86–1.16× for two adults of the same voice type, 0.8–1.25× across types, the full range
+when a child is involved), so a wrong vowel cannot be absorbed by an implausible warp. This
+is what lets a child be judged against an adult's recording on the words, not the voice.
+
+The key difference between the two voices is found on pitch differences folded into one
+octave (the most common pitch class, then the octave most of the frames sit in), and when the
+key is ignored every remaining difference is compared within the octave, so a learner who
+sings in another register is not told every note is wrong.
 
 Along the aligned path SlokAbhyasa looks for:
 
@@ -368,7 +444,12 @@ SlokAbhyasa tells you when that seems to be the case.
 
 Scoring: each aspect's score is the share of the sloka that was *not* flagged for that
 aspect (pitch uses the mean in-tune credit instead). The overall score is a weighted blend of
-the three (content 45 %, timing 35 %, pitch 20 %; see `MODES` in `js/dsp/compare.js`).
+the three: content 45 %, timing 35 %, pitch 20 % for chanting (the default, and for Vedic
+material), content 60 %, timing 40 % for recited text, where pitch is shown for interest only
+(see `MODES` in `js/dsp/compare.js`; the sloka's "How it is judged" picks the mode). The
+thresholds behind "pitch", "timing" and "content" are scaled by the preset for the learner
+(`presetsFor` in `js/meta.js`): adults keep the calibrated defaults, children get the wider
+bands listed under "Who's reciting".
 
 ## Tests
 
@@ -377,15 +458,20 @@ npm test
 ```
 
 Runs the DSP suite on synthetic signals (tones, chant-like syllables, transpositions, inserted
-pauses, dropped notes, a verse hidden inside a longer recording), the transcript diff, the quiz
-scoring and picking, and the library helpers, with Node's built-in test runner.
+pauses, dropped notes, a verse hidden inside a longer recording, a child's allowances against
+an adult's), the transcript diff, the quiz scoring and picking, the metadata (presets, text
+derivation, voice measurements, sidecars, bext chunks, profiles) and the library helpers, with
+Node's built-in test runner.
 
 ## Layout
 
 ```
-serve.js               local server: static files + /api/baselines, /api/folders, /api/quizzes
+serve.js               local server: static files + /api/baselines, /api/folders, /api/quizzes, /api/profiles
+meta-store.js          server side of the details: sidecar files, audio hash, bext chunk, profiles.json
 index.html, css/       the single-page UI
 js/app.js              controller for the views (Teach shares the Self Evaluation screen)
+js/meta.js             vocabularies, evaluation presets by learner, text derivation, voice measurements
+                       (pure, shared by browser and server)
 js/player.js           HTMLAudioElement wrapper (speed, pitch preservation, range playback)
 js/recorder.js         microphone capture through an AudioWorklet
 js/analysis-worker.js  runs the DSP off the main thread
@@ -399,11 +485,13 @@ js/visualizer.js       waveforms and the comparison chart
 datadir.js             where the data folder is (local.json / SLOKABHYASA_DATA, else the project folder)
 tools/trim-library.mjs command-line trimming of every WAV in the library
 test/                  synthetic signal generators and the DSP tests
+reports/               the research the presets and the details file follow
 
 Not in the repository (.gitignore), beside the code or wherever local.json points:
-library/               your slokas, in folders if you like: <name>.wav, <name>.txt (transcript),
-                       <name>.transcript.json (timings), <name>.features.json (analysis cache), index.json;
-                       library/backup holds pre-trim originals
+library/               your slokas, in folders if you like: <name>.wav, <name>.json (details),
+                       <name>.txt (transcript), <name>.transcript.json (timings),
+                       <name>.features.json (analysis cache), index.json; library/backup holds pre-trim originals
+profiles.json          the people (names, voice type, age group) — never inside library/
 quizzes/               one JSON file per quiz: picked slokas, chosen categories, every attempt's scores
 local.json             { "data": "..." } when the two folders above live somewhere else
 ```

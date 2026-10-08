@@ -37,6 +37,13 @@
       </button>
     </nav>
     <div class="sidebar-footer">
+      <div class="learner-box" title="Who recites in Self Evaluation and quizzes. The evaluation makes allowances for a child's voice and pace.">
+        <label class="field">
+          <span>Who's reciting</span>
+          <select id="learner-select"></select>
+        </label>
+        <button class="btn btn-ghost btn-sm" id="people-manage" type="button">People…</button>
+      </div>
       <button class="btn btn-ghost btn-sm" id="theme-toggle" type="button" title="Switch light / dark">
         <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 3a9 9 0 1 0 9 9c0-.5 0-.9-.1-1.3A5.5 5.5 0 0 1 13.3 3.1 9 9 0 0 0 12 3z"/></svg>
         <span>Theme</span>
@@ -162,6 +169,7 @@
               <span>Folder</span>
               <select id="learn-folder"></select>
             </label>
+            <div class="meta-fields" id="learn-meta"></div>
             <div class="row-actions">
               <button class="btn btn-ghost" id="learn-discard" type="button">Discard</button>
               <button class="btn btn-primary" id="learn-save" type="submit">Save to library</button>
@@ -192,6 +200,7 @@
               <input type="text" id="learn-file-name-input" placeholder="Name" maxlength="80" required autocomplete="off" />
             </label>
             <label class="toggle"><input type="checkbox" id="learn-file-trim" checked /><span>Trim silence at the start and end</span></label>
+            <div class="meta-fields" id="learn-file-meta-fields"></div>
             <div class="row-actions">
               <button class="btn btn-primary" id="learn-file-save" type="submit">Save to library</button>
             </div>
@@ -300,6 +309,7 @@
               <label class="toggle" title="Off: recite at any pace, steady or not; only pauses, skipped and added material count. On: rushed or dragged stretches and the overall tempo count in the timing score too."><input type="checkbox" id="practice-tempo" /><span>Judge the speed of recitation</span></label>
               <label class="toggle"><input type="checkbox" id="practice-trim" checked /><span>Trim silence at the start and end of my recording</span></label>
             </div>
+            <p class="muted small" id="practice-learner-note"></p>
             <div class="tol-row" id="tol-row">
               <span class="field-label">Tolerance · acceptable variation</span>
               <div class="tol-fields" id="tol-fields"></div>
@@ -562,6 +572,29 @@
     <div class="row-actions">
       <button class="btn btn-ghost" type="button" id="dialog-cancel">Cancel</button>
       <button class="btn btn-primary" type="submit" id="dialog-ok">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- People: who records and who recites. Names stay in profiles.json at the data root;
+     a sloka carries only a profile id, the voice type and the age group. -->
+<dialog class="dialog dialog-wide" id="people-dialog">
+  <form id="people-form" method="dialog">
+    <h3>People</h3>
+    <p class="muted small">Each person's voice type and age group let the evaluation make the right allowances: a child's pitch and pace are judged more gently, and the voices are matched before words are compared. Nothing else about a person is stored.</p>
+    <ul class="people-list" id="people-list"></ul>
+    <fieldset class="people-edit" id="people-edit">
+      <legend id="people-edit-title">Add a person</legend>
+      <label class="field grow"><span>Name</span><input type="text" id="person-name" maxlength="60" autocomplete="off" placeholder="e.g. Ananya" /></label>
+      <label class="field"><span>Voice</span><select id="person-voice"></select></label>
+      <label class="field"><span>Age group</span><select id="person-age"></select></label>
+      <div class="row-actions">
+        <button class="btn btn-ghost btn-sm" type="button" id="person-cancel" hidden>Cancel edit</button>
+        <button class="btn btn-primary btn-sm" type="button" id="person-save">Add</button>
+      </div>
+    </fieldset>
+    <div class="row-actions">
+      <button class="btn btn-primary" type="submit" id="people-close">Done</button>
     </div>
   </form>
 </dialog>

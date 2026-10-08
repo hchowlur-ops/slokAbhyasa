@@ -124,12 +124,34 @@ export class Recorder extends EventTarget {
     this._flushResolve = null;
     try { this.source.disconnect(); this.node.disconnect(); this.sink.disconnect(); } catch { /* ignore */ }
     this.node.port.onmessage = null;
+    // what the microphone track says about itself, kept with a saved sloka as its capture record
+    const capture = Recorder.captureInfo(this.stream);
     for (const t of this.stream.getTracks()) t.stop();
     const samples = new Float32Array(this.length);
     let o = 0;
     for (const c of this.chunks) { samples.set(c, o); o += c.length; }
     this.chunks = [];
     this.length = 0;
-    return { samples, sampleRate: this.ctx.sampleRate, duration: samples.length / this.ctx.sampleRate };
+    return { samples, sampleRate: this.ctx.sampleRate, duration: samples.length / this.ctx.sampleRate, capture };
+  }
+
+  static captureInfo(stream) {
+    try {
+      const track = stream.getAudioTracks()[0];
+      if (!track) return null;
+      const s = typeof track.getSettings === 'function' ? track.getSettings() : {};
+      const bool = (v) => (typeof v === 'boolean' ? v : null);
+      return {
+        device: track.label || null,
+        sampleRate: typeof s.sampleRate === 'number' ? s.sampleRate : null,
+        channelCount: typeof s.channelCount === 'number' ? s.channelCount : null,
+        echoCancellation: bool(s.echoCancellation),
+        noiseSuppression: bool(s.noiseSuppression),
+        autoGainControl: bool(s.autoGainControl),
+        userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
+      };
+    } catch {
+      return null;
+    }
   }
 }

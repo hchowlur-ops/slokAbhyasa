@@ -113,7 +113,41 @@ canvas { display: block; }
 .nav-btn svg { width: 20px; height: 20px; flex: none; }
 .nav-btn:hover { background: var(--surface-2); color: var(--text); }
 .nav-btn.active { background: var(--accent-soft); color: var(--accent-strong); }
-.sidebar-footer { margin-top: auto; padding: 0 6px; }
+.sidebar-footer { margin-top: auto; padding: 0 6px; display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+.learner-box { display: flex; flex-direction: column; gap: 6px; width: 100%; padding: 10px 8px 6px; border-top: 1px dashed var(--border); }
+.learner-box .field select { padding: 7px 10px; font-size: 0.9rem; width: 100%; }
+.learner-box .btn { align-self: flex-end; }
+
+/* metadata fields of a sloka (Learn forms, Library details) */
+.meta-fields { display: flex; flex-wrap: wrap; gap: 12px 14px; width: 100%; align-items: flex-end; }
+.meta-fields .field { min-width: 180px; }
+.meta-fields .field.wide { flex: 1 1 100%; }
+.meta-fields textarea {
+  font: inherit; font-size: 1.05rem; line-height: 1.5; color: var(--text); background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; padding: 9px 12px; min-height: 76px; width: 100%; resize: vertical;
+}
+.meta-fields textarea:focus { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 1px; border-color: var(--accent); }
+.meta-fields .derived { color: var(--muted); font-size: 0.85rem; width: 100%; }
+.lib-details { border-top: 1px dashed var(--border); padding-top: 10px; display: flex; flex-direction: column; gap: 10px; }
+.lib-details .meta-fields .field { min-width: 140px; flex: 1 1 140px; }
+.lib-details dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; font-size: 0.85rem; }
+.lib-details dt { color: var(--muted); }
+.lib-details dd { margin: 0; }
+.lib-tag { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 999px; background: var(--surface-2); font-size: 0.78rem; color: var(--muted); }
+.lib-tag.warn { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
+
+/* people dialog */
+.dialog-wide { width: min(560px, 94vw); }
+.people-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 240px; overflow: auto; }
+.people-list li { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; }
+.people-list .person-name { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.people-list .person-desc { color: var(--muted); font-size: 0.85rem; }
+.people-list .empty { color: var(--muted); font-size: 0.9rem; border-style: dashed; }
+.people-edit { border: 1px dashed var(--border); border-radius: 10px; padding: 12px 14px 14px; display: flex; flex-wrap: wrap; gap: 12px 14px; align-items: flex-end; margin: 0; }
+.people-edit legend { font-size: 0.85rem; font-weight: 600; color: var(--muted); padding: 0 6px; }
+.people-edit .field { min-width: 150px; }
+.people-edit .field.grow { flex: 1 1 180px; }
+.people-edit .row-actions { width: 100%; }
 .main { padding: 40px 48px 80px; max-width: 1040px; width: 100%; }
 .view { display: none; animation: fade .25s ease; }
 .view.active { display: block; }

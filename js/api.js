@@ -74,6 +74,55 @@ export async function putFeatures(id, serialized) {
   }));
 }
 
+// ---------- metadata sidecar ----------
+
+export async function getMeta(id) {
+  const res = await check(await fetch(`/api/baselines/${encodeURIComponent(id)}/meta`));
+  return res.json();
+}
+
+// Replaces what the app may set in the sidecar (speaker, style, text, voice, measured,
+// capture, consent, notes); the server keeps id, audio hash and software.
+export async function putMeta(id, meta) {
+  const res = await check(await fetch(`/api/baselines/${encodeURIComponent(id)}/meta`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(meta),
+  }));
+  return res.json();
+}
+
+// Changes only the keys given (e.g. { speaker }, { style }, { text: { body } }).
+export async function patchMeta(id, patch) {
+  const res = await check(await fetch(`/api/baselines/${encodeURIComponent(id)}/meta`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  }));
+  return res.json();
+}
+
+// ---------- people (speaker profiles) ----------
+
+export async function listProfiles() {
+  const res = await check(await fetch('/api/profiles'));
+  return res.json();
+}
+
+export async function createProfile(profile) {
+  const res = await check(await fetch('/api/profiles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(profile) }));
+  return res.json();
+}
+
+export async function patchProfile(id, patch) {
+  const res = await check(await fetch(`/api/profiles/${encodeURIComponent(id)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) }));
+  return res.json();
+}
+
+export async function deleteProfile(id) {
+  await check(await fetch(`/api/profiles/${encodeURIComponent(id)}`, { method: 'DELETE' }));
+}
+
 // ---------- folders ----------
 
 export async function listFolders() {

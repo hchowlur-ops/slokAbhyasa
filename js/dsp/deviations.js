@@ -15,16 +15,25 @@ const tEnd = (i) => (i + 1) * HOP_SEC;
 // below 1.0; a skipped phrase scores about 1.5, a different sloka 1.3 and up throughout.
 export const CONTENT_FLOOR = 1.1;
 
-// A pitch difference that is an octave give or take a little is almost always the pitch
-// tracker landing on the other octave of the same note (a child's or a deep voice does that
-// often), not a note sung an octave off: when the key is being ignored, fold it back.
+// A pitch difference of more than half an octave is almost always the pitch tracker landing
+// on the other octave of the same note (a child's or a deep voice does that often), or a
+// learner who sings in another register; it is not a note sung that far off. When the key is
+// being ignored, pitch is compared within the octave: the difference is folded to within
+// 600 cents (the convention of the pitch-imitation literature and of karaoke scorers).
 export function foldOctave(d, ignoreKey) {
   if (!ignoreKey || Number.isNaN(d)) return d;
-  const a = Math.abs(d);
-  if (Math.abs(a - 12) <= 1) return d - Math.sign(d) * 12;
-  if (Math.abs(a - 24) <= 1) return d - Math.sign(d) * 24;
-  return d;
+  return d - 12 * Math.round(d / 12);
 }
+
+// The pitch-deviation thresholds for a tolerance (adults 0.5 semitones; children more).
+export function pitchBands(tolSt = 0.5) {
+  const k = tolSt / 0.5;
+  return { run: 0.4 * k, strong: 0.6 * k, inTune: tolSt, creditFree: 0.25 * k, creditSpan: 1 * k };
+}
+// Sustained pitch differences count only from this length: pitch error falls with note
+// length, and an older voice's tremor (2–5 Hz) averages out at this scale.
+export const PITCH_MIN_MS = 250;
+export const PITCH_SMOOTH_FRAMES = 13; // ~260 ms moving median
 
 // ---------- note / onset segmentation ----------
 
@@ -102,6 +111,10 @@ function countActive(active, a, b) {
 
 export function detectDeviations(ctx) {
   const { B, H, jOf, iOf, matched, tempoRatio, pathDist, offset, opts } = ctx;
+  const preset = (opts && opts.preset) || {};
+  const bands = pitchBands(preset.pitchTolSt || 0.5);
+  const speedBand = preset.speedBand || [0.75, 1.33];
+  const contentFloor = preset.contentFloor || CONTENT_FLOOR;
   const n = B.n;
   const m = H.n;
   const devs = [];
@@ -131,8 +144,8 @@ export function detectDeviations(ctx) {
   const { notes, onsets } = segmentNotes(B, B.trimStart, B.trimEnd);
 
   // ---- pitch ----
-  const bSm = movingMedianNaN(B.st, 7);
-  const hSm = movingMedianNaN(H.st, 7);
+  const bSm = movingMedianNaN(B.st, PITCH_SMOOTH_FRAMES);
+  const hSm = movingMedianNaN(H.st, PITCH_SMOOTH_FRAMES);
   const bJump = jumpMask(B.st);
   const hJump = jumpMask(H.st);
   const noteHead = new Uint8Array(n);
@@ -154,8 +167,8 @@ export function detectDeviations(ctx) {
     const a = Math.abs(d);
     usable++;
     sumAbs += a;
-    if (a <= 0.5) inTune++;
-    credit += clamp(1 - Math.max(0, a - 0.25) / 1, 0, 1);
+    if (a <= bands.inTune) inTune++;
+    credit += clamp(1 - Math.max(0, a - bands.creditFree) / bands.creditSpan, 0, 1);
   }
   const pitchStats = {
     usable,
@@ -163,7 +176,7 @@ export function detectDeviations(ctx) {
     inTuneFrac: usable ? inTune / usable : NaN,
     creditMean: usable ? credit / usable : NaN,
   };
-  for (const run of findRuns(n, (i) => !Number.isNaN(delta[i]) && Math.abs(delta[i]) > 0.4, { minLen: f(120), maxGap: 2 })) {
+  for (const run of findRuns(n, (i) => !Number.isNaN(delta[i]) && Math.abs(delta[i]) > bands.run, { minLen: f(PITCH_MIN_MS), maxGap: 2 })) {
     let c6 = 0;
     let c4 = 0;
     let sum = 0;
@@ -173,11 +186,11 @@ export function detectDeviations(ctx) {
       if (Number.isNaN(d)) continue;
       cnt++;
       sum += d;
-      if (Math.abs(d) > 0.6) c6++;
-      if (Math.abs(d) > 0.4) c4++;
+      if (Math.abs(d) > bands.strong) c6++;
+      if (Math.abs(d) > bands.run) c4++;
     }
     const len = run.end - run.start + 1;
-    if (c6 < f(120) || c4 / len < 0.7) continue;
+    if (c6 < f(PITCH_MIN_MS) || c4 / len < 0.7) continue;
     const mean = sum / cnt;
     const abs = Math.abs(mean);
     push({
@@ -207,8 +220,8 @@ export function detectDeviations(ctx) {
     const ratio = ioiH / ioiB / r;
     const dSec = (ioiH - r * ioiB) * HOP_SEC;
     let kind = null;
-    if (ratio > 1.33 && dSec > 0.08) kind = 'slow';
-    else if (ratio < 0.75 && dSec < -0.08) kind = 'fast';
+    if (ratio > speedBand[1] && dSec > 0.08) kind = 'slow';
+    else if (ratio < speedBand[0] && dSec < -0.08) kind = 'fast';
     if (!kind) continue;
     const a = Math.abs(Math.log(Math.max(ratio, 1e-3)));
     let silentFrames = 0;
@@ -326,7 +339,7 @@ export function detectDeviations(ctx) {
   }
   const med = vals.length ? medianOf(vals) : NaN;
   const mad = vals.length ? madOf(vals, med) : NaN;
-  const thr = vals.length ? Math.max(med + 2.0 * mad, CONTENT_FLOOR) : Infinity;
+  const thr = vals.length ? Math.max(med + 2.0 * mad, contentFloor) : Infinity;
   for (const run of findRuns(n, (i) => eligible[i] && dm[i] > thr, { minLen: f(160), maxGap: 2 })) {
     let sum = 0;
     let cnt = 0;

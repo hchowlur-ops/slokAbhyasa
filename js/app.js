@@ -14,6 +14,7 @@ import { mixToMono } from './dsp/resample.js';
 import { trimSilence } from './dsp/trim.js';
 import { Transcriber, STT_LANGUAGES, STT_TIERS, sttLanguageLabel, sttLanguageTag, sttTierLabel, isStopped } from './stt.js';
 import { diffWords, diffSummary, compareWords, tokenizeTranscript, windowedTokens } from './textdiff.js';
+import { AGE_GROUPS, VOICE_TYPES, STYLE_MODES, DEFAULT_STYLE_MODE, presetsFor, compareModeFor, speakerLabel, ageGroupLabel, styleMode, voiceStats, deriveText } from './meta.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -74,7 +75,7 @@ function trimTake(take, enabled) {
   if (!t.changed) return { take, info: 'Nothing to trim at the ends.', changed: false };
   const out = { ...take, samples: t.samples, duration: t.samples.length / take.sampleRate };
   const fmt = (s) => (s < 0.05 ? 'nothing' : `${s.toFixed(1)} s`);
-  return { take: out, info: `Trimmed ${fmt(t.removedStart)} from the start and ${fmt(t.removedEnd)} from the end.`, changed: true, removedStart: t.removedStart };
+  return { take: out, info: `Trimmed ${fmt(t.removedStart)} from the start and ${fmt(t.removedEnd)} from the end.`, changed: true, removedStart: t.removedStart, removedEnd: t.removedEnd };
 }
 
 // Redraw registry for resize / theme changes
@@ -615,6 +616,182 @@ async function getLibrary(force = false) {
 }
 
 // ======================================================================
+// PEOPLE — who records a sloka, who recites it
+// ======================================================================
+// Profiles live in profiles.json at the data root (names never enter the library). The
+// learner chosen in the sidebar is who Self Evaluation and quizzes judge: a child's voice
+// and pace get the allowances of the research presets (see js/meta.js).
+
+const LEARNER_KEY = 'tutor-learner';
+let profilesCache = null;
+async function getProfiles(force = false) {
+  if (!profilesCache || force) {
+    try { profilesCache = await api.listProfiles(); } catch { profilesCache = profilesCache || []; }
+  }
+  return profilesCache;
+}
+let learnerId = (() => { try { return localStorage.getItem(LEARNER_KEY) || ''; } catch { return ''; } })();
+const profileById = (id) => (profilesCache || []).find((p) => p.id === id) || null;
+// The learner as the evaluation sees them, or null: no one chosen, adult defaults.
+function learnerSpeaker() {
+  const p = profileById(learnerId);
+  return p ? { profileId: p.id, voiceType: p.voiceType, ageGroup: p.ageGroup } : null;
+}
+const learnerName = () => { const p = profileById(learnerId); return p ? p.name : ''; };
+// A sloka's speaker when something is known about them, else null.
+const speakerOf = (meta) => (meta && meta.speaker && (meta.speaker.voiceType !== 'preferNotToSay' || meta.speaker.ageGroup !== 'unspecified') ? meta.speaker : null);
+// "Ananya (child, 8 to 11)"
+const profileLabel = (p) => { const d = speakerLabel(p); return d ? `${p.name} (${d})` : p.name; };
+
+function fillSelect(sel, items, value) {
+  sel.innerHTML = '';
+  for (const it of items) { const o = document.createElement('option'); o.value = it.value; o.textContent = it.label; sel.appendChild(o); }
+  sel.value = value;
+  if (sel.value !== value && items.length) sel.value = items[0].value;
+}
+const voiceOptions = () => VOICE_TYPES.map((v) => ({ value: v.id, label: v.label }));
+const ageOptions = () => AGE_GROUPS.map((a) => ({ value: a.id, label: a.label }));
+
+const learnerListeners = new Set(); // re-rendered when the learner or the people change
+async function renderLearnerSelect() {
+  const profiles = await getProfiles();
+  if (learnerId && !profileById(learnerId)) learnerId = '';
+  fillSelect($('#learner-select'), [{ value: '', label: profiles.length ? 'Anyone · adult defaults' : 'No one yet · adult defaults' }, ...profiles.map((p) => ({ value: p.id, label: profileLabel(p) }))], learnerId);
+  for (const fn of learnerListeners) fn();
+}
+$('#learner-select').addEventListener('change', (e) => {
+  learnerId = e.target.value;
+  try { if (learnerId) localStorage.setItem(LEARNER_KEY, learnerId); else localStorage.removeItem(LEARNER_KEY); } catch { /* ignore */ }
+  for (const fn of learnerListeners) fn();
+});
+
+// The people dialog: list, add, edit, remove.
+let personEditing = null;
+function renderPeopleList() {
+  const ul = $('#people-list');
+  ul.innerHTML = '';
+  const profiles = profilesCache || [];
+  if (!profiles.length) {
+    const li = document.createElement('li');
+    li.className = 'empty';
+    li.textContent = 'No one yet. Add the people who record and recite here.';
+    ul.appendChild(li);
+  }
+  for (const p of profiles) {
+    const li = document.createElement('li');
+    li.innerHTML = '<span class="person-name"></span><span class="person-desc"></span><button class="btn btn-sm" type="button" data-act="edit">Edit</button><button class="btn btn-sm btn-ghost" type="button" data-act="remove">Remove</button>';
+    $('.person-name', li).textContent = p.name;
+    $('.person-desc', li).textContent = speakerLabel(p) || 'voice and age not given';
+    $('[data-act="edit"]', li).addEventListener('click', () => startPersonEdit(p));
+    $('[data-act="remove"]', li).addEventListener('click', async () => {
+      const ok = await askDialog({ title: `Remove ${p.name}?`, message: 'Slokas recorded by this person keep their voice type and age group; only the name goes.', input: false, okText: 'Remove', danger: true });
+      if (!ok) return;
+      try { await api.deleteProfile(p.id); await getProfiles(true); if (personEditing && personEditing.id === p.id) startPersonEdit(null); renderPeopleList(); renderLearnerSelect(); } catch (err) { toast(err.message, 'error'); }
+    });
+    ul.appendChild(li);
+  }
+}
+function startPersonEdit(p) {
+  personEditing = p;
+  $('#people-edit-title').textContent = p ? `Edit ${p.name}` : 'Add a person';
+  $('#person-name').value = p ? p.name : '';
+  fillSelect($('#person-voice'), voiceOptions(), p ? p.voiceType : 'preferNotToSay');
+  fillSelect($('#person-age'), ageOptions(), p ? p.ageGroup : 'unspecified');
+  $('#person-save').textContent = p ? 'Save' : 'Add';
+  setHidden($('#person-cancel'), !p);
+  if (p) $('#person-name').focus();
+}
+$('#person-cancel').addEventListener('click', () => startPersonEdit(null));
+$('#person-save').addEventListener('click', async () => {
+  const name = $('#person-name').value.trim();
+  if (!name) { $('#person-name').focus(); return; }
+  const body = { name, voiceType: $('#person-voice').value, ageGroup: $('#person-age').value };
+  try {
+    const saved = personEditing ? await api.patchProfile(personEditing.id, body) : await api.createProfile(body);
+    await getProfiles(true);
+    if (!personEditing && !learnerId) { learnerId = saved.id; try { localStorage.setItem(LEARNER_KEY, learnerId); } catch { /* ignore */ } }
+    startPersonEdit(null);
+    renderPeopleList();
+    renderLearnerSelect();
+    toast(`${saved.name} ${personEditing ? 'updated' : 'added'}.`, 'success');
+  } catch (err) { toast(err.message, 'error'); }
+});
+async function openPeople() {
+  await getProfiles(true);
+  startPersonEdit(null);
+  renderPeopleList();
+  const dlg = $('#people-dialog');
+  if (!dlg.open) dlg.showModal();
+  if (!(profilesCache || []).length) $('#person-name').focus();
+}
+$('#people-manage').addEventListener('click', openPeople);
+$('#people-form').addEventListener('submit', (e) => { e.preventDefault(); $('#people-dialog').close(); });
+$('#people-dialog').addEventListener('close', () => renderLearnerSelect());
+
+// Metadata fields of a sloka about to be saved (both Learn tabs) or already in the library:
+// who recorded it, how it is meant to be judged, its text. Returns { read(), reset(), setText() }.
+const LEARN_SPEAKER_KEY = 'tutor-learn-speaker';
+const LEARN_STYLE_KEY = 'tutor-learn-style';
+function buildMetaFields(host, { compact = false } = {}) {
+  host.innerHTML = `
+    <label class="field"><span>Recorded by</span><select data-f="speaker"></select></label>
+    <label class="field"><span>How it is judged</span><select data-f="style"></select></label>
+    <label class="field"><span>Tradition or school <em class="muted">(optional)</em></span><input type="text" data-f="tradition" maxlength="80" placeholder="e.g. Śṛṅgeri" autocomplete="off" /></label>
+    <label class="field wide"><span>Text of the sloka <em class="muted">(optional · the words as they should be recited; used to judge pronunciation)</em></span><textarea data-f="text" rows="${compact ? 3 : 4}" spellcheck="false" placeholder="Type or paste the text, one pāda or line per row…"></textarea></label>
+    <span class="derived" data-f="derived"></span>`;
+  const speakerSel = $('[data-f="speaker"]', host);
+  const styleSel = $('[data-f="style"]', host);
+  const tradInp = $('[data-f="tradition"]', host);
+  const textArea = $('[data-f="text"]', host);
+  const derived = $('[data-f="derived"]', host);
+  let remembered = { speaker: '', style: DEFAULT_STYLE_MODE };
+  try { remembered = { speaker: localStorage.getItem(LEARN_SPEAKER_KEY) || '', style: localStorage.getItem(LEARN_STYLE_KEY) || DEFAULT_STYLE_MODE }; } catch { /* ignore */ }
+  let want = { speaker: remembered.speaker, style: remembered.style };
+  const fillSpeakers = () => {
+    const profiles = profilesCache || [];
+    const items = [{ value: '', label: 'Not recorded' }, ...profiles.map((p) => ({ value: p.id, label: profileLabel(p) })), { value: '__new__', label: 'Someone new…' }];
+    fillSelect(speakerSel, items, want.speaker);
+    if (speakerSel.value === '__new__') speakerSel.value = '';
+  };
+  fillSelect(styleSel, STYLE_MODES.map((m) => ({ value: m.id, label: m.label })), want.style);
+  fillSpeakers();
+  learnerListeners.add(fillSpeakers);
+  speakerSel.addEventListener('change', async () => {
+    if (speakerSel.value === '__new__') { speakerSel.value = want.speaker; await openPeople(); return; }
+    want.speaker = speakerSel.value;
+    try { localStorage.setItem(LEARN_SPEAKER_KEY, want.speaker); } catch { /* ignore */ }
+  });
+  styleSel.addEventListener('change', () => { want.style = styleSel.value; try { localStorage.setItem(LEARN_STYLE_KEY, want.style); } catch { /* ignore */ } });
+  const describe = () => {
+    const t = deriveText(textArea.value);
+    derived.textContent = t ? `${t.aksharaCount} akṣara${t.aksharaCount === 1 ? '' : 's'} · ${t.padas.length} pāda${t.padas.length === 1 ? '' : 's'} · ${t.script === 'Deva' ? 'Devanagari' : t.script === 'Knda' ? 'Kannada' : t.script === 'Latn' ? 'Latin' : t.script}${t.svara.prescribed ? ' · svara marks' : ''}` : '';
+  };
+  textArea.addEventListener('input', describe);
+  return {
+    read() {
+      const sp = profileById(speakerSel.value);
+      return {
+        speaker: sp ? { profileId: sp.id, voiceType: sp.voiceType, ageGroup: sp.ageGroup } : null,
+        style: { mode: styleSel.value, tradition: tradInp.value.trim() || null },
+        text: textArea.value.trim() ? { body: textArea.value.trim() } : null,
+      };
+    },
+    set(meta) {
+      want.speaker = (meta && meta.speaker && meta.speaker.profileId) || '';
+      want.style = (meta && meta.style && meta.style.mode) || DEFAULT_STYLE_MODE;
+      fillSpeakers();
+      styleSel.value = want.style;
+      tradInp.value = (meta && meta.style && meta.style.tradition) || '';
+      textArea.value = (meta && meta.text && meta.text.body) || '';
+      describe();
+    },
+    reset() { tradInp.value = ''; textArea.value = ''; describe(); fillSpeakers(); styleSel.value = want.style; },
+    setText(t) { if (!textArea.value.trim() && t) { textArea.value = t; describe(); } },
+    dispose() { learnerListeners.delete(fillSpeakers); },
+  };
+}
+
+// ======================================================================
 // PLAYER
 // ======================================================================
 
@@ -702,6 +879,7 @@ let learnTake = null; // { samples, sampleRate, duration, blob }
 const drawLearnPreview = bindWave($('#learn-prev-wave'), learnPreview, () => learnTake && learnTake.samples, $('#learn-prev-cur'), $('#learn-prev-dur'));
 bindPlayButton($('#learn-prev-play'), learnPreview);
 const learnPanel = createTranscriptPanel($('#learn-transcript'), { editable: true, play: (s, e) => learnPreview.playRange(s, e) });
+const learnMeta = buildMetaFields($('#learn-meta'));
 
 $('#learn-rec').addEventListener('click', async () => {
   const rec = getLearnRecorder();
@@ -709,9 +887,10 @@ $('#learn-rec').addEventListener('click', async () => {
     const raw = await rec.stop();
     learnUI.setRecording(false);
     if (!raw || raw.duration < 0.5) { toast('That was too short. Try again.', 'error'); return; }
-    const { take, info } = trimTake(raw, $('#learn-trim').checked);
+    const { take, info, removedStart = 0, removedEnd = 0 } = trimTake(raw, $('#learn-trim').checked);
     if (take.duration < 0.5) { toast('Hardly any sound was heard. Try again.', 'error'); return; }
     take.blob = encodeWav(take.samples, take.sampleRate);
+    take.edit = { trimStartSec: removedStart, trimEndSec: removedEnd };
     learnTake = take;
     $('#learn-trim-info').textContent = info;
     $('#learn-prev-wave')._peaks = null;
@@ -743,6 +922,7 @@ $('#learn-discard').addEventListener('click', () => {
   learnUI.reset();
   learnPanel.cancel();
   learnPanel.reset();
+  learnMeta.reset();
 });
 
 // Saving never waits for a transcript that is still being written: the sloka is stored now
@@ -770,7 +950,7 @@ $('#learn-save-form').addEventListener('submit', async (e) => {
   try {
     learnPreview.pause();
     const late = learnPanel.busy ? learnPanel.detach() : null;
-    const rec = await saveBaseline({ name, ...learnTake, source: 'mic' }, learnProgress);
+    const rec = await saveBaseline({ name, ...learnTake, source: 'mic', meta: learnMeta.read() }, learnProgress);
     const transcript = late ? null : learnPanel.transcript;
     if (transcript) await api.putTranscript(rec.id, transcript).catch(() => toast('The transcript could not be saved.', 'error'));
     if (late) saveTranscriptLater(late, rec);
@@ -827,7 +1007,9 @@ async function requireLearnFolder() {
   return folder;
 }
 
-async function saveBaseline({ name, samples, sampleRate, duration, blob, source }, progress) {
+// Saves a take as a sloka: the WAV, its analysis features and its metadata sidecar (who
+// recorded it, style, text, what was measured in the voice, how it was captured).
+async function saveBaseline({ name, samples, sampleRate, duration, blob, source, meta = null, capture = null, edit = null }, progress) {
   const folder = await requireLearnFolder();
   progress.show('Listening closely and remembering…');
   const features = await analyzer.features(samples, sampleRate, (p) => progress.set(p * 0.9));
@@ -837,6 +1019,23 @@ async function saveBaseline({ name, samples, sampleRate, duration, blob, source 
   progress.set(0.92, 'Saving to the library…');
   const rec = await api.createBaseline({ name, blob, duration, sampleRate, source, folder });
   try { await api.putFeatures(rec.id, serializeFeatures(features)); } catch { /* cache is optional */ }
+  try {
+    const m = meta || {};
+    const text = m.text && m.text.body ? deriveText(m.text.body) : null;
+    let stats = null;
+    try { stats = voiceStats(features, samples, { aksharaCount: text ? text.aksharaCount : null }); } catch { stats = null; }
+    rec.meta = await api.putMeta(rec.id, {
+      speaker: m.speaker || null,
+      style: m.style || null,
+      text: m.text || null,
+      voice: stats ? stats.voice : null,
+      measured: stats ? stats.measured : null,
+      capture: capture ? { ...capture, environment: null } : null,
+      edit: edit || null,
+    });
+  } catch (err) {
+    toast(`The sloka was saved, but its details could not be: ${err.message}`, 'error', 6000);
+  }
   progress.set(1, 'Done');
   libraryCache = null;
   return rec;
@@ -847,8 +1046,9 @@ let learnFile = null;
 const drawLearnFile = () => { if (learnFile) drawWaveform($('#learn-file-wave'), learnFile.samples, { progress: 0 }); };
 redraws.add(drawLearnFile);
 const learnFilePanel = createTranscriptPanel($('#learn-file-transcript'), { editable: true });
+const learnFileMeta = buildMetaFields($('#learn-file-meta-fields'), { compact: true });
 function setLearnFile(l) {
-  if (learnFile !== l) { learnFilePanel.cancel(); learnFilePanel.reset(); }
+  if (learnFile !== l) { learnFilePanel.cancel(); learnFilePanel.reset(); learnFileMeta.reset(); }
   learnFile = l;
   setHidden($('#learn-file-none'), !!l);
   setHidden($('#learn-file-loaded'), !l);
@@ -879,10 +1079,10 @@ $('#learn-file-form').addEventListener('submit', async (e) => {
   btn.disabled = true;
   try {
     // Re-encode as mono 16-bit WAV so every sloka in the library is uniform.
-    const { take, info, changed, removedStart } = trimTake(learnFile, $('#learn-file-trim').checked);
+    const { take, info, changed, removedStart = 0, removedEnd = 0 } = trimTake(learnFile, $('#learn-file-trim').checked);
     const blob = encodeWav(take.samples, take.sampleRate);
     const late = learnFilePanel.busy ? learnFilePanel.detach() : null;
-    const rec = await saveBaseline({ name, samples: take.samples, sampleRate: take.sampleRate, duration: take.duration, blob, source: 'file' }, learnProgress);
+    const rec = await saveBaseline({ name, samples: take.samples, sampleRate: take.sampleRate, duration: take.duration, blob, source: 'file', meta: learnFileMeta.read(), edit: { trimStartSec: removedStart, trimEndSec: removedEnd } }, learnProgress);
     const adjust = (t) => shiftTranscript(t, -(removedStart || 0), take.duration);
     const transcript = late ? null : adjust(learnFilePanel.transcript);
     if (transcript) await api.putTranscript(rec.id, transcript).catch(() => toast('The transcript could not be saved.', 'error'));
@@ -991,32 +1191,38 @@ for (const p of [basePlayer, heardPlayer]) {
 // ---------- tolerance: how much variation is acceptable per category ----------
 
 const TOL_KEY = 'tutor-tolerance';
-let tolerance = (() => { try { return normalizeTolerance(JSON.parse(localStorage.getItem(TOL_KEY) || 'null')); } catch { return { ...DEFAULT_TOLERANCE }; } })();
-// A quiz always judges on the default tolerance.
-const activeTolerance = () => (practice.quiz ? DEFAULT_TOLERANCE : tolerance);
+// The user's own tolerance, or null for the defaults (which follow the learner: speech
+// recognition is 2–5× less accurate on children, so their pronunciation tolerance is wider).
+let tolerance = (() => { try { const v = JSON.parse(localStorage.getItem(TOL_KEY) || 'null'); return v ? normalizeTolerance(v) : null; } catch { return null; } })();
+const learnerTolerance = (learner = learnerSpeaker()) => ({ ...DEFAULT_TOLERANCE, pronunciation: presetsFor(learner, null).pronunciationTolerance });
+// A quiz always judges on the defaults for the learner (fixed for the attempt once scored).
+const activeTolerance = () => (practice.quiz ? (practice.quizAttempt && practice.quizAttempt.tolerance) || learnerTolerance() : tolerance || learnerTolerance());
+const attemptTolerance = (a) => (a && a.tolerance ? normalizeTolerance(a.tolerance) : DEFAULT_TOLERANCE);
 function renderToleranceFields() {
   const host = $('#tol-fields');
   host.innerHTML = '';
+  const cur = tolerance || learnerTolerance();
   for (const c of QUIZ_CATEGORIES) {
     const label = document.createElement('label');
     label.className = 'tol-field';
     label.innerHTML = '<span></span><input type="number" min="0" max="100" step="1" /><span>%</span>';
     label.firstChild.textContent = c.label;
     const inp = $('input', label);
-    inp.value = String(tolerance[c.id]);
+    inp.value = String(cur[c.id]);
     inp.setAttribute('aria-label', `${c.label} tolerance in percent`);
     inp.addEventListener('change', () => {
-      tolerance = normalizeTolerance({ ...tolerance, [c.id]: inp.value });
+      tolerance = normalizeTolerance({ ...(tolerance || learnerTolerance()), [c.id]: inp.value });
       inp.value = String(tolerance[c.id]);
       try { localStorage.setItem(TOL_KEY, JSON.stringify(tolerance)); } catch { /* ignore */ }
       refreshVerdicts();
     });
     host.appendChild(label);
   }
+  renderToleranceRow();
 }
 renderToleranceFields();
 $('#tol-reset').addEventListener('click', () => {
-  tolerance = { ...DEFAULT_TOLERANCE };
+  tolerance = null;
   try { localStorage.removeItem(TOL_KEY); } catch { /* ignore */ }
   renderToleranceFields();
   refreshVerdicts();
@@ -1027,7 +1233,23 @@ function renderToleranceRow() {
   $('#tol-reset').disabled = quiz;
   setHidden($('#tol-hint'), quiz);
   setHidden($('#tol-quiz-note'), !quiz);
+  const d = learnerTolerance();
+  const who = learnerSpeaker();
+  const pron = d.pronunciation === DEFAULT_TOLERANCE.pronunciation ? `pronunciation ${d.pronunciation} %` : `pronunciation ${d.pronunciation} % (for a learner aged ${ageGroupLabel(who.ageGroup).toLowerCase()})`;
+  $('#tol-hint').textContent = `A category is within tolerance when its score is at least 100 % minus the tolerance. Defaults: content ${d.content} %, ${pron}, everything else ${d.timing} %.`;
+  $('#tol-quiz-note').textContent = `In a quiz the tolerances are fixed: content ${d.content} %, ${pron}, everything else ${d.timing} %.`;
 }
+// What the chosen learner means for the evaluation, under the options.
+function renderLearnerNote() {
+  const who = learnerSpeaker();
+  const el = $('#practice-learner-note');
+  if (!who) { el.textContent = 'No one is chosen as the learner (sidebar): adult allowances. For a child, add them under People so pitch, pace and pronunciation are judged with a child\'s allowances.'; return; }
+  const p = presetsFor(who, null);
+  const st = p.pitchTolSt === 1 ? 'a semitone' : p.pitchTolSt === 0.75 ? '¾ semitone' : `${p.pitchTolSt} semitones`;
+  const desc = speakerLabel(who);
+  el.textContent = `Judging ${learnerName()}${desc ? ` (${desc})` : ''}: pitch within ${st}, pace ${p.speedBand[0]}–${p.speedBand[1]}× when speed is judged, pronunciation tolerance ${p.pronunciationTolerance} %.${who.ageGroup === '12to15' ? ' A voice changes fast at this age: re-record your own baselines every few months.' : ''}`;
+}
+learnerListeners.add(() => { renderToleranceFields(); renderLearnerNote(); refreshVerdicts(); });
 // Scores of one report in the five categories (null where not judgeable), for verdicts.
 function reportScores(id) {
   const r = practice.results.get(id);
@@ -1216,6 +1438,13 @@ function ensureBase(id) {
     const transcript = await api.getTranscript(id).catch(() => null);
     const base = { record, ...dec, blob, features, transcript };
     if (practice.selection.includes(id)) practice.bases.set(id, base);
+    // a sloka from before metadata existed gets its voice measured now that it is loaded
+    if (record.meta && !record.meta.voice) {
+      try {
+        const stats = voiceStats(features, dec.samples, { aksharaCount: record.meta.text ? record.meta.text.aksharaCount : null });
+        api.patchMeta(id, { voice: stats.voice, measured: stats.measured }).then((m) => { record.meta = m; }).catch(() => {});
+      } catch { /* optional */ }
+    }
     return base;
   })();
   baseLoads.set(id, load);
@@ -1322,6 +1551,7 @@ async function analyseAttempt() {
       judgeSpeed: $('#practice-tempo').checked,
       flagDynamics: true, // everything is measured; the filter chips decide what is shown
       mode: 'chant',
+      learner: learnerSpeaker(), // who recites: a child's allowances when one is chosen
     };
     await runComparisons(0.6);
     const good = reportIds().filter((id) => isReport(practice.results.get(id)));
@@ -1348,6 +1578,15 @@ async function analyseAttempt() {
   }
 }
 
+// The take's options for one sloka: who recorded it (so the voices are matched within the
+// range the pairing can need) and how its style says it is judged. A sloka from before
+// metadata existed, whose style no one has set, is judged as before (chant: pitch counts).
+function optionsFor(base) {
+  const meta = base.record.meta;
+  const mode = meta && meta.style && !meta.migrated ? compareModeFor(meta.style.mode) : 'chant';
+  return { ...practice.options, reference: speakerOf(meta), mode };
+}
+
 // Compares the take with every ticked sloka that has no report yet, one after another.
 let compareQueue = Promise.resolve();
 function runComparisons(p0 = 0) {
@@ -1367,7 +1606,7 @@ async function compareMissing(p0) {
         const base = await ensureBase(id);
         practiceProgress.show(label);
         practiceProgress.set(p0 + (1 - p0) * (k / todo.length), label);
-        const result = await analyzer.compare(base.features, practice.heard, practice.options);
+        const result = await analyzer.compare(base.features, practice.heard, optionsFor(base));
         if (practice.selection.includes(id)) practice.results.set(id, result);
       } catch (err) {
         if (practice.selection.includes(id)) practice.results.set(id, { error: err.message });
@@ -1603,7 +1842,7 @@ async function scoreQuizAttempt() {
   const quiz = practice.quiz;
   const take = practice.take;
   if (!quiz || !take) return;
-  const attempt = { at: new Date().toISOString(), saved: false, sttAvailable: false, items: [], byCategory: {}, score: null, error: null };
+  const attempt = { at: new Date().toISOString(), saved: false, sttAvailable: false, items: [], byCategory: {}, score: null, error: null, tolerance: learnerTolerance(), learner: learnerSpeaker() };
   practice.quizAttempt = attempt;
   quizScoring = true;
   updateRecLabel();
@@ -1640,8 +1879,10 @@ async function scoreQuizAttempt() {
         break;
       }
       if (!live()) return;
-      if (!base.transcript && practice.activeId === id) { await practicePanel.wait(); }
-      if (!base.transcript) {
+      // the sloka's words: its typed text when there is one, else its transcript
+      let ref = typedReference(base, res);
+      if (!ref && !base.transcript && practice.activeId === id) { await practicePanel.wait(); }
+      if (!ref && !base.transcript) {
         try {
           prog.show(`Quiz: listening to the words of “${base.record.name}” (${k + 1} of ${ids.length})…`, stop);
           const t = await runTranscription(base.samples, base.sampleRate, prog, `“${base.record.name}”`, skip.signal);
@@ -1651,7 +1892,7 @@ async function scoreQuizAttempt() {
         } catch { continue; }
       }
       if (!live()) return;
-      const sim = wordSimilarity(res, base.transcript, heardT, base.duration, take.duration);
+      const sim = wordSimilarity(res, ref || base.transcript, heardT, base.duration, take.duration);
       if (sim != null) { sims.set(id, sim); practice.wordSims.set(id, sim); }
     }
     if (!live()) return;
@@ -1662,13 +1903,15 @@ async function scoreQuizAttempt() {
       const sc = itemScores(r, { wordSimilarity: sims.has(it.id) ? sims.get(it.id) : null, sttAvailable: stt });
       return { id: it.id, name: it.name, folder: it.folder, ...sc };
     });
-    const sum = attemptSummary(attempt.items, quiz.categories, DEFAULT_TOLERANCE);
+    const sum = attemptSummary(attempt.items, quiz.categories, attempt.tolerance);
     Object.assign(attempt, sum);
     refreshVerdicts();
-    // saved with every category, so the chosen categories can change afterwards
+    // saved with every category, so the chosen categories can change afterwards, and with
+    // the tolerance and learner it was judged with
     const saved = await api.addQuizAttempt(quiz.id, {
       at: attempt.at, takeDuration: take.duration, categories: quiz.categories, score: attempt.score,
       byCategory: attempt.byCategory, counted: attempt.counted, recited: attempt.recited, items: attempt.items, correct: attempt.correct,
+      tolerance: attempt.tolerance, learner: attempt.learner,
     });
     if (!live()) return;
     quiz.attempts = saved.attempts;
@@ -1690,8 +1933,10 @@ function renderQuizScore() {
   setHidden(card, false);
   $('#quiz-score-name').textContent = quiz.name;
   const status = $('#quiz-score-status');
-  status.textContent = a.error ? `Not saved: ${a.error}` : !a.saved ? 'Scoring…' : `Attempt ${quiz.attempts.length} · saved ${fmtDate(a.at)}${a.sttAvailable ? '' : ' · pronunciation not available'}`;
-  const corr = a.saved || a.error ? correctness(a.items, quiz.categories, DEFAULT_TOLERANCE) : null;
+  const tol = attemptTolerance(a);
+  const who = a.learner && speakerLabel(a.learner);
+  status.textContent = a.error ? `Not saved: ${a.error}` : !a.saved ? 'Scoring…' : `Attempt ${quiz.attempts.length} · saved ${fmtDate(a.at)}${a.sttAvailable ? '' : ' · pronunciation not available'}${who ? ` · judged as ${who}` : ''}`;
+  const corr = a.saved || a.error ? correctness(a.items, quiz.categories, tol) : null;
   const pct = corr ? corr.pct : null;
   $('#quiz-pct').textContent = pct == null ? '–' : `${pct}%`;
   $('.quiz-pct-label').textContent = corr && corr.counted ? `correct · ${corr.correct} of ${corr.counted}` : 'correct';
@@ -1709,7 +1954,7 @@ function renderQuizScore() {
     b.innerHTML = `<span></span><span class="val"></span>`;
     b.firstChild.textContent = c.label;
     b.lastChild.textContent = pr ? `${pr.ok}/${pr.n}` : (a.saved ? 'n/a' : '');
-    b.title = `${c.hint} · tolerance ${DEFAULT_TOLERANCE[c.id]} %`;
+    b.title = `${c.hint} · tolerance ${tol[c.id]} %`;
     b.addEventListener('click', async () => {
       const next = on ? quiz.categories.filter((x) => x !== c.id) : [...quiz.categories, c.id];
       if (!next.length) return; // keep at least one
@@ -1725,7 +1970,7 @@ function renderQuizScore() {
   table.innerHTML = '';
   const cats = QUIZ_CATEGORIES;
   const head = document.createElement('tr');
-  head.innerHTML = '<th>Sloka</th><th>Recited</th>' + cats.map((c) => `<th title="tolerance ${DEFAULT_TOLERANCE[c.id]} %">${c.label}</th>`).join('') + '<th>Correct</th>';
+  head.innerHTML = '<th>Sloka</th><th>Recited</th>' + cats.map((c) => `<th title="tolerance ${tol[c.id]} %">${c.label}</th>`).join('') + '<th>Correct</th>';
   table.appendChild(head);
   for (const it of a.items) {
     const tr = document.createElement('tr');
@@ -1734,11 +1979,11 @@ function renderQuizScore() {
     for (const c of cats) {
       const v = it[c.id];
       const on = quiz.categories.includes(c.id);
-      const w = withinTolerance(v, DEFAULT_TOLERANCE[c.id]);
-      const mark = v == null ? '' : `<span class="mark ${w ? 'ok' : 'bad'}" title="${w ? 'within' : 'outside'} ${DEFAULT_TOLERANCE[c.id]} %">${w ? '✓' : '✗'}</span>`;
+      const w = withinTolerance(v, tol[c.id]);
+      const mark = v == null ? '' : `<span class="mark ${w ? 'ok' : 'bad'}" title="${w ? 'within' : 'outside'} ${tol[c.id]} %">${w ? '✓' : '✗'}</span>`;
       cells.push(`<td class="${on ? 'on' : 'off'}">${v == null ? '–' : v}${on ? mark : ''}</td>`);
     }
-    const v = itemVerdict(it, quiz.categories, DEFAULT_TOLERANCE);
+    const v = itemVerdict(it, quiz.categories, tol);
     cells.push(`<td class="on">${v.ok === null ? '–' : v.ok ? 'yes' : 'no'}</td>`);
     tr.innerHTML = cells.join('');
     tr.firstChild.textContent = it.folder ? `${it.name} · ${it.folder}` : it.name;
@@ -1773,7 +2018,7 @@ function renderTrend(host, quiz) {
   const attempts = (quiz.attempts || []).slice().sort((x, y) => String(x.at).localeCompare(String(y.at)));
   host.innerHTML = '';
   if (!attempts.length) return;
-  const attemptScore = (a) => (Array.isArray(a.items) && a.items.length ? correctness(a.items, quiz.categories, DEFAULT_TOLERANCE).pct : a.score == null ? null : a.score);
+  const attemptScore = (a) => (Array.isArray(a.items) && a.items.length ? correctness(a.items, quiz.categories, attemptTolerance(a)).pct : a.score == null ? null : a.score);
   const valueOf = (a, id) => (id === 'overall' ? attemptScore(a) : a.byCategory ? a.byCategory[id] : null);
   const h4 = document.createElement('h4');
   h4.textContent = attempts.length > 1 ? `Trend over ${attempts.length} attempts` : 'Trend';
@@ -2155,7 +2400,8 @@ function renderTiles(res, id) {
   const sim = practice.wordSims.has(id) ? practice.wordSims.get(id) : null;
   put('pronunciation', sim == null ? null : Math.round(100 * sim), sim == null ? (practice.heardTranscripts.size || sttSettings.auto || practice.quiz ? 'from the transcript, below' : 'transcribe to judge') : 'of the words heard');
   put('timing', s.timing, s.timingCoveredPct ? `${s.timingCoveredPct}% of the piece flagged` : 'steady throughout');
-  put('pitch', s.pitch, s.pitch == null ? 'not enough steady pitch' : `in tune ${s.pitchInTunePct}% · avg ${s.pitchMeanCents} cents off`);
+  const pitchStyle = s.weights && s.weights.pitch === 0 && s.pitch != null; // recited text: pitch is shown, not judged
+  put('pitch', s.pitch, s.pitch == null ? 'not enough steady pitch' : `in tune ${s.pitchInTunePct}% · avg ${s.pitchMeanCents} cents off${pitchStyle ? ' · for interest, not judged' : ''}`);
   put('dynamics', s.dynamics, s.dynamics == null ? 'not measured' : s.dynamicsCoveredPct ? `${s.dynamicsCoveredPct}% of the piece flagged` : 'even throughout');
   const v = reportVerdict(id);
   const vEl = $('#score-verdict');
@@ -2329,6 +2575,7 @@ $('#library-new-folder').addEventListener('click', async () => {
 });
 
 async function refreshLibrary() {
+  await getProfiles(); // the tags name who recorded each sloka
   const list = (await getLibrary(true)).slice().sort((a, b) => (a.folder || '').localeCompare(b.folder || '') || a.name.localeCompare(b.name));
   const folders = visibleFolders(await getFolders(true));
   for (const id of [...libPicked]) if (!list.some((r) => r.id === id)) libPicked.delete(id);
@@ -2369,8 +2616,10 @@ async function refreshLibrary() {
         <input class="lib-pick" type="checkbox" title="Select for Self Evaluation" />
       </div>
       <div class="lib-meta"><span class="mono">${fmtTime(r.duration)}</span><span>${r.source === 'mic' ? 'Microphone' : 'Imported file'}</span><span>${fmtDate(r.createdAt)}</span></div>
+      <div class="lib-meta lib-tags"></div>
       <div class="lib-actions">
         <button class="btn btn-sm btn-primary" type="button" data-act="practice">Self Evaluation</button>
+        <button class="btn btn-sm" type="button" data-act="details">Details</button>
         <button class="btn btn-sm" type="button" data-act="rename">Rename</button>
         <button class="btn btn-sm" type="button" data-act="move">Move…</button>
         <button class="btn btn-sm" type="button" data-act="transcript">Transcript</button>
@@ -2378,6 +2627,8 @@ async function refreshLibrary() {
       </div>`;
     $('.lib-name', li).textContent = r.name;
     $('.lib-name', li).title = r.file;
+    renderLibTags($('.lib-tags', li), r);
+    $('[data-act="details"]', li).addEventListener('click', () => libDetailsPanel(li, r));
     $('.btn-play', li).addEventListener('click', async () => {
       getCtx();
       if (libPlayingId === r.id && libPlayer.loaded) { libPlayer.toggle(); return; }
@@ -2494,9 +2745,23 @@ function stopTakeTranscriptions() {
   for (const job of practice.heardJobs.values()) job.ctrl.abort();
 }
 
+// The sloka's typed text as the reference for its words, when the whole sloka was compared
+// (a text has no timings, so it cannot be windowed to a part). null: use the transcript.
+function typedReference(base, res) {
+  const meta = base.record && base.record.meta;
+  const text = meta && meta.text && meta.text.body && meta.text.origin !== 'transcript' ? meta.text : null;
+  if (!text) return null;
+  const win = res && res.matched && res.matched.base;
+  const whole = !win || (win[0] <= 0.75 && win[1] >= base.duration - 0.75);
+  if (!whole && base.transcript) return null;
+  const lang = (STT_LANGUAGES.find((l) => l.lang === text.language) || {}).code;
+  return { text: text.body, chunks: [], language: lang || (base.transcript && base.transcript.language) || sttSettings.language, typed: true };
+}
+
 let sttBothInflight = null;
 // Shows the word diff for the open report. The attempt is transcribed once per take, the
-// sloka only if it has no usable transcript yet.
+// sloka only if it has no usable transcript yet (its typed text, when there is one, is the
+// reference instead).
 function transcribeBoth(force) {
   if (!practice.base || !practice.take || !practice.result) { if (force) toast('Record an attempt first.', 'info'); return Promise.resolve(); }
   if (sttBothInflight) return sttBothInflight;
@@ -2510,12 +2775,15 @@ function transcribeBoth(force) {
       getCtx();
       const language = sttSettings.language;
       const tier = await sttTier();
-      let baseT = await practicePanel.wait();
-      if (!current()) return;
-      const stale = !baseT || (!baseT.edited && (baseT.language !== language || (force && baseT.tier !== tier)));
-      if (stale) baseT = await practicePanel.transcribe();
-      if (!current()) return;
-      if (!baseT) throw new Error('The sloka could not be transcribed.');
+      let baseT = typedReference(practice.base, practice.result);
+      if (!baseT) {
+        baseT = await practicePanel.wait();
+        if (!current()) return;
+        const stale = !baseT || (!baseT.edited && (baseT.language !== language || (force && baseT.tier !== tier)));
+        if (stale) baseT = await practicePanel.transcribe();
+        if (!current()) return;
+        if (!baseT) throw new Error('The sloka could not be transcribed.');
+      }
       const heardT = await transcribeTakePart(heardPartOf(practice.result), force);
       if (!current() || !heardT) return; // stopped: the report stays without a word diff
       sttPractice.base = baseT;
@@ -2565,9 +2833,71 @@ function renderTranscriptDiff() {
   renderTranscriptText($('#stt-heard'), sttPractice.heard, B.toks, insB, 'w-ins', (s, e) => { basePlayer.pause(); heardPlayer.playRange(s, e); }, dimB);
   practicePanel.highlight(delA, 'w-del', dimA);
   $('#stt-summary').textContent = ai.length
-    ? `${Math.round(sm.similarity * 100)}% of the sloka's text heard (${sm.matched} of ${ai.length} words) · ${sm.missing} missing · ${sm.extra} extra or different · ${sttLanguageLabel(sttPractice.base.language)}`
+    ? `${Math.round(sm.similarity * 100)}% of the sloka's ${sttPractice.base.typed ? 'typed text' : 'text'} heard (${sm.matched} of ${ai.length} words) · ${sm.missing} missing · ${sm.extra} extra or different · ${sttLanguageLabel(sttPractice.base.language)}`
     : 'Nothing was recognised in the sloka. Try another language or model.';
   setHidden($('#stt-out'), false);
+}
+
+// Library › what a sloka's sidecar says, in a glance: who, how judged, text, voice.
+function renderLibTags(host, r) {
+  host.innerHTML = '';
+  const meta = r.meta;
+  const tag = (text, cls = '') => { const s = document.createElement('span'); s.className = `lib-tag${cls ? ` ${cls}` : ''}`; s.textContent = text; host.appendChild(s); };
+  if (!meta) { tag('no details', 'warn'); return; }
+  const sp = speakerOf(meta);
+  const who = sp && sp.profileId ? profileById(sp.profileId) : null;
+  if (who) tag(`by ${who.name}`); else if (sp) tag(speakerLabel(sp));
+  if (meta.migrated) tag('style not set · judged as chant', 'warn');
+  else tag(styleMode(meta.style && meta.style.mode).label);
+  if (meta.text && meta.text.aksharaCount) tag(`${meta.text.aksharaCount} akṣaras`);
+  if (meta.voice && meta.voice.medianF0Hz) tag(`${Math.round(meta.voice.medianF0Hz)} Hz`);
+  setHidden(host, !host.childElementCount);
+}
+
+// Library › Details panel: the metadata, editable, plus what was measured.
+function libDetailsPanel(li, r) {
+  let host = $('.lib-details', li);
+  if (host) { host.hidden = !host.hidden; return; }
+  host = document.createElement('div');
+  host.className = 'lib-details';
+  host.innerHTML = '<div class="meta-fields"></div><dl class="lib-measured"></dl><div class="row-actions left"><button class="btn btn-sm btn-primary" type="button" data-act="save">Save details</button><span class="muted small" data-f="status"></span></div>';
+  li.appendChild(host);
+  const fields = buildMetaFields($('.meta-fields', host), { compact: true });
+  const dl = $('.lib-measured', host);
+  const status = $('[data-f="status"]', host);
+  const showMeasured = (meta) => {
+    dl.innerHTML = '';
+    const rows = [];
+    const v = meta && meta.voice;
+    const m = meta && meta.measured;
+    const c = meta && meta.capture;
+    if (v && v.medianF0Hz) rows.push(['Voice', `median ${Math.round(v.medianF0Hz)} Hz (${Math.round(v.f0P10Hz)}–${Math.round(v.f0P90Hz)} Hz, ${v.f0RangeSemitones} st range)`]);
+    if (v && v.tempoSylPerSec) rows.push(['Pace', `${v.tempoSylPerSec} akṣaras per second`]);
+    if (m && m.snrDb != null) rows.push(['Recording', `peak ${m.peakDbfs} dBFS · noise floor ${m.noiseFloorDbfs} dBFS · SNR ${m.snrDb} dB${m.clippedSampleCount ? ` · ${m.clippedSampleCount} clipped samples` : ''}`]);
+    if (c && c.device) rows.push(['Microphone', `${c.device}${c.sampleRate ? ` · ${c.sampleRate} Hz` : ''}${c.echoCancellation === false && c.noiseSuppression === false ? ' · raw (no processing)' : ''}`]);
+    if (meta && meta.edit && (meta.edit.trimStartSec || meta.edit.trimEndSec)) rows.push(['Trimmed', `${meta.edit.trimStartSec.toFixed(1)} s from the start, ${meta.edit.trimEndSec.toFixed(1)} s from the end`]);
+    if (meta && meta.audio && meta.audio.pcmSha256) rows.push(['Audio id', meta.audio.pcmSha256.slice(0, 16)]);
+    for (const [k, val] of rows) { const dt = document.createElement('dt'); dt.textContent = k; const dd = document.createElement('dd'); dd.textContent = val; dl.append(dt, dd); }
+    setHidden(dl, !rows.length);
+  };
+  const apply = (meta) => { fields.set(meta); showMeasured(meta); };
+  apply(r.meta);
+  if (!r.meta) api.getMeta(r.id).then(apply).catch(() => {});
+  $('[data-act="save"]', host).addEventListener('click', async () => {
+    const v = fields.read();
+    status.textContent = 'Saving…';
+    try {
+      const meta = await api.patchMeta(r.id, { speaker: v.speaker || { profileId: null, voiceType: 'preferNotToSay', ageGroup: 'unspecified' }, style: v.style, text: v.text });
+      r.meta = meta;
+      const loaded = practice.bases.get(r.id);
+      if (loaded) loaded.record.meta = meta;
+      libraryCache = null;
+      renderLibTags($('.lib-tags', li), r);
+      apply(meta);
+      status.textContent = 'Saved.';
+      toast('Details saved with the sloka.', 'success');
+    } catch (err) { status.textContent = ''; toast(err.message, 'error'); }
+  });
 }
 
 // Library › Transcript panel (editable, stored with the sloka)
@@ -2609,3 +2939,5 @@ async function playLibraryRange(r, s, e) {
 
 showView(location.hash.slice(1) || 'player');
 getLibrary();
+renderLearnerNote();
+renderLearnerSelect();

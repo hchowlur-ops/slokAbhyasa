@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Normalise the voice, judge the syllables · Voice characteristics by age and gender</title>
+<style>
+:root {
+  --bg: #fbfaf7; --surface: #ffffff; --text: #1f2328; --muted: #5b6168; --accent: #0f766e;
+  --border: #e4e1da; --row: #f4f2ec; --link: #0b5f59; --mark: #fff3bf;
+  --body-size: 19px; --measure: 74ch;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15171a; --surface: #1d2024; --text: #e6e3dc; --muted: #a2a8b0; --accent: #5fd3c6;
+    --border: #2e3237; --row: #22262b; --link: #7ee0d4; --mark: #4a4300;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #15171a; --surface: #1d2024; --text: #e6e3dc; --muted: #a2a8b0; --accent: #5fd3c6;
+  --border: #2e3237; --row: #22262b; --link: #7ee0d4; --mark: #4a4300;
+}
+* { box-sizing: border-box; }
+html { font-size: var(--body-size); }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font-family: Georgia, "Noto Serif", "Nirmala UI", "Tunga", serif;
+  line-height: 1.6; -webkit-font-smoothing: antialiased;
+}
+.page { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; }
+@media (min-width: 1180px) { .page { grid-template-columns: 300px minmax(0, 1fr); } }
+nav.toc {
+  position: sticky; top: 0; align-self: start; max-height: 100vh; overflow-y: auto;
+  padding: 28px 22px 40px 28px; font-family: system-ui, "Segoe UI", sans-serif; font-size: 0.78rem;
+  border-right: 1px solid var(--border); background: var(--surface);
+}
+@media (max-width: 1179px) { nav.toc { position: static; max-height: none; border-right: 0; border-bottom: 1px solid var(--border); } }
+nav.toc .home { display: inline-block; margin-bottom: 18px; color: var(--muted); text-decoration: none; }
+nav.toc .home:hover { color: var(--accent); }
+nav.toc .toc-title { font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; font-size: 0.7rem; margin-bottom: 10px; }
+nav.toc ul { list-style: none; margin: 0; padding: 0; }
+nav.toc ul ul { padding-left: 14px; margin: 2px 0 6px; }
+nav.toc li { margin: 4px 0; }
+nav.toc a { color: var(--text); text-decoration: none; display: block; padding: 3px 8px; border-radius: 6px; line-height: 1.35; }
+nav.toc a:hover { background: var(--row); color: var(--accent); }
+nav.toc a.active { background: var(--row); color: var(--accent); font-weight: 600; }
+main { padding: 36px 24px 90px; }
+article { max-width: var(--measure); margin: 0 auto; }
+h1, h2, h3, h4 { font-family: system-ui, "Segoe UI", "Nirmala UI", sans-serif; line-height: 1.2; letter-spacing: -0.01em; scroll-margin-top: 20px; }
+h1 { font-size: 2.1rem; margin: 0 0 .4em; }
+h2 { font-size: 1.45rem; margin: 2.2em 0 .6em; padding-top: 1.2em; border-top: 1px solid var(--border); }
+h3 { font-size: 1.12rem; margin: 1.8em 0 .5em; }
+h4 { font-size: 1rem; margin: 1.4em 0 .4em; color: var(--muted); }
+p { margin: 0 0 1.05em; }
+a { color: var(--link); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+article > p:first-of-type { font-size: 1.05rem; }
+strong { color: var(--text); }
+blockquote { margin: 1.2em 0; padding: .2em 1.2em; border-left: 4px solid var(--accent); color: var(--muted); }
+code { font-family: ui-monospace, Consolas, monospace; font-size: 0.85em; background: var(--row); padding: .1em .35em; border-radius: 4px; }
+pre { background: var(--row); padding: 14px 16px; border-radius: 10px; overflow-x: auto; font-size: 0.8rem; line-height: 1.5; }
+pre code { background: none; padding: 0; font-size: inherit; }
+ul, ol { padding-left: 1.4em; }
+li { margin: .3em 0; }
+hr { border: 0; border-top: 1px solid var(--border); margin: 2em 0; }
+.table-wrap { overflow-x: auto; margin: 1.4em 0; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-family: system-ui, "Segoe UI", "Nirmala UI", sans-serif; font-size: 0.82rem; line-height: 1.4; }
+th, td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--border); }
+th { background: var(--row); font-weight: 600; position: sticky; top: 0; }
+tbody tr:nth-child(even) { background: color-mix(in srgb, var(--row) 55%, transparent); }
+.meta { color: var(--muted); font-family: system-ui, "Segoe UI", sans-serif; font-size: 0.8rem; margin: 0 0 2.2em; }
+.controls { position: fixed; right: 16px; bottom: 16px; display: flex; gap: 6px; font-family: system-ui, sans-serif; }
+.controls button { border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 999px; width: 40px; height: 40px; font-size: 1rem; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+.controls button:hover { color: var(--accent); }
+.index-list { list-style: none; padding: 0; }
+.index-list li { margin: 0 0 18px; }
+.index-list a { font-family: system-ui, "Segoe UI", sans-serif; font-size: 1.1rem; font-weight: 600; text-decoration: none; }
+.index-list .lede { color: var(--muted); margin: .25em 0 0; }
+@media print {
+  nav.toc, .controls { display: none; }
+  .page { display: block; }
+  body { background: #fff; color: #000; font-size: 11pt; }
+  article { max-width: none; }
+  a { color: inherit; text-decoration: none; }
+  a[href^="http"]::after { content: ""; }
+  .table-wrap { border: 0; overflow: visible; }
+  h2 { break-after: avoid; }
+  tr, blockquote, pre { break-inside: avoid; }
+}
+</style>
+</head>
+<body>
+<div class="page">
+<nav class="toc" aria-label="Contents">
+<a class="home" href="index.html">← All reports</a>
+<div class="toc-title">Contents</div>
+<div class="toc">
+<ul>
+<li><a href="#a-child-reciting-after-a-man-differs-by-an-octave-and-a-third-of-a-vocal-tract">A child reciting after a man differs by an octave and a third of a vocal tract</a><ul>
+<li><a href="#tempo-stability-and-pitch-accuracy-mature-by-about-twelve">Tempo, stability and pitch accuracy mature by about twelve</a></li>
+</ul>
+</li>
+<li><a href="#pronunciation-and-syllable-weight-are-the-correctness-core-tune-tempo-and-loudness-are-style">Pronunciation and syllable weight are the correctness core; tune, tempo and loudness are style</a></li>
+<li><a href="#the-normalisation-chain-is-right-in-design-eight-parameters-need-recalibration">The normalisation chain is right in design; eight parameters need recalibration</a><ul>
+<li><a href="#spectral-features-and-the-warp-grid">Spectral features and the warp grid</a></li>
+<li><a href="#cepstral-mean-removal-and-the-pooled-deviation">Cepstral mean removal and the pooled deviation</a></li>
+<li><a href="#key-offset-and-octave-folding">Key offset and octave folding</a></li>
+<li><a href="#content-deviations">Content deviations</a></li>
+<li><a href="#timing">Timing</a></li>
+<li><a href="#pitch">Pitch</a></li>
+<li><a href="#dynamics-pronunciation-and-quiz-tolerances">Dynamics, pronunciation and quiz tolerances</a></li>
+<li><a href="#summary-of-recommended-settings-by-pairing">Summary of recommended settings by pairing</a></li>
+</ul>
+</li>
+<li><a href="#classical-recital-needs-a-tonic-a-shruti-table-and-a-tala-grid">Classical recital needs a tonic, a shruti table and a tala grid</a></li>
+<li><a href="#the-evidence-rests-on-american-english-children-and-one-sanskrit-chanter">The evidence rests on American English children and one Sanskrit chanter</a></li>
+<li><a href="#conclusion">Conclusion</a></li>
+</ul>
+</div>
+
+</nav>
+<main>
+<article>
+<p class="meta">Voice characteristics by age and gender · research report · SlokAbhyasa</p>
+<h1 id="normalise-the-voice-judge-the-syllables">Normalise the voice, judge the syllables</h1>
+<p>The differences a sloka tutor must absorb between a teacher and a learner of another age or sex are large, well quantified, and almost entirely speaker physics rather than error: a pre-pubertal child recites about <strong>12 semitones above an adult man</strong> but only <strong>1–3 semitones above an adult woman</strong>, with formants <strong>1.3–1.5× an adult man&rsquo;s</strong> and 1.15–1.3× a woman&rsquo;s; an adult woman sits <strong>9–12 semitones</strong> above a young man with formants 1.14× (F3) to 1.26× (F1) his; a boy of 12–15 can be anywhere in between and moves by semitones within months; and speakers past 60 converge in pitch, slow by 20–35 % mostly through extra pauses, and shake more on held vowels. The tradition&rsquo;s own correctness criteria for recitation are phonetic—sound identity, vowel length, held conjuncts, correct word breaks and pauses only at licensed boundaries—while tune, tempo, loudness and voice quality are style unless the text is Vedic, where the three-tone pattern is doctrinal. The app&rsquo;s chain of vocal-tract-length warping, cepstral mean removal, key offset and dynamic time warping is the right architecture and most of its thresholds hold for adult pairs, but the evidence calls for concrete changes: extend the warp grid to about 0.67–1.5 and refine its 8 % step for children under eight reciting after a man; compute the key offset on octave-folded pitch differences and fold any sustained residual beyond 600 cents rather than only ±1 semitone around 12 or 24; treat pitch as a style measure for Gītā and stotra text and widen the 0.4-semitone threshold to 0.75–1 semitone for learners under eleven, whose imitation error averages 40–60 cents; replace &ldquo;pause not in the reference&rdquo; with &ldquo;pause not at a licensed boundary&rdquo; and widen the speed band to 0.67–1.5× for children; calibrate the content threshold so false rejections stay under 10 % in each age class and confirm content flags with a second cue; and set age-dependent pronunciation tolerances, because speech-to-text is 2–5× worse on children (up to 35 % word error at ages 4–6) and the quiz&rsquo;s 10 % limit sits below the 15 % error floor of the best published Sanskrit recogniser. A future recital mode needs a different pitch regime altogether—tonic estimation, octave-folded cents, just-intonation swara targets with 12–25-cent tolerance on steady notes and about 60 cents on gamaka turning points, and a tala grid with matra-relative timing. The chief evidence gaps are the complete absence of pitch and formant norms for Indian children and of multi-reciter acoustic measurements of Sanskrit recitation; every sloka-specific number below comes from a single expert chanter.</p>
+<h2 id="a-child-reciting-after-a-man-differs-by-an-octave-and-a-third-of-a-vocal-tract">A child reciting after a man differs by an octave and a third of a vocal tract</h2>
+<p>Speaking pitch follows one trajectory for both sexes until about eleven and then splits. In the largest developmental dataset, 436 American children aged 5–18 plus 56 adults, vowel-averaged F0 runs <strong>267 Hz at age 5 and 253 Hz at age 10 for boys, 274 Hz and 263 Hz for girls</strong>, with no reliable sex difference before 12; boys then fall from 229 Hz at 12 through 186 Hz at 13 and 173 Hz at 14 to <strong>127 Hz at 15</strong>, after which nothing changes, while girls drift only from 275 Hz at 7 to 231 Hz at 12, a 3-semitone descent spread over five years (<a href="https://sail.usc.edu/publications/files/LeeJASA1999.pdf">Lee et al. 1999</a>). Conversational speech sits lower than vowels in words—<strong>223 Hz for both boys and girls at 5.5–10.5 years</strong>, with 10th–90th percentiles of 205–293 Hz for boys and 182–331 Hz for girls—and the adolescent split appears as 187 ± 41 Hz for boys versus 214 ± 31 Hz for girls at 10.5–14.5 and 122 ± 26 versus 206 ± 28 Hz at 14.5–17.5 (<a href="https://www.voicescience.org/lexicon/average-speaking-frequencies/">voicescience.org, compiling Berger et al. 2019</a>). The male drop is about an octave (10–12.5 semitones), peaks at roughly 2 Hz per month around 13–14, and in a 49-year longitudinal series averaged 105 Hz between ages 7 and 14 and a further 63 Hz between 14 and 21 (<a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC5098980/">Fouquet et al. 2016</a>). Adult men settle at 100–135 Hz and women at 200–230 Hz (Holmberg&rsquo;s norms: men 116 ± 12 Hz, women 205 ± 24 Hz, ranges 93–135 and 162–238 Hz that do not overlap), a ratio of about 1.7 or 9 semitones (<a href="https://www.voicescience.org/lexicon/average-speaking-frequencies/">voicescience.org</a>). Later life pulls the sexes back together: women lose <strong>34–38 Hz (about 3 semitones) between the 20–30 and 40–60 cohorts</strong>, attributed to menopause, with no further drop at 70–92, while men rise non-significantly from 103–108 Hz to 119–126 Hz (<a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC5832520/">Eichhorn et al. 2018</a>); a reading-passage study of 175 men found decade means of 119.5 Hz in the 20s, 107.1 Hz in the 40s, 132.2 Hz in the 70s and <strong>146.3 Hz in the 80s</strong> (<a href="https://pubs.asha.org/doi/10.1044/jshr.1501.155">Hollien &amp; Shipp 1972</a>). Indian adults sit at the upper edge of these norms: Maharashtra speakers aged 21–50 phonate at 131 ± 10 Hz (men) and 226–252 Hz (women) (<a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC9895185/">Indian Praat normative study</a>), and North Indian Hindi speakers at 141–156 Hz (men) and 253–262 Hz (women) (<a href="https://pubmed.ncbi.nlm.nih.gov/37739863/">Soni et al.</a>), so the female/male ratio is preserved but Western absolute-Hz thresholds should not be imported. The table converts these means into the offsets the app&rsquo;s key-offset estimator will actually see (semitone values computed as 12·log2 of the Hz ratio).</p>
+<table>
+<thead>
+<tr>
+<th>Learner group</th>
+<th>Speaking F0 (Hz)</th>
+<th>Offset vs young adult man (~115–130 Hz)</th>
+<th>Offset vs young adult woman (~205–227 Hz)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Children 5–7, either sex</td>
+<td>265–277 (vowels in words); ~223 (conversation)</td>
+<td>+12 to +14 st</td>
+<td>+3 to +5 st</td>
+</tr>
+<tr>
+<td>Children 8–11, either sex</td>
+<td>250–265 (Lee); 223 (Berger); 236 (Hillenbrand&rsquo;s 10–12-year-olds)</td>
+<td>+9 to +13 st</td>
+<td>0 to +3 st</td>
+</tr>
+<tr>
+<td>Boys 12–15</td>
+<td>229 → 186 → 173 → 127; between-subject SD ~50 Hz</td>
+<td>+10 to +12 st falling to 0</td>
+<td>+2 st falling to −9 st</td>
+</tr>
+<tr>
+<td>Boys 15–18</td>
+<td>125–130</td>
+<td>≈0</td>
+<td>−9 st</td>
+</tr>
+<tr>
+<td>Girls 12–17</td>
+<td>215–247 (Lee); 206–214 (Berger)</td>
+<td>+9 to +13 st</td>
+<td>−1 to +3 st</td>
+</tr>
+<tr>
+<td>Men 18–35</td>
+<td>102–134 (US); 131 (Maharashtra); 141–156 (Hindi)</td>
+<td>0</td>
+<td>−9 to −12 st</td>
+</tr>
+<tr>
+<td>Women 18–35</td>
+<td>200–227 (US); 226–252 (Maharashtra); 253–262 (Hindi)</td>
+<td>+9 to +12 st</td>
+<td>0</td>
+</tr>
+<tr>
+<td>Men 40–60</td>
+<td>107–118</td>
+<td>−3 to 0 st</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Women 40–60</td>
+<td>165–178</td>
+<td>+4 to +8 st</td>
+<td>−3 st</td>
+</tr>
+<tr>
+<td>Men 70–89</td>
+<td>119–146</td>
+<td>−2 to +4 st</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Women 70–92</td>
+<td>166–188</td>
+<td>+4 to +9 st</td>
+<td>−3 st</td>
+</tr>
+</tbody>
+</table>
+<p>Sources: <a href="https://sail.usc.edu/publications/files/LeeJASA1999.pdf">Lee et al. 1999</a>; <a href="https://www.voicescience.org/lexicon/average-speaking-frequencies/">Berger et al. via voicescience.org</a>; <a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC6002811/">Kent &amp; Vorperian 2018 on Hillenbrand</a>; <a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC5832520/">Eichhorn et al. 2018</a>; <a href="https://pubs.asha.org/doi/10.1044/jshr.1501.155">Hollien &amp; Shipp 1972</a>; <a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC9895185/">Indian Praat study</a>; <a href="https://pubmed.ncbi.nlm.nih.gov/37739863/">Soni et al.</a>.</p>
+<p>The vocal tract tells a parallel but non-identical story, and it is what the app&rsquo;s warp grid has to cover. Imaging of 605 children shows the tract growing from <strong>7–8 cm in infancy to 15 cm in women and 18 cm in men</strong>, with sex differences in length emerging only at about 12 as the male pharynx lengthens disproportionately (<a href="https://pages.stat.wisc.edu/~mchung/papers/vorperian.JASA.2009.pdf">Vorperian et al. 2009</a>). Acoustically, a five-year-old&rsquo;s formants are <strong>1.36–1.43× an adult man&rsquo;s</strong> and a nine-year-old&rsquo;s 1.30×; the male scaling factor then falls almost linearly from about 1.25 at 11 to 1.0 at 15, uniformly across F1–F3, while girls reach adult-female values around 14 with F1 scaling more than F2 and F3 (<a href="https://sail.usc.edu/publications/files/LeeJASA1999.pdf">Lee et al. 1999</a>). Individual five-year-olds have &ldquo;formant values up to 50 % higher than male adults&rdquo;, and the best-performing warp search for children against adult models ran over 0.7–1.15 (<a href="https://sail.usc.edu/publications/files/potamianossap2003.pdf">Potamianos &amp; Narayanan 2003</a>). Adult women are not a uniformly scaled version of men either: from young-adult corner vowels the female/male ratio is <strong>1.26 for F1, 1.17 for F2 and 1.14 for F3</strong>, so &ldquo;a single linear warp is correct only to the first order&rdquo; (<a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC5832520/">Eichhorn et al. 2018</a>; <a href="https://sail.usc.edu/publications/files/potamianossap2003.pdf">Potamianos &amp; Narayanan 2003</a>). Within adulthood formants barely move: F3 and F4 are &ldquo;essentially unchanged&rdquo; from 20 to 92, and the F1/F2 shifts of 50–150 Hz on low and back vowels in older speakers sit inside normal within-speaker scatter (<a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC5832520/">Eichhorn et al. 2018</a>). Because formant ratios translate directly into warp factors (the warp needed is roughly the reciprocal of the F3 ratio), the following table is the one to hold against the app&rsquo;s grid; the woman-referenced child ratios are computed from Lee&rsquo;s vowel-averaged tables.</p>
+<table>
+<thead>
+<tr>
+<th>Learner vs reference</th>
+<th>F1 / F2 / F3 ratio</th>
+<th>Implied uniform warp</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Boy 5 vs adult man</td>
+<td>1.43 / 1.36 / 1.37 (individuals to ~1.5)</td>
+<td>0.73 (to 0.67)</td>
+</tr>
+<tr>
+<td>Girl 5 vs adult man</td>
+<td>1.54 / 1.41 / 1.35</td>
+<td>0.74</td>
+</tr>
+<tr>
+<td>Boy 9 vs adult man</td>
+<td>1.31 / 1.30 / 1.30</td>
+<td>0.77</td>
+</tr>
+<tr>
+<td>Girl 9 vs adult man</td>
+<td>1.39 / 1.36 / 1.34</td>
+<td>0.75</td>
+</tr>
+<tr>
+<td>Boy 13 vs adult man</td>
+<td>1.12 / 1.12 / 1.11</td>
+<td>0.90</td>
+</tr>
+<tr>
+<td>Girl 13 vs adult man</td>
+<td>1.31 / 1.31 / 1.24</td>
+<td>0.81</td>
+</tr>
+<tr>
+<td>Boy 15–17 vs adult man</td>
+<td>1.00–1.02 / 1.02–1.05 / 1.03–1.04</td>
+<td>0.96–1.0</td>
+</tr>
+<tr>
+<td>Boy 5 vs adult woman</td>
+<td>1.20 / 1.13 / 1.18</td>
+<td>0.85</td>
+</tr>
+<tr>
+<td>Girl 5 vs adult woman</td>
+<td>1.29 / 1.18 / 1.16</td>
+<td>0.86</td>
+</tr>
+<tr>
+<td>Child 9 vs adult woman</td>
+<td>1.10–1.16 / 1.08–1.14 / 1.12–1.15</td>
+<td>0.87–0.89</td>
+</tr>
+<tr>
+<td>Adult woman vs adult man</td>
+<td>1.26 / 1.17 / 1.14 (Eichhorn); 1.20 / 1.20 / 1.16 (Lee)</td>
+<td>0.83–0.88</td>
+</tr>
+</tbody>
+</table>
+<p>Sources: computed from <a href="https://sail.usc.edu/publications/files/LeeJASA1999.pdf">Lee et al. 1999</a> and <a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC5832520/">Eichhorn et al. 2018</a>.</p>
+<h3 id="tempo-stability-and-pitch-accuracy-mature-by-about-twelve">Tempo, stability and pitch accuracy mature by about twelve</h3>
+<p>Children articulate more slowly and far less consistently than adults, and these are the figures the timing judge must tolerate. Articulation rate (pauses excluded) is <strong>3.76 syl/s at a mean age of 6;10 and 4.16 syl/s at 9;6</strong>, versus roughly 5 syl/s in young adults; speech rate including pauses is a full syllable per second lower in school-age children (2.71 and 3.03 syl/s), and 3–7-year-olds average 2.6 syl/s or less (<a href="https://moody.utexas.edu/sites/default/files/Speaking%20rate%20characteristics%20of%20elementary%20school-aged%20children_2010.pdf">Logan et al. 2011</a>). Read-sentence duration &ldquo;decreases almost linearly from age 7 to age 14&rdquo;, a 45 % reduction, mean vowel duration falls from 279 ms at 5 to 168 ms at 15, and within-speaker duration variability only becomes adult-like at 12–13 (the within-subject SD of /s/ duration is 23.6 ms at 10 and 13.7 ms at 13) (<a href="https://sail.usc.edu/publications/files/LeeJASA1999.pdf">Lee et al. 1999</a>). A six-year-old therefore takes about 1.3× as long as an adult to articulate the same text and up to 1.5–1.8× including breaths, and local tempo wobbles of ±20–30 % are normal for a child under twelve. At the other end, articulation rate is 323 syl/min at 20–44 but <strong>211 syl/min at 75–90</strong>, oral reading falls from about 250 to 200 syl/min between the 25–34 and 85+ cohorts, and the most salient ageing changes are in pause frequency and pause duration rather than in articulation itself (<a href="https://www.ht.lu.se/media/kalender/2022-01/Kandidatuppsats_HarryPolfeldt.pdf">Polfeldt 2022 compilation</a>). The only Indian figure is a Hinglish corpus in which children aged 10–14 read 11 % slower than adults (153.8 vs 172.6 words/min) (<a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC12329218/">HiACC</a>).</p>
+<p>Pitch control follows the same developmental curve. In a matched imitation task, kindergarteners landed within ±50 cents of the target on only <strong>52–67 % of pitches with a mean absolute error of 41–58 cents</strong>, sixth graders on 71–85 % (27–39 cents) and adults on 81–90 % (19–28 cents); melodic patterns and songs were harder than single pitches at every age by a factor of about 1.4 (<a href="https://livelab.mcmaster.ca/app/uploads/2021/07/DemorestPfordresher_2015_MPSpecial.pdf">Demorest &amp; Pfordresher 2015</a>). Among 632 people aged 6–99, only about half met the &ldquo;accurate singer&rdquo; criterion of 90 % of pitches within ±50 cents, and only 24 % of the untrained did; accuracy peaked at 40–60 years and was lower for children, young adults and older adults, with girls and women slightly ahead of boys and men (<a href="https://ubwp.buffalo.edu/apal-pfordresher/wp-content/uploads/sites/79/2022/01/PfordresherDemorest_2021_JRME.pdf">Pfordresher &amp; Demorest 2021</a>). Amateur adult singers&rsquo; mean absolute pitch error after removing the key is <strong>0.28 semitones</strong>, falling by 0.073 semitones per extra second of note duration (<a href="https://archives.ismir.net/ismir2015/paper/000233.pdf">Dai, Mauch &amp; Dixon 2015</a>). Phonatory stability shows the U-shape over the lifespan that Stathopoulos found in 192 speakers aged 4–93—variability of F0, loudness and signal-to-noise highest at the youngest and oldest ages (<a href="https://www.researchgate.net/publication/49697849_Changes_in_Acoustic_Characteristics_of_the_Voice_Across_the_Life_Span_Measures_From_Individuals_4-93_Years_of_Age">Stathopoulos et al. 2011</a>). Children aged 4–12 have jitter of 1.2–1.7 % and shimmer of 4–5 % on sustained vowels (<a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC9446212/">Brazilian paediatric norms</a>) against adult Indian values of 0.30–0.37 % jitter, about 3.2 % shimmer and 21–26 dB harmonics-to-noise ratio (<a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC9895185/">Indian Praat study</a>), and young children are breathy enough that F2 and F3 tracking was &ldquo;often inaccurate&rdquo; below age seven (<a href="https://sail.usc.edu/publications/files/LeeJASA1999.pdf">Lee et al. 1999</a>). Adults aged 66–75 have higher jitter and shimmer and lower HNR than young adults, and a higher F0 standard deviation on sustained vowels but not in connected speech, while retaining full pitch control (<a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC5005868/">age 20–75 study</a>); normal vocal microtremor runs at 2.0–4.7 Hz with a modulation depth of 0.4–1.3 % of F0 (<a href="https://pubmed.ncbi.nlm.nih.gov/12186048/">microtremor norms</a>), and tremor prominence rises with age through laryngeal rather than respiratory instability (<a href="https://link.springer.com/article/10.1007/s11357-026-02382-w">GeroScience 2026</a>). Sex adds a timbre difference that is not about formants: women&rsquo;s voices are breathier, with <strong>H1–H2 about 3 dB higher and H1–A3 about 10 dB higher</strong> (steeper spectral tilt) and larger between-speaker variance (<a href="https://graphics.stanford.edu/~echuang/glottal.pdf">Hanson &amp; Chuang 1999</a>), whereas jitter, shimmer and HNR show no sex difference in healthy Indian adults (<a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC9895185/">Indian Praat study</a>).</p>
+<h2 id="pronunciation-and-syllable-weight-are-the-correctness-core-tune-tempo-and-loudness-are-style">Pronunciation and syllable weight are the correctness core; tune, tempo and loudness are style</h2>
+<p>The tradition is explicit about what counts. The Taittirīya Upaniṣad&rsquo;s Śikṣā names six components of correct utterance—varṇa (sound identity), svara (accent), mātrā (duration), bala (force), sāma (evenness) and santāna (continuity, i.e. sandhi)—and Pāṇinīya Śikṣā lists six faults, among them śīghrī (reciting too fast) and alpakaṇṭha (weak voice), and six virtues including akṣaravyakti (distinct articulation), padaccheda (correct word division) and layasamartha (keeping rhythm) (<a href="https://dharmawiki.org/index.php/Shiksha_(%E0%A4%B6%E0%A4%BF%E0%A4%95%E0%A5%8D%E0%A4%B7%E0%A4%BE)">Dharmawiki: Shiksha</a>). Duration is prescribed as a ratio, not in milliseconds: hrasva one mātrā, dīrgha two, pluta three, a consonant half (<a href="https://dharmawiki.org/index.php/Shiksha_(%E0%A4%B6%E0%A4%BF%E0%A4%95%E0%A5%8D%E0%A4%B7%E0%A4%BE)">Dharmawiki</a>), and a chanting guide instructs learners to &ldquo;exaggerate the shortness and length of the vowels&rdquo; because in anuṣṭubh the fifth to eighth syllables of each quarter must follow a fixed light/heavy pattern (<a href="http://jagadanandadas.blogspot.com/2011/07/chanting-sanskrit-verses_21.html">Jagadananda Das</a>). Pitch is where Vedic and classical texts part company. A Vedic mantra &ldquo;defective in accent or letter&rdquo; conveys no meaning (Śikṣā 52), and the position of the udātta changes word meaning in compounds (<a href="https://dharmawiki.org/index.php/Shiksha_(%E0%A4%B6%E0%A4%BF%E0%A4%95%E0%A5%8D%E0%A4%B7%E0%A4%BE)">Dharmawiki</a>; <a href="https://manasataramgini.wordpress.com/wp-content/uploads/2008/09/svaras_new.pdf">manasataramgini</a>), yet even there the tone is relative: udātta is &ldquo;the normal pitch note in one&rsquo;s voice&rdquo;, anudātta the note below and svarita the note above, rendered in practice on Ri–Ga–Ma or Dha–Ni–Sa, which spans roughly a minor third, and &ldquo;the level of the swara change may be distinct or not so distinct based on the school of rendering&rdquo; (<a href="https://vedavms.in/docs/articles/01Basics%20of%20Veda%20Swaras.pdf">vedavms.in, Basics of Veda Swaras</a>). Several living traditions have lost tonal rendering entirely while preserving the text (<a href="https://manasataramgini.wordpress.com/wp-content/uploads/2008/09/svaras_new.pdf">manasataramgini</a>). The Bhagavad Gītā and stotras carry no accent marks at all; the judge-reviewed Chinmaya Mission chanting guide devotes four pages to pronunciation—aspiration, visarga, anusvāra, the three sibilants, retroflex ṇ, conjuncts—and contains <strong>no rule about pitch, tune or tempo</strong> (<a href="http://chinmayamadhuvan.org/chinmayamadhuvan/wp-content/uploads/2024/11/GitaChantingGuide_Generic_Ver6.pdf">Chinmaya Gītā Chanting Guide</a>), while the same organisation distinguishes &ldquo;traditional chanting&rdquo; from &ldquo;musical chanting&rdquo; in rāgas (<a href="https://chinmayamissionwest.com/gita-chanting/">Chinmaya Mission West</a>).</p>
+<p>Measured practice confirms how loose the melodic and tempo conventions are even within one expert. In the only quantitative corpus of classical sloka chant—3.0 hours, 764 verses and about 33,700 syllables from a single parāyaṇa-style reciter—within-verse pitch excursion is <strong>3.0–3.6 semitones</strong>, the pitch-contour correlation between the chanter&rsquo;s own renditions of the same verse is only <strong>0.40–0.54</strong>, and tempo swings <strong>1.6×</strong> between two of his recording styles; a full śloka runs about fifteen seconds and a half-verse about seven (<a href="https://arxiv.org/pdf/2608.26146">Vāgdhenu</a>). The same corpus is strict about where silence may fall: &ldquo;there are no audible gaps between words within a quarter-verse, so each quarter is one continuous breath group, and a pause occurs only at a daṇḍa&rdquo;, long metres take one breath at the caesura, and spurious internal pauses, dropped final visargas and repeated syllables were the real defects its quality gates caught (<a href="https://arxiv.org/pdf/2608.26146">Vāgdhenu</a>). The practical checklist a Gītā judge applies is therefore segmental: alpaprāṇa versus mahāprāṇa aspiration, dental versus retroflex, the three sibilants, held conjuncts and geminates, vowel length, and the visarga echoed after a short vowel or left bare after a long one—with the explicit proviso that visarga before sibilants, k/kh and p/ph &ldquo;may be replaced&rdquo; by the sibilant, jihvāmūlīya or upadhmānīya, and anusvāra &ldquo;may be optionally replaced&rdquo; by the homorganic nasal (<a href="http://chinmayamadhuvan.org/chinmayamadhuvan/wp-content/uploads/2024/11/GitaChantingGuide_Generic_Ver6.pdf">Chinmaya guide</a>). Those optional realisations must be equivalence classes in the app&rsquo;s phonetic key, not errors.</p>
+<p>Poem recital obeys the same division. In 13 German readers of metrical verse, stressed syllables were only <strong>41 ms longer and 0.74 dB louder</strong> than unstressed ones (<a href="https://www.frontiersin.org/journals/psychology/articles/10.3389/fpsyg.2023.1043651/full">Beck &amp; Konieczny 2023</a>); read-passage articulation rates run 3.0–4.0 syl/s with natural boundary pauses of 0.38–0.78 s at commas and about 1.4 s at sentence ends, and listeners from three language backgrounds rated uniform 0.6 s pauses as most natural (<a href="https://www.frontiersin.org/journals/psychology/articles/10.3389/fpsyg.2022.778018/full">Liu et al. 2022</a>). Emotion moves pitch register, range and rate in Kannada sentence reading (<a href="https://journals.asianresassoc.org/index.php/ijll/article/view/2904">Kannada affective prosody</a>), so for poems the stable, judged features are pause placement at structural boundaries and relative syllable weight, and pitch is expressive. The table collects what the evidence says a teacher–learner pair may legitimately differ in versus what a recitation judge should flag.</p>
+<table>
+<thead>
+<tr>
+<th>Dimension</th>
+<th>Legitimately varies between teacher and learner</th>
+<th>Error in sloka or poem recitation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Base pitch</td>
+<td>Register follows speaking voice: +1 to +14 st across pairings; octave transposition is how people imitate across registers</td>
+<td>None for Gītā/stotra/poems; wrong low/mid/high tone class for Vedic text</td>
+</tr>
+<tr>
+<td>Pitch contour</td>
+<td>Lineage tune; one expert&rsquo;s self-correlation only 0.40–0.54; 3–4 st excursion or flat ekaśruti both traditional</td>
+<td>None unless the teacher has fixed a tune (sung stotra)</td>
+</tr>
+<tr>
+<td>Tempo</td>
+<td>1.6× between an expert&rsquo;s own styles; children ~0.75× adult articulation rate; elderly 0.65–0.8×</td>
+<td>Gross hurry (śīghrī); loss of steady laya</td>
+</tr>
+<tr>
+<td>Pauses</td>
+<td>Duration anywhere from 0.3 to 1.5 s; a breath at a pāda end</td>
+<td>Pause inside a pāda; audible word gaps; missing daṇḍa break</td>
+</tr>
+<tr>
+<td>Syllable duration</td>
+<td>Absolute ms (scales with tempo and age)</td>
+<td>Guru not longer than neighbouring laghu; short vowel held as long as an adjacent long one; conjunct or geminate not held</td>
+</tr>
+<tr>
+<td>Segment identity</td>
+<td>Visarga → sibilant/jihvāmūlīya/upadhmānīya; anusvāra → homorganic nasal; echoed vs bare final visarga</td>
+<td>Aspiration, retroflex/dental, sibilant or vowel-quality substitution</td>
+</tr>
+<tr>
+<td>Syllable count</td>
+<td>Nothing</td>
+<td>Dropped, merged or repeated syllables; final-visarga drop</td>
+</tr>
+<tr>
+<td>Loudness</td>
+<td>Recording level, mic distance; children&rsquo;s and elders&rsquo; larger SPL variability</td>
+<td>Inaudibly weak voice (alpakaṇṭha); a syllable that drops out</td>
+</tr>
+<tr>
+<td>Voice quality</td>
+<td>Breathiness (women, young children), tremor (older adults), jitter/shimmer</td>
+<td>Nothing</td>
+</tr>
+</tbody>
+</table>
+<h2 id="the-normalisation-chain-is-right-in-design-eight-parameters-need-recalibration">The normalisation chain is right in design; eight parameters need recalibration</h2>
+<p>The app&rsquo;s architecture matches what the cross-speaker assessment literature converged on, and the failure modes of systems that skipped parts of it are instructive. Standard MFCCs &ldquo;encode gender-specific acoustic characteristics&rdquo; badly enough that a Quran recogniser&rsquo;s word error rate reached <strong>40.6 % in cross-gender testing</strong>, and a VTLN-plus-DTW pipeline that still used a single per-segment distance threshold produced a false-rejection rate of 81.98 % (<a href="https://arxiv.org/abs/2510.12858">Al-Kharusi et al. 2025</a>). Vocal-tract warping alone lifts children&rsquo;s recognition from 47.55 % to 3.85 % word error when adult-male models are warped by factors up to 1.7, and a typical boy&rsquo;s utterance needed 1.24 (<a href="https://journals.lub.lu.se/LWPL/article/download/19641/17769/">Elenius &amp; Blomberg 2010</a>). The sections below take each parameter in turn.</p>
+<h3 id="spectral-features-and-the-warp-grid">Spectral features and the warp grid</h3>
+<p>Building the envelope from harmonic peaks is the right choice for high-pitched voices, because conventional linear prediction degrades as F0 rises and harmonics &ldquo;could match or be very near to the formant values&rdquo;, which is why child-formant work resorts to cepstral liftering before peak picking (<a href="https://www.isca-archive.org/slate_2009/rodriguez09_slate.pdf">Rodríguez et al. 2009</a>). The intrinsic limit remains: with harmonics 250–300 Hz apart, a child&rsquo;s F1 at 500–800 Hz is sampled by two or three harmonics, so the envelope is coarse below 1 kHz regardless of method. The 40 dB floor sensibly caps the influence of the aspiration noise that women&rsquo;s steeper tilt and children&rsquo;s breathiness add above 2–3 kHz. Two front-end details matter for children: information above 4 kHz carries disproportionate weight for the youngest speakers (recogniser errors for six-year-olds rose 54 % when bandwidth fell from 4 to 3 kHz, against 21 % for seven-year-olds) (<a href="https://www.isca-archive.org/interspeech_2005/darcy05_interspeech.pdf">D&rsquo;Arcy &amp; Russell 2005</a>), so recordings should stay at 16 kHz sampling or better and the envelope should be computed to at least 7 kHz before warping; and the warp should be applied to a higher-order cepstrum (18 coefficients) and truncated afterwards, as Elenius did &ldquo;to avoid erroneous warping due to cepstral smoothing effects&rdquo; (<a href="https://journals.lub.lu.se/LWPL/article/download/19641/17769/">Elenius &amp; Blomberg 2010</a>).</p>
+<p>The grid 0.74–1.35 is log-symmetric and covers every adult pairing (woman versus man needs 0.80–0.87) and every child aged about eight or older against any adult. It is marginal for children of five to seven reciting after a man, whose formants reach 1.37–1.5× his and therefore need <strong>0.67–0.73</strong>; Potamianos searched down to 0.70 (<a href="https://sail.usc.edu/publications/files/potamianossap2003.pdf">Potamianos &amp; Narayanan 2003</a>). Extend the grid to 0.67 and 0.70 (with reciprocals 1.43 and 1.50) whenever the learner is under eight or the reference is an adult man and the learner a child. The 8 % step is also coarse: the adult ASR convention is 0.88–1.12 in 0.02 steps and 0.80–1.20 in production systems (<a href="https://arxiv.org/html/2307.02009">Zhang et al. 2023</a>; <a href="https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/7567903">VTLN patent</a>). A mid-grid speaker lands up to 4 % off in formant position, about 70 cents of spectral misalignment that leaks straight into the content distance; a two-stage search (coarse 8 %, then ±4 % and ±2 % around the winner) costs little. Restrict the search range by pairing type—roughly 0.88–1.12 for same-sex adults, 0.78–1.28 for cross-sex adults, 0.67–1.50 for a child against an adult—so that the warp cannot &ldquo;explain away&rdquo; a genuine mispronunciation. One warp per recording is adequate because vocal-tract length is anatomical, although per-phrase warps gain about 10 % relative over utterance-level ones and warp factors are smaller for fricatives and nasals than for vowels (<a href="https://journals.lub.lu.se/LWPL/article/download/19641/17769/">Elenius &amp; Blomberg 2010</a>; <a href="https://sail.usc.edu/publications/files/potamianossap2003.pdf">Potamianos &amp; Narayanan 2003</a>). Because F1 scales by 1.26 while F3 scales by 1.14 between women and men, a single linear warp will leave a residual F1 mismatch; if content false-alarms cluster on open vowels, the literature&rsquo;s fixes are a two-slope warp or weighting the distance toward the F2–F3 region.</p>
+<h3 id="cepstral-mean-removal-and-the-pooled-deviation">Cepstral mean removal and the pooled deviation</h3>
+<p>Per-recording cepstral mean removal is what cancels the sex-related tilt difference: a 3–10 dB change in low-frequency harmonic balance is a broadband slope that loads mainly on the lowest cepstral coefficients, and VTLN does not touch it. Keep it. The pooled standard deviation is a sound scale, but two populations stretch it: women&rsquo;s between-speaker variance in tilt is larger than men&rsquo;s (<a href="https://graphics.stanford.edu/~echuang/glottal.pdf">Hanson &amp; Chuang 1999</a>), and children&rsquo;s cepstral distance between repetitions of the same utterance is larger than adults&rsquo;, decreasing with age &ldquo;especially under 10 y&rdquo; (<a href="https://sail.usc.edu/publications/files/potamianossap2003.pdf">Potamianos &amp; Narayanan 2003</a>). Tolerance bands for the content distance should therefore be set from learner-population data by age class, not from the reference speaker&rsquo;s self-consistency.</p>
+<h3 id="key-offset-and-octave-folding">Key offset and octave folding</h3>
+<p>Discounting a constant pitch offset is exactly what the singing literature does and what every consumer karaoke scorer does. Mantell and Pfordresher had men imitate male targets and women female targets precisely because cross-sex imitation forces a transposition, and they folded any sample <strong>600 cents or more</strong> from the target back an octave, which touched under 4 % of samples (<a href="https://www.acsu.buffalo.edu/~pqp/pdfs/Mantell&amp;Pfordresher_2013_cognition.pdf">Mantell &amp; Pfordresher 2013</a>); large-scale testing gives every child under twelve a female model &ldquo;best suited to child voices of either gender&rdquo; (<a href="https://ubwp.buffalo.edu/apal-pfordresher/wp-content/uploads/sites/79/2022/01/PfordresherDemorest_2021_JRME.pdf">Pfordresher &amp; Demorest 2021</a>); UltraStar compares pitch &ldquo;modulo octave&rdquo; (<a href="https://github.com/rakuri255/UltraSinger">UltraSinger</a>) and Sony&rsquo;s SingStar disregards &ldquo;an error of a multiple of 12 in the user&rsquo;s pitch&rdquo; (<a href="https://patents.google.com/patent/US8634759B2/en">US 8,634,759</a>). Three refinements follow from the age data. First, the offset is anything from +1 semitone (child after a woman) to +14 (small child after a low-voiced man), and a boy of 12–15 can sit anywhere between 120 and 230 Hz; the estimator must stay data-driven and must not assume &ldquo;an octave&rdquo;, because a child reciting after a woman needs almost no offset and an imposed octave fold would be wrong. Second, compute the mode on octave-folded differences (differences taken modulo 12 semitones) so that a tracker that halves on a third of the frames cannot pull the mode to the wrong peak; this is the tonic-normalised, octave-invariant representation the Indian-classical mistake-detection work settled on (<a href="https://www.arxiv.org/pdf/2602.06917">Kumar et al. 2026</a>). Third, keep the ±1-semitone fold for frame-level tracker slips but add the 600-cent rule for sustained residuals, and for any cross-register pairing compare modulo 12 outright, retaining octave scoring as an option for same-register pairs. Constrain the tracker&rsquo;s search range by speaker class before any of this—children about 150–500 Hz, adult women 120–400, adult men 60–250, older men 70–300—or to ±1 octave around the recording&rsquo;s median, since even a dynamic-programming tracker made &ldquo;occasional pitch-halving&rdquo; errors on children with an SD of 23.8 Hz (<a href="https://sail.usc.edu/publications/files/LeeJASA1999.pdf">Lee et al. 1999</a>), and the 150–250 Hz crossover region where adolescent boys, older men and low-voiced women live is where octave confusions concentrate. A constant offset is adequate for a 10–20 s sloka: median intonation drift in unaccompanied singing is 11 cents over about 50 s (<a href="https://www.researchgate.net/publication/263746841_Intonation_in_unaccompanied_singing_Accuracy_drift_and_a_model_of_reference_pitch_memory">Mauch, Frieler &amp; Dixon 2014</a>), but a sliding five-note reference beat a global mean for longer pieces (<a href="https://archives.ismir.net/ismir2015/paper/000233.pdf">Dai, Mauch &amp; Dixon 2015</a>), so estimate the offset per verse in multi-verse recordings. For adolescent boys, baselines are perishable—F0 fell 105 Hz between 7 and 14 in one longitudinal series (<a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC5098980/">Fouquet et al. 2016</a>)—and should be re-recorded every few months between 12 and 15.</p>
+<h3 id="content-deviations">Content deviations</h3>
+<p>The 160 ms minimum is well placed: Witt and Young smoothed frame scores over a 150 ms window because &ldquo;the length of a vowel tends to extend over 6–20 frames&rdquo; (<a href="https://www.sciencedirect.com/science/article/abs/pii/S0167639399000448">Witt &amp; Young 2000</a>), and at 3–5 syl/s a syllable lasts 200–330 ms, so 160 ms is half a syllable. The adaptive threshold (the greater of 1.1 pooled-std units and median plus 2 MADs) self-calibrates to a child&rsquo;s noisier baseline, which is good, but the literature says what to calibrate it against. Pronunciation-assessment designers tune thresholds so that <strong>false rejections stay under 10 %</strong>, &ldquo;because erroneously rejecting correct pronunciations would be more detrimental for learners than erroneously accepting mispronunciations&rdquo;, and they set thresholds per phoneme because &ldquo;the GOP scores of well-pronounced and mispronounced sounds overlap to a considerable extent&rdquo; (<a href="https://www.isca-archive.org/slate_2009/kanters09_slate.pdf">Kanters et al. 2009</a>); fricatives in particular score lower than vowels and need a higher threshold (<a href="https://www.sciencedirect.com/science/article/abs/pii/S0167639399000448">Witt &amp; Young 2000</a>). On chant, forced alignment produced 1,648 flags on 10,220 expert clips of which &ldquo;essentially none&rdquo; were real defects, the false positives driven by conjuncts, fricative onsets and long held vowels (<a href="https://arxiv.org/pdf/2608.26146">Vāgdhenu</a>). Three changes follow: calibrate the floor per age class on recordings teachers have accepted, so that no more than 10 % of segments are flagged in correct recitations (children under ten will need a higher floor than 1.1 because their intra-speaker spread is larger and their F1 region is poorly resolved; the exact value should come from the app&rsquo;s own data); raise the threshold over sibilant, fricative and conjunct stretches; and show a content flag as an error only when a second cue agrees—a transcript mismatch or a duration anomaly—and otherwise as &ldquo;check this&rdquo;. Expect no better than human parity: machine–human phone-level correlations of 0.45–0.64 match human–human agreement of about 0.47–0.57 (<a href="https://www.isca-archive.org/interspeech_2025/parikh25b_interspeech.pdf">Parikh et al. 2025</a>; <a href="https://www.researchgate.net/publication/335829384_An_Improved_Goodness_of_Pronunciation_GoP_Measure_for_Pronunciation_Evaluation_with_DNN-HMM_System_Considering_HMM_Transition_Probabilities">Sudhakara et al. 2019</a>), and six phoneticians rejected anywhere from 7 % to 25 % of phones on the same material (<a href="https://www.sciencedirect.com/science/article/abs/pii/S0167639399000448">Witt &amp; Young 2000</a>), which argues for an exposed strictness setting rather than one fixed number. The app&rsquo;s multi-baseline comparison mirrors the speechocean762 practice of letting experts vote on more than one canonical rendering and scoring against the chosen one (<a href="https://www.isca-archive.org/interspeech_2021/zhang21x_interspeech.pdf">speechocean762</a>); keep it.</p>
+<h3 id="timing">Timing</h3>
+<p>A 0.3 s pause threshold sits at the conventional boundary—rate studies exclude pauses over 250 ms from articulation rate (<a href="https://moody.utexas.edu/sites/default/files/Speaking%20rate%20characteristics%20of%20elementary%20school-aged%20children_2010.pdf">Logan et al. 2011</a>)—and just under the shortest natural boundary pauses of 0.38 s (<a href="https://www.frontiersin.org/journals/psychology/articles/10.3389/fpsyg.2022.778018/full">Liu et al. 2022</a>). Keep the duration; change the criterion. &ldquo;Not in the reference&rdquo; penalises a child or an elderly learner who takes a breath at a pāda end where the teacher did not, and it misses nothing the tradition cares about more. The licensed pause points are determined by the text—the quarter- and half-verse daṇḍa, and the yati in long metres—and the defect is a pause inside a pāda or between words (<a href="https://arxiv.org/pdf/2608.26146">Vāgdhenu</a>; <a href="http://jagadanandadas.blogspot.com/2011/07/chanting-sanskrit-verses_21.html">Jagadananda Das</a>); for poems, over 90 % of pause time falls at punctuation (<a href="https://shc.stanford.edu/arcade/interventions/after-scansion-visualizing-deforming-and-listening-poetic-prosody">Stanford Arcade</a>). So flag pauses of 0.3 s or more that fall mid-unit, tolerate pauses at any pāda or line boundary even when the reference has none (expect them from learners over 60 and under 8), and never score pause length, since 0.3–1.5 s are all natural. The 0.75–1.33× speed band around the learner&rsquo;s own tempo is reasonable for adults and correctly measured relative to the learner rather than the teacher, but a child under twelve has within-utterance duration variability about 1.7× an adult&rsquo;s (<a href="https://sail.usc.edu/publications/files/LeeJASA1999.pdf">Lee et al. 1999</a>), so widen it to about 0.67–1.5× for children; keep it off by default, and when on, weight rushing (the named fault śīghrī) over dragging, which the tradition calls teaching speed (vilambita) (<a href="https://dharmawiki.org/index.php/Shiksha_(%E0%A4%B6%E0%A4%BF%E0%A4%95%E0%A5%8D%E0%A4%B7%E0%A4%BE)">Dharmawiki</a>). Make sure the DTW slope constraint allows at least a 2× overall tempo ratio, since a six-year-old&rsquo;s sentences run 1.5–1.8× an adult&rsquo;s and one expert swings 1.6× by himself. The timing category is also missing the one duration test the tradition does prescribe: syllable weight. A relative mātrā check—every guru at least about 1.5× its neighbouring laghus within the learner&rsquo;s own pāda, and a short vowel flagged when it is as long as an adjacent long vowel—tests laghu/guru contrast without absolute milliseconds; this is a pronunciation error in Śikṣā terms (mātrā) and belongs with content rather than with tempo. The Quran-assessment review&rsquo;s warning that DTW &ldquo;discards the learner&rsquo;s original temporal performance data&rdquo; (<a href="https://arxiv.org/abs/2510.12858">Al-Kharusi et al. 2025</a>) is answered by the app&rsquo;s separate timing report; keeping the raw warp path and reporting local slope is the right mechanism.</p>
+<h3 id="pitch">Pitch</h3>
+<p>For adults the thresholds are defensible: 0.4 semitones sustained and 0.5 semitones &ldquo;in tune&rdquo; sit on the Western ±50-cent accuracy convention, inside UltraStar&rsquo;s ±1-semitone &ldquo;hard&rdquo; band and SingStar&rsquo;s ±2.5 MIDI notes (<a href="https://github.com/rakuri255/UltraSinger">UltraSinger</a>; <a href="https://patents.google.com/patent/US8634759B2/en">US 8,634,759</a>), and above the 28-cent mean error of amateur adults (<a href="https://archives.ismir.net/ismir2015/paper/000233.pdf">Dai, Mauch &amp; Dixon 2015</a>). For children they are too tight: a kindergartener&rsquo;s mean absolute error of 41–58 cents means a ±50-cent band marks a third to a half of their notes wrong, and a sixth grader&rsquo;s 27–39 cents is near the edge (<a href="https://livelab.mcmaster.ca/app/uploads/2021/07/DemorestPfordresher_2015_MPSpecial.pdf">Demorest &amp; Pfordresher 2015</a>). Scale the threshold by age—about 1 semitone for ages 4–8, 0.75 for 8–10, 0.5 from eleven—and require the deviation to persist for at least 250 ms, the stable-note duration used in Indian-classical analysis (<a href="https://transactions.ismir.net/articles/10.5334/tismir.11">Ganguli &amp; Rao 2018</a>), since pitch error falls with note length. The larger decision is categorical. For Gītā, stotra and poem text, pitch should be reported as a style similarity and excluded from pass/fail unless the teacher marks the baseline as a fixed tune, because the text carries no accent and one expert&rsquo;s own renditions correlate only 0.40–0.54 (<a href="https://arxiv.org/pdf/2608.26146">Vāgdhenu</a>); demanding closer agreement than that would fail competent learners. For Vedic text, replace the semitone comparison with a tone-class check—each syllable low, mid or high relative to the reciter&rsquo;s own mid level, with about ±1 semitone margins—since the whole three-tone span is roughly 3 semitones (<a href="https://vedavms.in/docs/articles/01Basics%20of%20Veda%20Swaras.pdf">vedavms.in</a>). Smooth F0 over at least 250 ms before comparison: an older reciter&rsquo;s tremor at 2–5 Hz on held vowels disappears at that scale, and children&rsquo;s and elders&rsquo; breathier phonation drops more frames as unvoiced, so adult voicing thresholds in the tracker should be loosened for those classes.</p>
+<h3 id="dynamics-pronunciation-and-quiz-tolerances">Dynamics, pronunciation and quiz tolerances</h3>
+<p>A 10 dB deviation threshold lands between the two empirically observed teacher strictnesses in Indian vocal pedagogy—one Hindustani teacher&rsquo;s judgements were best reproduced by a <strong>6 dB</strong> loudness threshold, the other&rsquo;s by 24–36 dB (<a href="https://www.arxiv.org/pdf/2602.06917">Kumar et al. 2026</a>)—and metrical stress in verse is carried by less than 1.5 dB (<a href="https://www.frontiersin.org/journals/psychology/articles/10.3389/fpsyg.2023.1043651/full">Beck &amp; Konieczny 2023</a>), so loudness is a low-weight category whose only real faults are a weak voice and a syllable that drops out. Keep 10 dB as the default, offer 6 and 30 as strict and lenient settings, and expect more within-recording loudness variability from the youngest and oldest learners.</p>
+<p>Pronunciation from speech-to-text is the parameter most exposed to age. Adult word error rates of about 5 % become <strong>11–18 % for children overall, 15–21 % at ages 6–10 and up to 35 % at ages 4–6</strong> on commercial recognisers (<a href="https://the-learning-agency.com/guides-resources/closing-the-child-speech-recognition-gap-evidence-limitations-and-paths-forward/">The Learning Agency</a>); Hinglish children aged 10–14 run 2–5 points worse than adults (<a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC12329218/">HiACC</a>); the best published Sanskrit recogniser, Whisper fine-tuned on Sanskrit, reaches <strong>15.42 % WER</strong> on adults (<a href="https://arxiv.org/html/2501.10024">Sanskrit ASR</a>); and fine-tuning on child speech cuts WER by about a third (13.9 % to 9.1 %) (<a href="https://arxiv.org/abs/2309.07927">Kid-Whisper</a>). Comparing the learner&rsquo;s transcript with the reference&rsquo;s transcript rather than with canonical text cancels the recogniser&rsquo;s systematic confusions, but not the child-specific degradation, so a 10 % mismatch tolerance will fail young children on recogniser noise alone. Set the tolerance by age (about 10 % for adults and adolescents, 20 % for ages 8–10, 25–30 % for ages 4–7, to be calibrated on accepted recordings), bias or constrain recognition with the known sloka text, encode the optional visarga and anusvāra realisations as equivalence classes in the phonetic key, and score primarily the contrasts the tradition names (aspiration, retroflex/dental, sibilants, vowel length, syllable count). The quiz&rsquo;s content and pronunciation tolerances of 10 % correspond to a moderately strict human judge (the six phoneticians rejected 7–25 % of phones, mean 18 %) (<a href="https://www.sciencedirect.com/science/article/abs/pii/S0167639399000448">Witt &amp; Young 2000</a>), and 60 % for timing, pitch and dynamics correctly treats those as style; the weights are right, the age presets are what is missing.</p>
+<h3 id="summary-of-recommended-settings-by-pairing">Summary of recommended settings by pairing</h3>
+<p>The table gathers the age- and sex-aware defaults implied above. Pitch thresholds derive from Western pitch-matching data, pronunciation tolerances from word-error ratios, and the content floors are relative adjustments to be calibrated against teacher-accepted recordings; none has been validated on Sanskrit recitation.</p>
+<table>
+<thead>
+<tr>
+<th>Learner → reference</th>
+<th>Expected F0 offset; warp</th>
+<th>VTLN search</th>
+<th>Pitch threshold (sustained ≥250 ms)</th>
+<th>Content floor</th>
+<th>Pronunciation tolerance</th>
+<th>Speed band when on</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Child 4–7 → adult man</td>
+<td>+10 to +13 st; 0.67–0.75</td>
+<td>0.62–0.80 (extend grid)</td>
+<td>1.0 st</td>
+<td>Raised; calibrate</td>
+<td>25–30 %</td>
+<td>0.67–1.5×</td>
+<td>Prefer a female reference or pitch-shift playback to the child&rsquo;s register; fold mod 12</td>
+</tr>
+<tr>
+<td>Child 4–7 → adult woman</td>
+<td>+1 to +4 st; 0.78–0.86</td>
+<td>0.74–0.93</td>
+<td>1.0 st</td>
+<td>Raised; calibrate</td>
+<td>25–30 %</td>
+<td>0.67–1.5×</td>
+<td>Do not impose an octave fold</td>
+</tr>
+<tr>
+<td>Child 8–11 → adult man</td>
+<td>+10 to +12 st; 0.75–0.81</td>
+<td>0.70–0.86</td>
+<td>0.75 st</td>
+<td>Slightly raised</td>
+<td>20 %</td>
+<td>0.67–1.5×</td>
+<td>Fold mod 12</td>
+</tr>
+<tr>
+<td>Child 8–11 → adult woman</td>
+<td>+1 to +3 st; 0.86–0.93</td>
+<td>0.80–1.0</td>
+<td>0.75 st</td>
+<td>Slightly raised</td>
+<td>20 %</td>
+<td>0.67–1.5×</td>
+<td></td>
+</tr>
+<tr>
+<td>Boy 12–15 → anyone</td>
+<td>−1 to +12 st; 0.85–1.0</td>
+<td>Full 0.74–1.35</td>
+<td>0.5–0.75 st</td>
+<td>1.1</td>
+<td>10–15 %</td>
+<td>0.75–1.33×</td>
+<td>Re-baseline every 3–6 months; estimate offset per verse</td>
+</tr>
+<tr>
+<td>Girl 12–17 → man</td>
+<td>+8 to +11 st; 0.77–0.83</td>
+<td>0.74–0.93</td>
+<td>0.5 st</td>
+<td>1.1</td>
+<td>10 %</td>
+<td>0.75–1.33×</td>
+<td>Fold mod 12</td>
+</tr>
+<tr>
+<td>Adult woman ↔ adult man</td>
+<td>+7 to +12 st young, +6 to +8 st older; 0.80–0.87 or 1.15–1.26</td>
+<td>0.78–1.28</td>
+<td>0.5 st</td>
+<td>1.1</td>
+<td>10 %</td>
+<td>0.75–1.33×</td>
+<td>Fold mod 12</td>
+</tr>
+<tr>
+<td>Same-sex adults</td>
+<td>0 ± 3 st; 0.93–1.08</td>
+<td>0.88–1.12</td>
+<td>0.5 st</td>
+<td>1.1</td>
+<td>10 %</td>
+<td>0.75–1.33×</td>
+<td>Octave scoring optional</td>
+</tr>
+<tr>
+<td>Learner 60+ → any</td>
+<td>Men +3 to +5 st above middle-aged men, women −3 st below young women; adult warps</td>
+<td>As adults</td>
+<td>0.5 st with ≥250 ms smoothing</td>
+<td>1.1</td>
+<td>10 %</td>
+<td>0.67–1.33×</td>
+<td>Tolerate pāda-end breaths; expect 20–35 % slower tempo</td>
+</tr>
+</tbody>
+</table>
+<h2 id="classical-recital-needs-a-tonic-a-shruti-table-and-a-tala-grid">Classical recital needs a tonic, a shruti table and a tala grid</h2>
+<p>Everything in Carnatic and Hindustani vocal music is measured from a per-performer tonic, and that changes the pitch regime completely. The vocal tonic &ldquo;spans more than one octave, typically between 100–260 Hz&rdquo;, automatic estimators restrict their search to 100–195 Hz for men and 135–250 Hz for women when the sex is known, and they reach about 90 % accuracy within a 50-cent criterion, with octave errors and fifth/fourth confusions as the main failures, more so for female singers (<a href="https://www.justinsalamon.com/uploads/4/3/9/4/4394963/gulati_tonicid_jnmr_14.pdf">Gulati et al. 2014</a>). The only open teacher–learner dataset in the tradition normalises every contour by the tonic and folds it to one octave because &ldquo;octave errors are not treated as mistakes in musicology&rdquo;, and it pitch-shifted the teacher&rsquo;s voice to the learner&rsquo;s tonic for in-ear playback (<a href="https://www.arxiv.org/pdf/2602.06917">Kumar et al. 2026</a>); the app&rsquo;s key offset becomes explicit tonic estimation, ideally seeded by the shruti-box setting the user enters. Swara targets are not the twelve equal-tempered semitones. Over 233 Carnatic recordings the interval histogram peaks at <strong>314, 427, 496, 703, 813, 906 and 996 cents</strong>, within 0–9 cents of just intonation but up to 34 cents from equal temperament, whereas 133 Hindustani recordings correlate better with equal temperament (r = 0.72 vs 0.64) in a &ldquo;hybrid&rdquo; system where most singers keep the just flat third (<a href="http://mtg.upf.edu/system/files/publications/jserra11ismir_icmtuning.pdf">Serra et al. 2011</a>); the 22-shruti table gives the candidate positions in cents (for instance Ri at 182.4 or 203.9, komal Ga at 315.6, antara Ga at 386.3, Ma at 498.0, Pa at 702.0, Dha at 813.7 or 884.4, Ni at 996.1 or 1088.3) (<a href="https://www.plainsound.org/pdfs/srutis.pdf">von Schweinitz / Sambamurthy</a>), and allied rāgas differ by about 10 cents on a single note (<a href="https://transactions.ismir.net/articles/10.5334/tismir.11">Ganguli &amp; Rao 2018</a>). The targets should therefore be learned from the teacher&rsquo;s own pitch histogram per piece, with the just-intonation table as prior.</p>
+<p>Tolerances split by note class. Nineteen professional Carnatic singers hold constant-pitch notes (within ±0.3 semitones of their mean for at least 80 ms) with an SD of <strong>about 10 cents when longer than 0.5 s and 20 cents at 200 ms</strong>, while the turning points inside gamakas have an SD of 45–85 cents, &ldquo;a nominal value of 60 cents&rdquo;; expert listeners could not distinguish re-synthesised gamakas whose turning points were quantised to in-rāga from out-of-rāga semitones (<a href="https://archives.ismir.net/ismir2018/paper/000120.pdf">Viraraghavan et al. 2018</a>). The two Hindustani teachers who annotated beginners&rsquo; mistakes were best reproduced by pitch thresholds of <strong>12 cents and 12–22 cents</strong> respectively and loudness thresholds of 6 dB and 24–36 dB (<a href="https://www.arxiv.org/pdf/2602.06917">Kumar et al. 2026</a>). The app&rsquo;s 0.4-semitone pitch threshold is thus two to four times too loose for steady notes—it would pass a student singing Ri at 204 cents where the teacher sings 182—and too tight for ornaments. A recital mode needs a steady-note band of roughly 12 cents (excellent), 20–25 (acceptable) and 35 (wrong shruti) for notes of 250 ms or more, widened by about 10 cents for 80–250 ms notes, plus a separate transient scorer that checks anchor swara, direction and extent within ±1 semitone at about 60 cents turning-point tolerance. Gamakas also break the current smoothing and alignment assumptions: a kampita on Ni in Bhairavi moves from 125 to 150 Hz and back in 200 ms, which &ldquo;cannot be tracked by a 100 ms analysis window&rdquo;, and when varnam lines are sung at double speed steady notes shrink 6–12× while transients shrink only 2–3.5× (<a href="https://arxiv.org/pdf/1711.02318">Viraraghavan et al. 2017</a>). The pitch tracker needs a 5–10 ms hop and a window of 60 ms or less, the 250 ms smoothing recommended for recitation must be switched off, and alignment must stretch steady notes without stretching ornaments and must permit a 2:1 tempo change at section boundaries. Hindustani singers do not use the Western singer&rsquo;s formant and sound &ldquo;very similar to their speaking voice&rdquo; at much lower volume (<a href="https://www.sciencedaily.com/releases/2010/10/101004211742.htm">ScienceDaily</a>), so Western voice-quality metrics do not apply, and a drone accompaniment requires either predominant-melody extraction or recording the voice alone with the drone in headphones.</p>
+<p>Rhythm requires a grid the sloka judge does not have. Talas are cycles of 6–16 beats, Hindustani laya runs <strong>10–60 matras per minute in vilambit, 60–150 in madhya and over 150 in drut</strong>, and matra periods range &ldquo;from less than 150 ms to over 6 s&rdquo;, with ektaal cycles spanning 2.2 to 69.7 s—&ldquo;about 5 tempo octaves&rdquo; (<a href="https://www.frontiersin.org/journals/digital-humanities/articles/10.3389/fdigh.2017.00020/full">Srinivasamurthy et al. 2017</a>). Tempo is the performer&rsquo;s choice, so timing errors must be expressed as fractions of a matra after the learner&rsquo;s own tempo is estimated; the teacher-annotated dataset used collars of 80 ms at frame level and 200 ms at event level, defined a timing mistake as &ldquo;loss of synchrony with the accompanying rhythmic cycle&rdquo;, recorded the teacher&rsquo;s BPM, tala and first-beat onset as metadata, and concluded that &ldquo;timing-related errors require dedicated modeling schemes&rdquo; (<a href="https://www.arxiv.org/pdf/2602.06917">Kumar et al. 2026</a>). Even the best learned models there reach frame-level F1 of 79–88 for pitch mistakes but only 39–68 at event level, and cross-teacher transfer drops frame F1 to about 70–72, so the notion of a mistake is teacher-specific and a strictness profile (strict ≈ 12 cents / 6 dB, lenient ≈ 22 cents / 30 dB) should be exposed from the start. The commercial precedent, Riyaz, returns segment scores of 75–95 against reference lessons but publishes neither tolerances nor tonic handling (<a href="https://musicmuni.com/technology/calibra/">MusicMuni Calibra</a>). Nothing in the retrieved literature says how these tolerances should change with a student&rsquo;s age or sex beyond the tonic range; the present report&rsquo;s age tables apply to speaking-voice physics and do not transfer to intonation precision in music.</p>
+<h2 id="the-evidence-rests-on-american-english-children-and-one-sanskrit-chanter">The evidence rests on American English children and one Sanskrit chanter</h2>
+<p>The age and sex numbers above are robust where they come from large American English samples—Lee&rsquo;s 436 children, Berger&rsquo;s 2,626, Eichhorn&rsquo;s lifespan cohorts—and thin everywhere the app&rsquo;s users actually live. <strong>No study gives F0 or formant norms for Indian children by age</strong>, nor for Sanskrit, Hindi, Kannada or Tamil-speaking children; the only Indian norms are for adults aged 18–50, and they disagree with each other on men&rsquo;s F0 (131 Hz in Maharashtra versus 141–156 Hz among Hindi speakers), which may reflect task or region. An AIISH Mysore project on &ldquo;Speech Rhythm (F0) in Kannada Speaking Children&rdquo; exists but its values were not retrievable (<a href="https://aiishmysore.in/storage/files/edited-modifed-10102021-website-sls-1.pdf">AIISH project list</a>). No peer-reviewed acoustic measurement of udātta, anudātta and svarita across multiple Vedic reciters was found; Beguš states that his contours are &ldquo;completely hypothetical and not based on any measurements&rdquo; (<a href="https://gbegus.github.io/assets/pdf/begus_the_phonetics_of_independent_svarita_in_vedic.pdf">Beguš 2016</a>), and the one Praat-based &ldquo;Vedic chanting&rdquo; paper reports only 1–20 Hz bands and should not be used. Every sloka-specific figure—3.0–3.6 semitones excursion, 0.40–0.54 self-correlation, 1.6× tempo swing, about 3.1 syllables per second, no intra-pāda pauses—comes from a single expert reciting Mahābhārata Tātparya Nirṇaya and Bhāgavatam verses, not the Gītā, and from an engineering report rather than a phonetic study (<a href="https://arxiv.org/pdf/2608.26146">Vāgdhenu</a>). There is no multi-reciter study of Gītā tempo, no table of measured laghu versus guru durations, and no published system that scores a learner&rsquo;s sloka against a teacher with stated tolerances; the tolerances here are transferred from Western singing assessment, Quran recitation and Indian classical pedagogy.</p>
+<p>Several quantitative claims rest on secondary or partial access. The Hollien and Shipp decade means and the Berger and Holmberg norms are cited through compilations; the 2026 systematic review of voice change across childhood could not be read, and one of its snippets (a 3–4 semitone male drop) contradicts every primary study; children&rsquo;s perturbation values (MDVP, 1.2–2.3 % jitter) and adults&rsquo; (Praat, 0.3–0.6 %) come from different software and are not comparable; voice-type ranges come from non-scholarly charts. Pitch-matching accuracy by age is entirely North American children singing Western tonal material, so the 1-semitone child tolerance proposed above is an extrapolation. No study quantifies octave-error rates of modern pitch trackers (pYIN, CREPE, SWIPE) on children versus adults versus the elderly, nor ASR error rates by age for speakers over 60. In the classical domain, the 12- and 22-cent teacher tolerances are inferred from grid-searched thresholds that best reproduce two teachers&rsquo; annotations of beginners, not from what the teachers say they accept (<a href="https://www.arxiv.org/pdf/2602.06917">Kumar et al. 2026</a>); no measured gamaka oscillation rates across singers, no student-versus-teacher gamaka deviation data and no published end-to-end rubric weighting pitch, ornament, tala and lyrics exist. Finally, human agreement sets a ceiling the app should not pretend to exceed: singing-quality raters reached a Krippendorff&rsquo;s alpha of only 0.313 (<a href="https://d-nb.info/1248482468/34">Böhm et al.</a>), and no inter-rater reliability figures exist for Sanskrit recitation or for children&rsquo;s recitation at all.</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>The practical upshot is that the app should stop treating &ldquo;different from the teacher&rdquo; as a single axis. Register, vocal-tract scale, tempo and breathiness are speaker variables with known, large ranges, and the evidence supports normalising them aggressively and data-drivenly—extending the warp grid for the youngest learners, folding octaves modulo 12 after a folded-mode offset, allowing 2× tempo ratios and boundary breaths—while concentrating judgement on the handful of segmental contrasts the tradition itself names and on the one duration rule it prescribes, syllable weight, which the current timing category does not yet test. The most consequential single change is categorical rather than numeric: for Gītā, stotra and poem text, pitch belongs in the style report, not the pass/fail path, and the 60 % quiz tolerance is the right place for it to live.</p>
+<p>The age presets matter most at the extremes and least in the middle. Adults of either sex against adults of either sex are already well served by the current thresholds once the offset and warp are handled; children under eight against a male teacher stress every component at once—warp range, pitch tolerance, content floor and speech-to-text—and the simplest mitigation is to give them a female or pitch-shifted reference, as the singing-accuracy field does by default. Because the Indian child and Sanskrit recitation norms do not exist in the literature, the app&rsquo;s own corpus of teacher-accepted recordings is the best available calibration set: logging per-age distributions of content distance, transcript mismatch and pitch deviation on recordings a teacher has passed, and setting each floor at the point where no more than a tenth of them would be flagged, will produce better thresholds than any number in this report. For the classical mode, the design should be planned now around a tonic-relative, octave-folded cents contour at 10 ms resolution and a tala grid entered as metadata, since the two-regime pitch tolerance (12–25 cents on steady notes, 60 on ornaments) and matra-relative timing cannot be bolted onto a recitation judge that smooths over 250 ms and tolerates half a semitone.</p>
+</article>
+</main>
+</div>
+<div class="controls" aria-label="Reading controls">
+<button id="smaller" title="Smaller text" aria-label="Smaller text">A−</button>
+<button id="bigger" title="Larger text" aria-label="Larger text">A+</button>
+<button id="theme" title="Light or dark" aria-label="Switch light or dark">◐</button>
+</div>
+<script>
+(() => {
+  // remember the reader's text size and theme (per browser)
+  const root = document.documentElement;
+  try { const s = localStorage.getItem('report-size'); if (s) root.style.setProperty('--body-size', s); } catch {}
+  try { const t = localStorage.getItem('report-theme'); if (t) root.dataset.theme = t; } catch {}
+  const size = (d) => {
+    const cur = parseFloat(getComputedStyle(root).getPropertyValue('--body-size')) || 19;
+    const next = Math.min(28, Math.max(14, cur + d)) + 'px';
+    root.style.setProperty('--body-size', next);
+    try { localStorage.setItem('report-size', next); } catch {}
+  };
+  document.getElementById('bigger')?.addEventListener('click', () => size(1));
+  document.getElementById('smaller')?.addEventListener('click', () => size(-1));
+  document.getElementById('theme')?.addEventListener('click', () => {
+    const dark = root.dataset.theme === 'dark' || (!root.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches);
+    root.dataset.theme = dark ? 'light' : 'dark';
+    try { localStorage.setItem('report-theme', root.dataset.theme); } catch {}
+  });
+  // highlight the section being read
+  const links = [...document.querySelectorAll('nav.toc a[href^="#"]')];
+  const byId = new Map(links.map((a) => [a.getAttribute('href').slice(1), a]));
+  const heads = [...document.querySelectorAll('article h2, article h3')].filter((h) => byId.has(h.id));
+  const mark = () => {
+    let cur = heads[0];
+    for (const h of heads) if (h.getBoundingClientRect().top < 120) cur = h;
+    links.forEach((a) => a.classList.toggle('active', cur && a === byId.get(cur.id)));
+  };
+  addEventListener('scroll', mark, { passive: true });
+  mark();
+  // tables scroll sideways rather than overflowing the page
+  for (const t of document.querySelectorAll('article table')) {
+    const w = document.createElement('div'); w.className = 'table-wrap'; t.replaceWith(w); w.appendChild(t);
+  }
+  // sources open beside the report
+  for (const a of document.querySelectorAll('article a[href^="http"]')) { a.target = '_blank'; a.rel = 'noopener'; }
+})();
+</script>
+</body>
+</html>

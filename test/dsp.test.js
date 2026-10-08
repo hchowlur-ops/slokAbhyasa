@@ -389,8 +389,49 @@ test('foldOctave: an octave slip of the pitch tracker folds back, only when the 
   near(foldOctave(-11.6, true), 0.4);
   near(foldOctave(24.2, true), 0.2);
   near(foldOctave(5, true), 5);
+  near(foldOctave(8, true), -4); // a register change, compared within the octave
   near(foldOctave(12.3, false), 12.3);
   assert.ok(Number.isNaN(foldOctave(NaN, true)));
+});
+
+test('compare: a young child is allowed a wider pitch band and a slower pace than an adult', () => {
+  const B = feat(chant(SCALE));
+  // 0.7 st off on one note: wrong for an adult (tolerance 0.5), within a small child's band (1.0)
+  const H = feat(chant(SCALE.map((m, k) => (k === 3 ? m + 0.7 : m))));
+  const adult = compare(B, H, { ignoreKey: false });
+  assert.equal(devsOfType(adult, 'pitch').length, 1, JSON.stringify(adult.deviations.map((d) => d.label)));
+  const child = compare(B, H, { ignoreKey: false, learner: { voiceType: 'child', ageGroup: 'under8' }, reference: { voiceType: 'female', ageGroup: '40to59' } });
+  assert.equal(devsOfType(child, 'pitch').length, 0, JSON.stringify(child.deviations.map((d) => d.label)));
+  assert.ok(child.scores.pitch > adult.scores.pitch, `${child.scores.pitch} vs ${adult.scores.pitch}`);
+  assert.equal(child.preset.pitchTolSt, 1.0);
+  assert.ok(child.notes.some((n) => /allowances for a learner aged under 8/.test(n)), child.notes.join(' | '));
+  // 1.4× slower, speed judged: a global slowdown is never a local deviation, but it costs an
+  // adult more than a child, whose acceptable band is wider
+  const slow = feat(chant(SCALE, 400 * 1.4));
+  const adultSlow = compare(B, slow, { judgeSpeed: true });
+  const childSlow = compare(B, slow, { judgeSpeed: true, learner: { voiceType: 'child', ageGroup: 'under8' } });
+  assert.equal(devsOfType(childSlow, 'timing').length, 0, JSON.stringify(childSlow.deviations.map((d) => d.label)));
+  assert.ok(adultSlow.scores.timing < 90, `adult timing ${adultSlow.scores.timing}`);
+  assert.ok(childSlow.scores.timing > adultSlow.scores.timing + 5, `${childSlow.scores.timing} vs ${adultSlow.scores.timing}`);
+  assert.equal(compare(B, slow).scores.timing, compare(B, slow, { learner: { voiceType: 'child', ageGroup: 'under8' } }).scores.timing, 'speed not judged: no difference');
+});
+
+test('compare: an explicit preset overrides the one derived from the speakers', () => {
+  const B = feat(chant(SCALE));
+  const H = feat(chant(SCALE.map((m, k) => (k === 3 ? m + 0.7 : m))));
+  const res = compare(B, H, { ignoreKey: false, preset: { pitchTolSt: 1.0 } });
+  assert.equal(devsOfType(res, 'pitch').length, 0);
+  assert.equal(res.preset.pitchTolSt, 1.0);
+  assert.equal(res.preset.contentFloor, 1.1, 'the rest stays at the adult defaults');
+});
+
+test('compare: recitation mode scores words and timing, pitch is shown for interest', () => {
+  const B = feat(chant(SCALE));
+  const H = feat(chant(SCALE.map((m) => m + 2)));
+  const res = compare(B, H, { ignoreKey: false, mode: 'recitation' });
+  assert.ok(res.scores.pitch < 40, `pitch ${res.scores.pitch}`);
+  assert.ok(res.scores.overall >= 90, `overall ${res.scores.overall} should not count the pitch`);
+  assert.ok(res.notes.some((n) => /shown for interest/.test(n)), res.notes.join(' | '));
 });
 
 test('performance: a one-minute take analysed at every voice warp stays quick', () => {
@@ -398,7 +439,7 @@ test('performance: a one-minute take analysed at every voice warp stays quick', 
   const t0 = performance.now();
   const F = extractFeatures(x, { warps: true });
   const ms = performance.now() - t0;
-  assert.ok(F.mfccWarps.length === 9 * F.n * 12);
+  assert.ok(F.mfccWarps.length === 11 * F.n * 12);
   assert.ok(ms < 8000, `features took ${ms.toFixed(0)} ms for ${F.duration.toFixed(0)} s`);
 });
 

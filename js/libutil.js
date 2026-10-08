@@ -47,19 +47,21 @@ export function parseWavHeader(bytes, fileSize = bytes.length) {
   let pos = 12;
   let fmt = null;
   let dataBytes = null;
+  let dataOffset = null;
   while (pos + 8 <= u8.length) {
     const id = tag(pos);
     const size = dv.getUint32(pos + 4, true);
     if (id === 'fmt ' && pos + 24 <= u8.length) {
       fmt = { channels: dv.getUint16(pos + 10, true), sampleRate: dv.getUint32(pos + 12, true), bits: dv.getUint16(pos + 22, true) };
     } else if (id === 'data') {
+      dataOffset = pos + 8;
       dataBytes = size || Math.max(0, fileSize - pos - 8);
       break;
     }
     pos += 8 + size + (size & 1);
   }
   if (!fmt || !fmt.sampleRate || !fmt.channels || !fmt.bits) return null;
-  if (dataBytes === null) dataBytes = Math.max(0, fileSize - 44);
+  if (dataBytes === null) { dataBytes = Math.max(0, fileSize - 44); dataOffset = 44; }
   const bytesPerSec = fmt.sampleRate * fmt.channels * (fmt.bits / 8);
-  return { ...fmt, duration: bytesPerSec ? dataBytes / bytesPerSec : 0 };
+  return { ...fmt, duration: bytesPerSec ? dataBytes / bytesPerSec : 0, dataOffset, dataBytes: Math.min(dataBytes, Math.max(0, fileSize - dataOffset)) };
 }

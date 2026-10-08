@@ -6,11 +6,15 @@ import { N_MFCC, HOP_SEC, isValidFeatures, WARP_ALPHAS, WARP_UNITY } from './fea
 import { detectDeviations, foldOctave } from './deviations.js';
 import { medianOf, slopeOf, clamp } from './util.js';
 import { locate, sliceFeatures, rethreshold } from './locate.js';
+import { presetsFor, ADULT_PRESET, ageGroupLabel } from '../meta.js';
 
-export const RESULT_VERSION = 1;
+export const RESULT_VERSION = 2;
 
 export const MODES = {
   // blends
+  // recited text (Gītā, stotra, poem): the text carries no tune, so pitch is shown as style
+  // and does not count; a reciter's own renditions agree in pitch contour only loosely
+  recitation: { pitch: 0, timing: 0.4, content: 0.6 },
   chant: { pitch: 0.2, timing: 0.35, content: 0.45 },
   singing: { pitch: 0.4, timing: 0.3, content: 0.3 },
   instrument: { pitch: 0.45, timing: 0.4, content: 0.15 },
@@ -24,7 +28,10 @@ export const MODES = {
 // pace, uniform or not; pauses, skipped and added material still count. On, stretches
 // rushed or dragged against the learner's own overall tempo count in the timing score, and
 // the overall tempo itself is penalised. (penalizeTempo is the old name of the option.)
-export const DEFAULT_OPTIONS = { ignoreKey: true, judgeSpeed: false, flagDynamics: false, mode: 'chant' };
+// learner / reference: { voiceType, ageGroup } of who recites and who recorded the sloka;
+// they set the allowances (pitch and speed bands, content floor, warp search range) through
+// presetsFor(); `preset` fields given directly override those.
+export const DEFAULT_OPTIONS = { ignoreKey: true, judgeSpeed: false, flagDynamics: false, mode: 'chant', learner: null, reference: null, preset: null };
 
 // Length ratio beyond which the shorter recording is searched for inside the longer one.
 export const LOCATE_RATIO = 1.5;
@@ -53,8 +60,8 @@ export function compareAuto(B, H, options = {}) {
   };
   // A different voice (a child after an adult, say) has its vowels' formants elsewhere: read
   // the take at the frequency warp that fits the sloka best, before anything is located,
-  // aligned or judged.
-  H = normalizeVoice(B, H);
+  // aligned or judged. The pairing of voices says how far the search may reach.
+  H = normalizeVoice(B, H, resolvePreset(options).warpRange);
   const spanB = Math.max(1, B.trimEnd - B.trimStart + 1);
   const spanH = Math.max(1, H.trimEnd - H.trimStart + 1);
   const ratio = spanH / spanB;
@@ -123,14 +130,20 @@ function shiftBase(res, i0, B) {
   res.baseFullDuration = B.duration;
 }
 
+// The allowances for this comparison: from the two speakers, with explicit overrides.
+export function resolvePreset(options = {}) {
+  return { ...presetsFor(options.learner, options.reference), ...(options.preset || {}) };
+}
+
 export function compare(B, H, options = {}) {
   const opts = { ...DEFAULT_OPTIONS, ...options };
   if (options.judgeSpeed === undefined && options.penalizeTempo !== undefined) opts.judgeSpeed = !!options.penalizeTempo;
+  opts.preset = resolvePreset(options);
   if (!isValidFeatures(B)) throw new Error('The sloka analysis is missing or outdated. Re-save the sloka.');
   if (!isValidFeatures(H)) throw new Error('The recording could not be analysed.');
   if (H.activeFrac < 0.05 || H.peakDb < -40) throw new Error('No audio was detected in your recording. Check the microphone and try again.');
   if (B.activeFrac < 0.05 || B.peakDb < -40) throw new Error('The sloka seems to be silent.');
-  H = normalizeVoice(B, H); // no-op when compareAuto already did it, or the take has no warps
+  H = normalizeVoice(B, H, opts.preset.warpRange); // no-op when compareAuto already did it, or the take has no warps
 
   const bs = B.trimStart;
   const be = B.trimEnd;
@@ -215,6 +228,7 @@ export function compare(B, H, options = {}) {
     keyOffsetPairs: key.n,
     offsetApplied,
     voiceWarp: H.voiceWarp ?? 1,
+    preset: opts.preset,
     tempoRatio,
     alignmentCost: align.meanCost,
     contentFloor: dev.contentFloor,
@@ -231,17 +245,19 @@ export function compare(B, H, options = {}) {
 
 // ---------- helpers ----------
 
-// Vocal-tract-length normalisation. Among the warps the take was analysed at, the one whose
-// spectral frames lie closest to the sloka's wins: for a sample of active frames of each
-// recording, the mean distance to the nearest frame of the other (no alignment needed, so
-// this works whatever the lengths and before locate()). The unwarped reading keeps its place
-// unless another is clearly better, so a same-voice take is never warped on a whim.
+// Vocal-tract-length normalisation. Among the warps the take was analysed at (within
+// `range`, the warps this pairing of voices can need), the one whose spectral frames lie
+// closest to the sloka's wins: for a sample of active frames of each recording, the mean
+// distance to the nearest frame of the other (no alignment needed, so this works whatever
+// the lengths and before locate()). The unwarped reading keeps its place unless another is
+// clearly better, so a same-voice take is never warped on a whim.
 const WARP_MIN_GAIN = 0.04;
 const WARP_SAMPLE = 300;
 
-export function chooseVoiceWarp(B, H) {
+export function chooseVoiceWarp(B, H, range = ADULT_PRESET.warpRange) {
   if (!H.mfccWarps || !H.mfccWarpMeans) return WARP_UNITY;
   const nA = Math.round(H.mfccWarps.length / (H.n * N_MFCC));
+  const allowed = (a) => a === WARP_UNITY || (WARP_ALPHAS[a] >= range[0] - 1e-6 && WARP_ALPHAS[a] <= range[1] + 1e-6);
   const pick = (F) => {
     const idx = [];
     for (let k = F.trimStart; k <= F.trimEnd; k++) if (F.active[k]) idx.push(k);
@@ -251,8 +267,9 @@ export function chooseVoiceWarp(B, H) {
   const bi = pick(B);
   const hi = pick(H);
   if (bi.length < 10 || hi.length < 10) return WARP_UNITY;
-  const costs = new Float64Array(nA);
+  const costs = new Float64Array(nA).fill(Infinity);
   for (let a = 0; a < nA; a++) {
+    if (!allowed(a)) continue;
     const Hv = { n: H.n, active: H.active, mfcc: H.mfccWarps.subarray(a * H.n * N_MFCC, (a + 1) * H.n * N_MFCC), mfccMean: H.mfccWarpMeans.subarray(a * N_MFCC, (a + 1) * N_MFCC) };
     const { Bm, Hm } = normalizeMfcc(B, Hv);
     const d2 = (i, j) => { let s = 0; for (let c = 0; c < N_MFCC; c++) { const t = Bm[i * N_MFCC + c] - Hm[j * N_MFCC + c]; s += t * t; } return s; };
@@ -281,9 +298,9 @@ export function withVoiceWarp(H, k) {
   return { ...H, mfcc, mfccMean, voiceWarp: WARP_ALPHAS[k] };
 }
 
-function normalizeVoice(B, H) {
+function normalizeVoice(B, H, range) {
   if (H.voiceWarp !== undefined || !H.mfccWarps) return H;
-  return withVoiceWarp(H, chooseVoiceWarp(B, H));
+  return withVoiceWarp(H, chooseVoiceWarp(B, H, range));
 }
 
 function normalizeMfcc(B, H) {
@@ -326,20 +343,39 @@ function estimateKeyOffset(B, H, jOfRel, bs, hs, N, decim = 1) {
     diffs.push(H.st[j] - B.st[i]);
   }
   if (diffs.length < 10) return { offset: 0, n: diffs.length };
-  const lo = -36;
-  const bins = new Int32Array(721);
-  for (const d of diffs) {
-    const b = Math.round((clamp(d, lo, 36) - lo) * 10);
-    bins[b]++;
-  }
+  // The pitch class of the offset first, from the differences folded into one octave, so
+  // that a tracker landing an octave off on part of the frames cannot pull the mode to the
+  // wrong peak; then the octave that most of the differences at that class actually sit in.
+  const fold = (d) => d - 12 * Math.round(d / 12); // (-6, 6]
+  const bins = new Int32Array(121);
+  for (const d of diffs) bins[Math.round((fold(d) + 6) * 10)]++;
   let modeBin = 0;
   for (let b = 1; b < bins.length; b++) if (bins[b] > bins[modeBin]) modeBin = b;
-  const modeCenter = lo + modeBin / 10;
-  const near = diffs.filter((d) => Math.abs(d - modeCenter) <= 1);
-  let offset = medianOf(near);
+  const cls = modeBin / 10 - 6;
+  const octaves = new Map();
+  for (const d of diffs) {
+    if (Math.abs(fold(d) - cls) > 1) continue;
+    const k = Math.round((d - cls) / 12);
+    octaves.set(k, (octaves.get(k) || 0) + 1);
+  }
+  let bestK = 0;
+  for (const [k, n] of octaves) if (n > (octaves.get(bestK) || 0)) bestK = k;
+  const center = cls + 12 * bestK;
+  const near = diffs.filter((d) => Math.abs(d - center) <= 1);
+  let offset = near.length ? medianOf(near) : center;
   const rounded = Math.round(offset);
   if (Math.abs(offset - rounded) < 0.3) offset = rounded;
   return { offset, n: diffs.length };
+}
+
+// Credit for the overall tempo when speed is judged: a Gaussian in log tempo whose width
+// follows the acceptable band for the learner (adults 0.75–1.33×; children and older
+// learners wider), so a child's slower recitation costs less than an adult's.
+function tempoCredit(ratio, band) {
+  const l = Math.log(ratio);
+  const halfWidth = l > 0 ? Math.log(band[1]) : -Math.log(band[0]);
+  const sigma = (0.7 * halfWidth) / Math.log(ADULT_PRESET.speedBand[1]);
+  return Math.exp(-Math.pow(l / sigma, 2));
 }
 
 function computeScores(ctx, dev) {
@@ -358,7 +394,7 @@ function computeScores(ctx, dev) {
   activeBase = Math.max(1, activeBase);
   const ps = dev.pitchStats;
   const pitch = ps.usable >= 10 ? clamp(100 * ps.creditMean, 0, 100) : null;
-  const tempoFactor = opts.judgeSpeed ? Math.exp(-Math.pow(Math.log(tempoRatio) / 0.7, 2)) : 1;
+  const tempoFactor = opts.judgeSpeed ? tempoCredit(tempoRatio, (opts.preset && opts.preset.speedBand) || ADULT_PRESET.speedBand) : 1;
   const timing = clamp(100 * (1 - covT / activeBase) * tempoFactor, 0, 100);
   const content = clamp(100 * (1 - covC / activeBase), 0, 100);
   const dynamics = opts.flagDynamics ? clamp(100 * (1 - covD / activeBase), 0, 100) : null; // only measured when asked for
@@ -413,6 +449,13 @@ function buildNotes(ctx, dev, key, offsetApplied) {
   }
   if (dev.pitchStats.usable < 10) {
     notes.push('Not enough steady pitch was found to judge intonation, so the pitch score is left out.');
+  } else if ((MODES[opts.mode] || MODES.chant).pitch === 0) {
+    notes.push('Pitch is shown for interest: recited text carries no tune, so it does not count toward the score.');
+  }
+  const p = opts.preset;
+  if (p && p.learnerAgeGroup && p.learnerAgeGroup !== 'unspecified' && (p.pitchTolSt !== ADULT_PRESET.pitchTolSt || p.speedBand[0] !== ADULT_PRESET.speedBand[0] || p.contentFloor !== ADULT_PRESET.contentFloor)) {
+    const st = p.pitchTolSt === 1 ? 'a semitone' : p.pitchTolSt === 0.75 ? 'three quarters of a semitone' : `${p.pitchTolSt} semitones`;
+    notes.push(`Judged with the allowances for a learner aged ${ageGroupLabel(p.learnerAgeGroup).toLowerCase()}: pitch within ${st}${opts.judgeSpeed ? `, speed ${p.speedBand[0]}–${p.speedBand[1]}× of your own tempo` : ''}.`);
   }
   return notes;
 }
