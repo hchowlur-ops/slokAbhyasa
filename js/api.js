@@ -181,6 +181,13 @@ export async function addQuizAttempt(id, attempt) {
   return res.json();
 }
 
+// Keeps the take of attempt n (1-based) with the quiz, so a scoring can be looked into later.
+export async function putQuizAttemptAudio(id, n, blob) {
+  const res = await check(await fetch(quizUrl(id, `/attempts/${n}/audio`), { method: 'PUT', headers: { 'Content-Type': 'audio/wav' }, body: blob }));
+  return res.json();
+}
+export const quizAttemptAudioUrl = (id, n) => quizUrl(id, `/attempts/${n}/audio`);
+
 export async function patchQuiz(id, patch) {
   const res = await check(await fetch(quizUrl(id), jsonReq('PATCH', patch)));
   return res.json();

@@ -1991,6 +1991,26 @@ function wordSimilarity(res, baseT, heardT, baseDuration, takeDuration) {
   return d.ai.length ? d.summary.similarity : null;
 }
 
+// What the comparison decided on the way to its scores, kept with a quiz attempt so a
+// surprising verdict can be looked into: how alike the material was (match contrast), which
+// stretches were compared, the tempo, the voice warp and the key offset.
+function comparisonDiag(r) {
+  if (!isReport(r)) return r && r.error ? { error: r.error } : null;
+  const n = (v, d = 3) => (typeof v === 'number' && Number.isFinite(v) ? Number(v.toFixed(d)) : null);
+  return {
+    contrast: n(r.match && r.match.contrast),
+    located: (r.match && r.match.located) || null,
+    matchedBase: r.matched ? r.matched.base.map((t) => n(t, 2)) : null,
+    matchedHeard: r.matched ? r.matched.heard.map((t) => n(t, 2)) : null,
+    tempoRatio: n(r.tempoRatio),
+    voiceWarp: n(r.voiceWarp),
+    keyOffset: n(r.keyOffset, 2),
+    mode: r.mode || null,
+    deviations: Array.isArray(r.deviations) ? r.deviations.length : null,
+    contentCoveredPct: r.scores ? n(r.scores.contentCoveredPct, 1) : null,
+  };
+}
+
 // After the comparisons of a quiz take: transcribe what is needed for the pronunciation
 // category, work out every category's correctness, save the attempt, show the card.
 async function scoreQuizAttempt() {
@@ -2056,7 +2076,7 @@ async function scoreQuizAttempt() {
     attempt.items = quiz.items.map((it) => {
       const r = practice.results.get(it.id);
       const sc = itemScores(r, { wordSimilarity: sims.has(it.id) ? sims.get(it.id) : null, sttAvailable: stt });
-      return { id: it.id, name: it.name, folder: it.folder, ...sc };
+      return { id: it.id, name: it.name, folder: it.folder, ...sc, diag: comparisonDiag(r) };
     });
     const sum = attemptSummary(attempt.items, quiz.categories, attempt.tolerance);
     Object.assign(attempt, sum);
@@ -2072,6 +2092,8 @@ async function scoreQuizAttempt() {
     quiz.attempts = saved.attempts;
     attempt.saved = true;
     toast(`Quiz attempt ${quiz.attempts.length} saved.`, 'success');
+    // the take itself is kept with the quiz, so a scoring can be looked into afterwards
+    api.putQuizAttemptAudio(quiz.id, quiz.attempts.length, take.blob).catch((err) => console.warn(`The attempt's recording could not be kept: ${err.message}`));
   } catch (err) {
     if (live()) { attempt.error = err.message; toast(`The quiz attempt could not be saved: ${err.message}`, 'error', 8000); }
   } finally {
@@ -2134,7 +2156,9 @@ function renderQuizScore() {
   for (const it of a.items) {
     const tr = document.createElement('tr');
     tr.className = it.missing ? 'missing' : it.matched ? '' : 'unmatched';
-    const cells = [`<td></td>`, `<td>${it.missing ? 'not compared' : it.matched ? 'yes' : 'not found'}</td>`];
+    const d = it.diag || {};
+    const recited = it.missing ? 'not compared' : it.matched ? 'yes' : `not found${d.contrast != null ? ` <span class="muted small" title="How alike the material was: the match cost against the sloka divided by the cost against it played backwards; below 0.87 counts as the same material">· contrast ${d.contrast.toFixed(2)}</span>` : ''}`;
+    const cells = [`<td></td>`, `<td>${recited}</td>`];
     for (const c of cats) {
       const v = it[c.id];
       const on = quiz.categories.includes(c.id);
@@ -2227,14 +2251,35 @@ function renderTrend(host, quiz) {
   wrapT.className = 'quiz-table-wrap';
   const table = document.createElement('table');
   table.className = 'quiz-table';
-  table.innerHTML = '<tr><th>#</th><th>When</th><th>Recited</th>' + QUIZ_CATEGORIES.map((c) => `<th>${c.label}</th>`).join('') + '<th>Overall</th><th>Correct</th></tr>';
+  table.innerHTML = '<tr><th>#</th><th>When</th><th>Recited</th>' + QUIZ_CATEGORIES.map((c) => `<th>${c.label}</th>`).join('') + '<th>Overall</th><th>Correct</th><th></th></tr>';
   attempts.forEach((a, i) => {
     const tr = document.createElement('tr');
     const sc = valueOf(a, 'overall');
     const wt = valueOf(a, 'weighted');
     const g = gradeOf(wt);
-    tr.innerHTML = `<td>${i + 1}</td><td></td><td>${a.recited ?? '–'} of ${a.counted ?? '–'}</td>` + QUIZ_CATEGORIES.map((c) => `<td class="${quiz.categories.includes(c.id) ? 'on' : 'off'}">${a.byCategory && a.byCategory[c.id] != null ? a.byCategory[c.id] : '–'}</td>`).join('') + `<td class="on">${wt == null ? '–' : `${wt} <span class="rr-grade ${g.id}">${g.label}</span>`}</td><td class="on">${sc == null ? '–' : `${sc}%`}</td>`;
+    tr.innerHTML = `<td>${i + 1}</td><td></td><td>${a.recited ?? '–'} of ${a.counted ?? '–'}</td>` + QUIZ_CATEGORIES.map((c) => `<td class="${quiz.categories.includes(c.id) ? 'on' : 'off'}">${a.byCategory && a.byCategory[c.id] != null ? a.byCategory[c.id] : '–'}</td>`).join('') + `<td class="on">${wt == null ? '–' : `${wt} <span class="rr-grade ${g.id}">${g.label}</span>`}</td><td class="on">${sc == null ? '–' : `${sc}%`}</td><td></td>`;
     tr.children[1].textContent = fmtDate(a.at);
+    // the kept recording of the attempt, played in place
+    if (a.audio) {
+      const n = (quiz.attempts || []).indexOf(a) + 1;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn btn-sm btn-ghost';
+      btn.textContent = 'Listen';
+      btn.title = 'The recording of this attempt';
+      btn.addEventListener('click', () => {
+        const old = $('audio', tr.lastChild);
+        if (old) { old.remove(); return; }
+        const au = document.createElement('audio');
+        au.controls = true;
+        au.src = api.quizAttemptAudioUrl(quiz.id, n);
+        au.style.display = 'block';
+        au.style.marginTop = '4px';
+        tr.lastChild.appendChild(au);
+        au.play().catch(() => {});
+      });
+      tr.lastChild.appendChild(btn);
+    }
     table.appendChild(tr);
   });
   wrapT.appendChild(table);

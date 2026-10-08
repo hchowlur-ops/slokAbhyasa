@@ -55,7 +55,7 @@ export function compareAuto(B, H, options = {}) {
   const relH = H.thrDb - H.peakDb;
   const relBoth = Number.isFinite(relB) && Number.isFinite(relH) ? Math.max(relB, relH) : NaN;
   const harmonise = (X, Y) => {
-    if (!Number.isFinite(relBoth) || Math.abs(relB - relH) <= ACTIVITY_TOLERANCE_DB) return [X, Y];
+    if (options.harmonise === false || !Number.isFinite(relBoth) || Math.abs(relB - relH) <= ACTIVITY_TOLERANCE_DB) return [X, Y];
     return [rethreshold(X, relBoth), rethreshold(Y, relBoth)];
   };
   // A different voice (a child after an adult, say) has its vowels' formants elsewhere: read

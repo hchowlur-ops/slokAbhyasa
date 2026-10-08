@@ -300,6 +300,7 @@ async function writeWavWithBext(rec, bytes, meta) {
 // every attempt's per-category scores.
 
 const quizPath = (id) => path.join(QUIZZES, `${id}.json`);
+const attemptAudioPath = (id, n) => path.join(QUIZZES, id, `attempt-${n}.wav`);
 const QUIZ_ID = /^\d{8}-\d{6}-[a-z0-9]{4}$/;
 
 async function readQuiz(id) {
@@ -397,6 +398,32 @@ async function handleQuizzes(req, res, parts) {
     await writeQuiz(q);
     return sendJson(res, 201, q);
   }
+  // PUT /api/quizzes/:id/attempts/:n/audio  (body: WAV bytes) — the take of attempt n (1-based),
+  // kept as quizzes/<id>/attempt-<n>.wav so a scoring can be looked into afterwards.
+  // GET the same path plays it back.
+  if (sub === 'attempts' && parts[4] && parts[5] === 'audio') {
+    const n = Number(parts[4]);
+    const attempts = Array.isArray(q.attempts) ? q.attempts : [];
+    if (!Number.isInteger(n) || n < 1 || n > attempts.length) return sendJson(res, 404, { error: 'No such attempt' });
+    const p = attemptAudioPath(id, n);
+    if (req.method === 'PUT') {
+      const body = await readBody(req);
+      if (!isWav(body)) return sendJson(res, 400, { error: 'Body must be a RIFF/WAVE file' });
+      await fsp.mkdir(path.dirname(p), { recursive: true });
+      await fsp.writeFile(p, body);
+      attempts[n - 1].audio = path.basename(p);
+      await writeQuiz(q);
+      return sendJson(res, 200, { ok: true, file: path.relative(QUIZZES, p).replace(/\\/g, '/') });
+    }
+    if (req.method === 'GET' || req.method === 'HEAD') {
+      let stat;
+      try { stat = await fsp.stat(p); } catch { return sendJson(res, 404, { error: 'No recording kept for this attempt' }); }
+      res.writeHead(200, { 'Content-Type': 'audio/wav', 'Content-Length': stat.size, 'Cache-Control': 'no-store' });
+      if (req.method === 'HEAD') return res.end();
+      return fs.createReadStream(p).pipe(res);
+    }
+    return sendJson(res, 405, { error: 'Method not allowed' });
+  }
   if (sub) return sendJson(res, 404, { error: 'Not found' });
 
   if (req.method === 'GET') return sendJson(res, 200, q);
@@ -410,6 +437,7 @@ async function handleQuizzes(req, res, parts) {
   }
   if (req.method === 'DELETE') {
     await fsp.rm(quizPath(id), { force: true });
+    await fsp.rm(path.join(QUIZZES, id), { recursive: true, force: true }); // its kept recordings
     return sendJson(res, 200, { ok: true });
   }
   return sendJson(res, 405, { error: 'Method not allowed' });

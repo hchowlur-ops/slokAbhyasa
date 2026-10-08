@@ -403,6 +403,23 @@ Quiz files live in `quizzes/<id>.json` and are plain JSON, so they can be backed
 elsewhere. A sloka deleted after a quiz was made is shown struck through and left out of
 that quiz's averages.
 
+**Every attempt keeps its recording** (`quizzes/<id>/attempt-N.wav`; "Listen" in the
+attempts table plays it) and, per sloka, what the comparison decided on the way to its
+scores: the match contrast, the stretches compared, the tempo ratio, the voice warp and the
+key offset. A sloka reported "not found" shows its contrast in the table (the match cost
+against the sloka divided by the cost against it played backwards; below 0.87 counts as the
+same material). To look into a verdict outside the browser:
+
+```
+node tools/analyse-attempt.mjs "CH-12 · 2026-10-08"      # the last attempt of that quiz
+node tools/analyse-attempt.mjs <quiz id> 2                 # its second attempt
+node tools/analyse-attempt.mjs --wav take.wav CH12-01      # any recording against any sloka
+```
+
+It re-runs the same DSP in Node and prints the match, the windows, the scores, the
+deviations and the search both ways, so a parameter in `js/dsp` can be tuned against a real
+take rather than a guess.
+
 ### Library
 Play, rename, move, delete, or jump straight into evaluating yourself against a sloka. The WAV files live in
 `library/` and its subfolders with a small `index.json`; feel free to copy or back them up.
@@ -539,6 +556,7 @@ js/dsp/                features, alignment, locating a part inside a longer reco
 js/visualizer.js       waveforms and the comparison chart
 datadir.js             where the data folder is (local.json / SLOKABHYASA_DATA, else the project folder)
 tools/trim-library.mjs command-line trimming of every WAV in the library
+tools/analyse-attempt.mjs  re-runs a kept quiz recording through the comparison and prints what it saw
 test/                  synthetic signal generators and the DSP tests
 reports/               the research the presets and the details file follow
 
@@ -547,6 +565,7 @@ library/               your slokas, in folders if you like: <name>.wav, <name>.j
                        <name>.txt (transcript), <name>.transcript.json (every language, with timings),
                        <name>.features.json (analysis cache), index.json; library/backup holds pre-trim originals
 profiles.json          the people (names, voice type, age group) — never inside library/
+quizzes/<id>.json, quizzes/<id>/attempt-N.wav   quizzes with their attempts, and each attempt's recording
 quizzes/               one JSON file per quiz: picked slokas, chosen categories, every attempt's scores
 local.json             { "data": "..." } when the two folders above live somewhere else
 ```
