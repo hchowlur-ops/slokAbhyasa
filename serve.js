@@ -22,6 +22,7 @@ import { normalizeCategories, normalizeTolerance, correctness, attemptOverall, g
 import { resolveDataDir } from './datadir.js';
 import { readMeta, writeMeta, removeMeta, moveMeta, ensureMeta, sanitizeMeta, audioInfo, withBext, bextDescription, readProfiles, writeProfiles, sanitizeProfile } from './meta-store.js';
 import { normalizeStore, pickTranscript, putInStore, removeFromStore, shiftStore, transcriptToText, applyTextEdit, publicStore } from './js/transcripts.js';
+import { transliterateTranscript } from './js/translit.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const DATA = resolveDataDir(ROOT);
@@ -240,6 +241,17 @@ async function readTranscripts(rec) {
     const edited = applyTextEdit(pickTranscript(store), await fsp.readFile(tp, 'utf8'), tStat.mtime.toISOString());
     store = putInStore(store, edited, { primary: true });
     await fsp.writeFile(jp, JSON.stringify(store)); // JSON is now the newer file until the .txt is edited again
+  }
+  // Transcripts made before romanised answers were written in their script (Kannada,
+  // Telugu, Sanskrit in Latin letters) are rewritten once; a corrected one is left alone.
+  if (store) {
+    let changed = false;
+    for (const [code, t] of Object.entries(store.languages)) {
+      if (t.edited || t.transliterated) continue;
+      const fixed = transliterateTranscript(t);
+      if (fixed !== t) { store = putInStore(store, fixed, { primary: false }); changed = true; }
+    }
+    if (changed) await writeTranscripts(rec, store);
   }
   return store;
 }

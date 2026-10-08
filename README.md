@@ -328,6 +328,12 @@ about 75 MB), Better (whisper-small, about 250 MB), Best (whisper-large-v3-turbo
 750 MB, needs WebGPU). The default is Better when the browser has WebGPU, otherwise Fast.
 Whisper has no notion of a chant: asked for English or Kannada it may answer "[Sanskrit
 chants]" or "[Music]" for a Sanskrit sloka, which is simply what it heard in that language.
+It also likes to answer Kannada, Telugu or Sanskrit in Latin letters ("Arjuna uvāca evam
+satata yukta…"); such an answer is rewritten in the language's own script
+(ಅರ್ಜುನ ಉವಾಚ ಏವಂ ಸತತ ಯುಕ್ತ…) by `js/translit.js`, which reads IAST and the usual
+ASCII spellings (sh, ksh, ch, aa, ee…), keeps the romanised original as `latin`, and
+leaves corrected transcripts alone; transcripts stored before this existed are rewritten
+the next time they are read.
 
 On WebGPU the models run with 4-bit weights and 32-bit arithmetic, never 16-bit floats:
 some GPUs (Intel Iris Xe among them) advertise fp16 but compute nonsense with it, which
@@ -524,6 +530,7 @@ js/recorder.js         microphone capture through an AudioWorklet
 js/analysis-worker.js  runs the DSP off the main thread
 js/stt.js, js/stt-worker.js   speech to text (Whisper via transformers.js, in a worker; background priority)
 js/transcripts.js      a sloka's transcripts, one per language (pure, shared with the server)
+js/translit.js         romanised Indic text back into Devanagari / Kannada / Telugu (pure, shared)
 js/textdiff.js         word tokenisation and diff for transcripts
 js/quizscore.js        quiz scoring and random picking (pure, Node-testable)
 js/libutil.js          folder-name cleaning, sloka file names, WAV header reading (shared with the server)

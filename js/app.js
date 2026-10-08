@@ -14,6 +14,7 @@ import { mixToMono } from './dsp/resample.js';
 import { trimSilence } from './dsp/trim.js';
 import { Transcriber, STT_LANGUAGES, STT_LANGUAGE_CODES, STT_TIERS, sttLanguageLabel, sttLanguageTag, sttTierLabel, isStopped } from './stt.js';
 import { normalizeStore, putInStore, pickTranscript, availableLanguages } from './transcripts.js';
+import { transliterateTranscript } from './translit.js';
 import { diffWords, diffSummary, compareWords, tokenizeTranscript, windowedTokens } from './textdiff.js';
 import { AGE_GROUPS, VOICE_TYPES, STYLE_MODES, DEFAULT_STYLE_MODE, presetsFor, compareModeFor, speakerLabel, ageGroupLabel, styleMode, voiceStats, deriveText } from './meta.js';
 
@@ -386,7 +387,8 @@ async function runTranscription(samples, sampleRate, progress, what, signal, { l
   }
   delete result.fellBack; // the stored transcript records the device it was made on; that is enough
   result.createdAt = new Date().toISOString();
-  return result;
+  // Kannada, Telugu or Sanskrit answered in Latin letters is written in its own script
+  return transliterateTranscript(result);
 }
 
 // ---------- background transcription: every saved sloka in every language ----------
