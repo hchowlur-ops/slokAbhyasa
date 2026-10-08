@@ -8,7 +8,7 @@ import * as api from './api.js';
 import { Analyzer } from './analyzer.js';
 import { drawWaveform, drawLiveWave, ComparisonChart } from './visualizer.js';
 import { serializeFeatures, deserializeFeatures, isValidFeatures } from './dsp/features.js';
-import { MISMATCH_CONTRAST } from './dsp/compare.js';
+import { MISMATCH_CONTRAST, confirmByWords } from './dsp/compare.js';
 import { QUIZ_CATEGORIES, DEFAULT_QUIZ_CATEGORIES, DEFAULT_TOLERANCE, CATEGORY_WEIGHTS, itemScores, attemptSummary, scoreFor, normalizeCategories, normalizeTolerance, withinTolerance, itemVerdict, correctness, pickBaselines, overallScore, attemptOverall, gradeOf } from './quizscore.js';
 import { mixToMono } from './dsp/resample.js';
 import { trimSilence } from './dsp/trim.js';
@@ -1872,6 +1872,7 @@ function reportFlag(id) {
   if (!r) return null;
   if (r.error) return { level: 'bad', text: 'Could not be compared' };
   if (!r.match.ok) return { level: 'bad', text: 'Does not sound like this sloka' };
+  if (r.match.by === 'words') return { level: 'info', text: 'Confirmed by the words (the recordings sound different)' };
   const clash = [];
   const same = [];
   for (const other of reportIds()) {
@@ -2064,6 +2065,7 @@ function comparisonDiag(r) {
   return {
     contrast: n(r.match && r.match.contrast),
     located: (r.match && r.match.located) || null,
+    matchedBy: r.match && r.match.by ? r.match.by : r.match && r.match.ok ? 'sound' : null,
     matchedBase: r.matched ? r.matched.base.map((t) => n(t, 2)) : null,
     matchedHeard: r.matched ? r.matched.heard.map((t) => n(t, 2)) : null,
     tempoRatio: n(r.tempoRatio),
@@ -2098,7 +2100,9 @@ async function scoreQuizAttempt() {
     // stopped.
     let stt = true;
     const sims = new Map();
-    const ids = quiz.items.map((it) => it.id).filter((id) => { const r = practice.results.get(id); return isReport(r) && r.match.ok; });
+    // every sloka that was compared, matched or not: a "not found" that the timbre gave
+    // (another microphone than the sloka's) is overturned when the words are there
+    const ids = quiz.items.map((it) => it.id).filter((id) => isReport(practice.results.get(id)));
     for (let k = 0; k < ids.length; k++) {
       const id = ids[k];
       if (!live()) return;
@@ -2131,8 +2135,13 @@ async function scoreQuizAttempt() {
         } catch { continue; }
       }
       if (!live()) return;
+      const words = tokenizeTranscript(ref || base.transcript).length;
       const sim = wordSimilarity(res, ref || base.transcript, heardT, base.duration, take.duration);
-      if (sim != null) { sims.set(id, sim); practice.wordSims.set(id, sim); }
+      if (sim != null) {
+        sims.set(id, sim);
+        practice.wordSims.set(id, sim);
+        if (confirmByWords(res, sim, words) && practice.activeId === id) showActiveReport();
+      }
     }
     if (!live()) return;
     attempt.sttAvailable = stt;
@@ -3320,7 +3329,17 @@ function renderTranscriptDiff() {
   const res = practice.result;
   if (!res || !practice.base || !practice.take || !sttPractice.base || !sttPractice.heard) return;
   const { A, B, ai, delA, insB, dimA, dimB, summary: sm } = windowedDiff(res, sttPractice.base, sttPractice.heard, practice.base.duration, practice.take.duration);
-  if (ai.length) { practice.wordSims.set(practice.activeId, sm.similarity); syncSession(); }
+  if (ai.length) {
+    practice.wordSims.set(practice.activeId, sm.similarity);
+    // a "not this sloka" verdict from the timbre is overturned when the words say otherwise
+    if (confirmByWords(res, sm.similarity, ai.length)) {
+      toast('The words confirm this is the sloka, though the recordings sound different; its scores now count.', 'info', 7000);
+      const notes = $('#result-notes');
+      notes.innerHTML = '';
+      for (const n of res.notes) { const li = document.createElement('li'); li.textContent = n; notes.appendChild(li); }
+    }
+    syncSession();
+  }
   refreshVerdicts();
   renderTranscriptText($('#stt-base'), sttPractice.base, A.toks, delA, 'w-del', (s, e) => { heardPlayer.pause(); basePlayer.playRange(s, e); }, dimA);
   renderTranscriptText($('#stt-heard'), sttPractice.heard, B.toks, insB, 'w-ins', (s, e) => { basePlayer.pause(); heardPlayer.playRange(s, e); }, dimB);
@@ -3335,13 +3354,15 @@ function renderTranscriptDiff() {
 function renderLibTags(host, r) {
   host.innerHTML = '';
   const meta = r.meta;
-  const tag = (text, cls = '') => { const s = document.createElement('span'); s.className = `lib-tag${cls ? ` ${cls}` : ''}`; s.textContent = text; host.appendChild(s); };
+  const tag = (text, cls = '', title = '') => { const s = document.createElement('span'); s.className = `lib-tag${cls ? ` ${cls}` : ''}`; s.textContent = text; if (title) s.title = title; host.appendChild(s); };
   if (!meta) { tag('no details', 'warn'); return; }
   const sp = speakerOf(meta);
   const who = sp && sp.profileId ? profileById(sp.profileId) : null;
   if (who) tag(`by ${who.name}`); else if (sp) tag(speakerLabel(sp));
   if (meta.migrated) tag('style not set · judged as chant', 'warn');
   else tag(styleMode(meta.style && meta.style.mode).label);
+  // a recording whose voice barely rises above the room blurs every comparison against it
+  if (meta.measured && meta.measured.snrDb != null && meta.measured.snrDb < 25) tag(`noisy · ${Math.round(meta.measured.snrDb)} dB`, 'warn', `The voice is only ${Math.round(meta.measured.snrDb)} dB above the room noise; evaluations against this recording are less reliable. Record it again in a quiet moment (Learn), then delete this one.`);
   if (meta.text && meta.text.aksharaCount) tag(`${meta.text.aksharaCount} akṣaras`);
   if (meta.voice && meta.voice.medianF0Hz) tag(`${Math.round(meta.voice.medianF0Hz)} Hz`);
   setHidden(host, !host.childElementCount);

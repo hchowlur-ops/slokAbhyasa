@@ -36,8 +36,33 @@ export const DEFAULT_OPTIONS = { ignoreKey: true, judgeSpeed: false, flagDynamic
 // Length ratio beyond which the shorter recording is searched for inside the longer one.
 export const LOCATE_RATIO = 1.5;
 // locate()'s contrast at or above which the two recordings do not share their material.
-// Measured on real chanting: same verse 0.44–0.78, different verse 0.91–1.05.
+// Measured on real chanting: same verse 0.44–0.78, different verse 0.91–1.05 — when both
+// were made the same way. A take made with another microphone, room or level than the
+// sloka's recording can score 0.95 for the right verse (its timbre is simply not alike),
+// so the words get the last say: see confirmByWords().
 export const MISMATCH_CONTRAST = 0.87;
+// Share of the sloka's words heard in the take (textdiff's sound-by-sound measure) from
+// which the words confirm the material even when the timbre did not. Measured on a real
+// take against its own verse: 0.95; against every other verse of the chapter: 0.41–0.51
+// (transcripts of different verses lie at 0.45 on average, 0.63 at most).
+export const WORD_MATCH_MIN = 0.75;
+// Below this many dB between a recording's voice peak and its noise floor, the comparison
+// is told to be careful: soft syllables are lost in the noise.
+export const NOISY_BELOW_DB = 25;
+export const MISMATCH_NOTE = 'This does not sound like the same material as the sloka, so the scores below mean little.';
+
+// A report whose match gate said "not this sloka" is overturned by its words: when the share
+// of the sloka's text heard in the take is high enough, it is this sloka in another voice,
+// microphone or room, and the scores stand. Returns true when the verdict changed.
+export function confirmByWords(res, similarity, words = 0, { min = WORD_MATCH_MIN, minWords = 4 } = {}) {
+  if (!res || !res.match || res.match.ok || !(similarity >= min) || words < minWords) return false;
+  res.match.ok = true;
+  res.match.by = 'words';
+  res.match.wordSimilarity = similarity;
+  res.notes = res.notes.filter((n) => n !== MISMATCH_NOTE);
+  res.notes.unshift(`Your recording and the sloka's sound different (another microphone, room or level), but the words settle it: ${Math.round(100 * similarity)}% of the sloka's text was heard, so it is this sloka and the scores stand.`);
+  return true;
+}
 const LOCATE_PAD = Math.round(0.3 / HOP_SEC);
 const ACTIVITY_TOLERANCE_DB = 6;
 const mmss = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
@@ -100,7 +125,9 @@ export function compareAuto(B, H, options = {}) {
   const ok = contrast === null || contrast < MISMATCH_CONTRAST;
   res.match = { contrast, ok, located };
   const notes = [];
-  if (!ok) notes.push('This does not sound like the same material as the sloka, so the scores below mean little.');
+  if (!ok) notes.push(MISMATCH_NOTE);
+  const headroom = Number.isFinite(B.peakDb) && Number.isFinite(B.floorDb) ? B.peakDb - B.floorDb : Infinity;
+  if (headroom < NOISY_BELOW_DB) notes.push(`The sloka's recording is noisy (its voice is only ${Math.round(headroom)} dB above the room), which blurs the comparison; recording it again in a quiet moment would make every evaluation against it more reliable.`);
   if (located === 'heard') notes.push(`Your recording is longer than this sloka. Its best-matching part (${mmss(res.matched.heard[0])}–${mmss(res.matched.heard[1])}) was compared.`);
   if (located === 'base') notes.push(`This sloka is longer than your recording. You were compared with its best-matching part (${mmss(res.matched.base[0])}–${mmss(res.matched.base[1])}).`);
   res.notes = [...notes, ...res.notes];

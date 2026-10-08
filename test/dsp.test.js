@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { extractFeatures, hzToSt, serializeFeatures, deserializeFeatures, HOP_SEC } from '../js/dsp/features.js';
-import { compare, compareAuto } from '../js/dsp/compare.js';
+import { compare, compareAuto, confirmByWords, MISMATCH_NOTE, WORD_MATCH_MIN } from '../js/dsp/compare.js';
 import { foldOctave } from '../js/dsp/deviations.js';
 import { alignDTW, pathMaps } from '../js/dsp/dtw.js';
 import { resample } from '../js/dsp/resample.js';
@@ -414,6 +414,25 @@ test('compare: a young child is allowed a wider pitch band and a slower pace tha
   assert.ok(adultSlow.scores.timing < 90, `adult timing ${adultSlow.scores.timing}`);
   assert.ok(childSlow.scores.timing > adultSlow.scores.timing + 5, `${childSlow.scores.timing} vs ${adultSlow.scores.timing}`);
   assert.equal(compare(B, slow).scores.timing, compare(B, slow, { learner: { voiceType: 'child', ageGroup: 'under8' } }).scores.timing, 'speed not judged: no difference');
+});
+
+test('a "not this sloka" verdict is overturned by the words, never by too few of them or too weak a match', () => {
+  // what compareAuto hands out for a take whose timbre does not resemble the sloka's recording
+  const res = { match: { contrast: 0.95, ok: false, located: null }, notes: [MISMATCH_NOTE, 'Overall you took 14% less time than the sloka (speed is not judged).'] };
+  assert.equal(confirmByWords(res, 0.6, 12), false, 'words below the threshold change nothing');
+  assert.equal(confirmByWords(res, 0.95, 3), false, 'three words are not evidence');
+  assert.equal(res.match.ok, false);
+  assert.equal(confirmByWords(res, WORD_MATCH_MIN, 12), true);
+  assert.equal(res.match.ok, true);
+  assert.equal(res.match.by, 'words');
+  assert.ok(!res.notes.includes(MISMATCH_NOTE));
+  assert.ok(/words settle it: 75%/.test(res.notes[0]), res.notes[0]);
+  assert.equal(res.notes.length, 2, 'the other notes stay');
+  assert.equal(confirmByWords(res, 0.99, 12), false, 'already a match: nothing to do');
+  const B = feat(chant(SCALE));
+  const same = compareAuto(B, feat(chant(SCALE)));
+  assert.equal(confirmByWords(same, 0.99, 12), false, 'a match by sound is left alone');
+  assert.equal(same.match.by, undefined);
 });
 
 test('compare: an explicit preset overrides the one derived from the speakers', () => {
