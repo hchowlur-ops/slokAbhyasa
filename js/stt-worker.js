@@ -92,6 +92,9 @@ export function looksDegenerate(text) {
   const words = String(text || '').trim().split(/\s+/).filter(Boolean);
   if (!words.length) return true;
   if (!/\p{L}/u.test(words.join(''))) return true; // punctuation only, e.g. "." for a whole sloka
+  // a syllable looping inside one "word" ("మరిలారారారారారా…"): a unit of up to six
+  // characters repeated six or more times without a break
+  if (/(\S{1,6}?)\1{5,}/u.test(words.join(' '))) return true;
   if (words.length < 12) return false;
   const distinct = new Set(words.map((w) => w.toLowerCase())).size;
   return distinct / words.length < 0.2;
@@ -145,7 +148,11 @@ if (typeof self !== 'undefined') self.onmessage = async (e) => {
   const { id, samples, language, tier, device } = msg;
   const job = { id, stopped: false };
   current = job;
-  const run = async (dev) => {
+  // `steady` reruns the decoder with a repetition penalty and no repeated trigrams: the way
+  // out of Whisper's repetition loop ("Ṣākā Ṣākā Ṣākā…"), which a chant's even rhythm
+  // invites on any device. It is only used when the plain answer is degenerate, since
+  // the penalty can also bend a sloka that genuinely repeats a line.
+  const run = async (dev, steady = false) => {
     post({ type: 'progress', id, stage: 'load' });
     const pipe = await getPipe(tier, dev, id, post);
     if (job.stopped) return null;
@@ -157,6 +164,7 @@ if (typeof self !== 'undefined') self.onmessage = async (e) => {
     });
     post({ type: 'progress', id, stage: 'transcribe', partial: '' });
     const opts = { language, task: 'transcribe', chunk_length_s: 30, stride_length_s: 5, return_timestamps: true };
+    if (steady) { opts.repetition_penalty = 1.3; opts.no_repeat_ngram_size = 3; }
     if (streamer) opts.streamer = streamer;
     const out = await pipe(samples, opts);
     return job.stopped ? null : finish(out, samples);
@@ -182,6 +190,14 @@ if (typeof self !== 'undefined') self.onmessage = async (e) => {
         if (!r) return;
         fellBack = true;
       }
+    }
+    // Still one word over and over: the decoder looped on its own account, not the GPU's.
+    // Once more, held steady.
+    if (looksDegenerate(r.text)) {
+      post({ type: 'progress', id, stage: 'steady' });
+      const again = await run(dev, true);
+      if (!again) return;
+      if (!looksDegenerate(again.text) || again.text.length > r.text.length) r = again;
     }
     // Slokas are never silent, so an empty answer means the model failed; report it
     // instead of storing an empty transcript.

@@ -264,7 +264,25 @@ judged with, so changing the learner later never rewrites old scores.
 * **Library** – "Transcript" shows, creates or corrects the transcript of a sloka.
 
 Every transcript panel has a language and model choice and an "Automatic" switch (shared
-across the app); turn it off if you would rather transcribe only on demand.
+across the app). Automatic is on by default — in Learn, Self Evaluation, Teach and quizzes —
+so transcripts are made without being asked for; turn it off if you would rather transcribe
+only on demand.
+
+**Every language, in the background.** A sloka is transcribed in the language chosen at the
+time (inline, as you watch), and then in each of the other supported languages in the
+background once it is saved, so switching the language later shows that transcript at once
+instead of waiting for a new one. The background work runs in the same speech worker at the
+lowest priority: anything you are waiting for (a transcript in Learn, your attempt in Self
+Evaluation, a quiz being scored) goes first, and a background job that is under way gives way
+and is redone afterwards. The sidebar shows what is being transcribed and how many are left,
+with a **Stop** button. A background result never replaces a transcript that already exists
+in that language, least of all one you corrected. For slokas saved before this existed, the
+Library's **Transcribe all in every language** button queues whatever is missing.
+
+The panel always shows the transcript in the language chosen for speech to text, and lists
+the other languages the sloka has ("also in English, Kannada, Telugu"). Change the language
+and the stored transcript swaps in (or is made on the spot when there is none and Automatic
+is on); in Self Evaluation an open report's word comparison is redone in the new language.
 
 **Transcription never holds you up.** It runs in its own worker thread, alongside the
 acoustic analysis, and the app stays usable meanwhile:
@@ -284,9 +302,12 @@ Self Evaluation, Library) has an "Edit" button. The editor shows one line per ti
 same number of lines and the click-to-play timings survive your corrections. Saving writes two
 files next to the recording in `library/`:
 
-* `<name>.txt` – the plain text, one phrase per line. Edit it in any text editor if you prefer;
-  when it is newer than the JSON, SlokAbhyasa uses it the next time the sloka is opened.
-* `<name>.transcript.json` – the same text with phrase timings, language and model.
+* `<name>.txt` – the plain text, one phrase per line, in the language the sloka was last
+  transcribed or corrected in. Edit it in any text editor if you prefer; when it is newer than
+  the JSON, SlokAbhyasa uses it (for that language) the next time the sloka is opened.
+* `<name>.transcript.json` – every language's transcript with phrase timings and model
+  (`{ current, languages: { sanskrit: …, kannada: … } }`); files from before, with a single
+  transcript, are read as one language.
 
 Corrected text is used as the reference when your attempts are compared.
 
@@ -302,9 +323,11 @@ longer than 30 s is transcribed stretch by stretch, each stretch being where a s
 found in it: Whisper loses its way in a long chant, but transcribes a single sloka's worth
 well.
 
-Languages: **English, Sanskrit (Devanagari), Kannada**. Models: Fast (whisper-base, about
-75 MB), Better (whisper-small, about 250 MB), Best (whisper-large-v3-turbo, about 750 MB,
-needs WebGPU). The default is Better when the browser has WebGPU, otherwise Fast.
+Languages: **English, Sanskrit (Devanagari), Kannada, Telugu**. Models: Fast (whisper-base,
+about 75 MB), Better (whisper-small, about 250 MB), Best (whisper-large-v3-turbo, about
+750 MB, needs WebGPU). The default is Better when the browser has WebGPU, otherwise Fast.
+Whisper has no notion of a chant: asked for English or Kannada it may answer "[Sanskrit
+chants]" or "[Music]" for a Sanskrit sloka, which is simply what it heard in that language.
 
 On WebGPU the models run with 4-bit weights and 32-bit arithmetic, never 16-bit floats:
 some GPUs (Intel Iris Xe among them) advertise fp16 but compute nonsense with it, which
@@ -312,8 +335,12 @@ Whisper turns into empty or garbled text. Some GPUs get a model wrong even in fp
 Iris Xe loops "the same two words" for whisper-small). When a GPU answer looks like that,
 nothing or a word or two repeated for the whole length, the app redoes the transcription on
 the processor, tells you once, and from then on keeps that model on the processor in this
-browser (the `cpuTiers` list in the saved speech settings). A model that answers with no
-words at all is reported as a failure rather than stored as an empty transcript.
+browser (the `cpuTiers` list in the saved speech settings). The decoder can also loop on its
+own account, on any device, when a chant's even rhythm leads it round in circles ("Ṣākā Ṣākā
+Ṣākā…", or one syllable repeated inside a word): such an answer is redone once with a
+repetition penalty and repeated trigrams blocked, which breaks the loop. A model that
+answers with no words at all is reported as a failure rather than stored as an empty
+transcript.
 
 Recognition runs on your computer with OpenAI's Whisper through transformers.js. The
 library is loaded from a CDN and the model is downloaded from Hugging Face the first time
@@ -404,6 +431,10 @@ node tools/trim-library.mjs            # trim in place
 node tools/trim-library.mjs --dry-run  # only report what would change
 ```
 
+"Transcribe all in every language" queues, for every sloka, each supported language it has
+no transcript in yet; the work runs in the background (see "Transcripts") and the sidebar
+shows its progress.
+
 ## How the comparison works
 
 Both recordings are resampled to 16 kHz and described every 20 ms by loudness, an activity
@@ -491,7 +522,8 @@ js/meta.js             vocabularies, evaluation presets by learner, text derivat
 js/player.js           HTMLAudioElement wrapper (speed, pitch preservation, range playback)
 js/recorder.js         microphone capture through an AudioWorklet
 js/analysis-worker.js  runs the DSP off the main thread
-js/stt.js, js/stt-worker.js   speech to text (Whisper via transformers.js, in a worker)
+js/stt.js, js/stt-worker.js   speech to text (Whisper via transformers.js, in a worker; background priority)
+js/transcripts.js      a sloka's transcripts, one per language (pure, shared with the server)
 js/textdiff.js         word tokenisation and diff for transcripts
 js/quizscore.js        quiz scoring and random picking (pure, Node-testable)
 js/libutil.js          folder-name cleaning, sloka file names, WAV header reading (shared with the server)
@@ -505,7 +537,7 @@ reports/               the research the presets and the details file follow
 
 Not in the repository (.gitignore), beside the code or wherever local.json points:
 library/               your slokas, in folders if you like: <name>.wav, <name>.json (details),
-                       <name>.txt (transcript), <name>.transcript.json (timings),
+                       <name>.txt (transcript), <name>.transcript.json (every language, with timings),
                        <name>.features.json (analysis cache), index.json; library/backup holds pre-trim originals
 profiles.json          the people (names, voice type, age group) — never inside library/
 quizzes/               one JSON file per quiz: picked slokas, chosen categories, every attempt's scores

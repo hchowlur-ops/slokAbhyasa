@@ -12,6 +12,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { trimSilence } from '../js/dsp/trim.js';
 import { decodeWav, encodeWavBytes } from '../js/wav.js';
+import { normalizeStore, shiftStore } from '../js/transcripts.js';
 import { resolveDataDir } from '../datadir.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -40,15 +41,11 @@ for (const rec of list) {
   try { await fsp.access(backup); } catch { await fsp.copyFile(p, backup); }
   await fsp.writeFile(p, encodeWavBytes(t.samples, sampleRate));
   await fsp.rm(p.replace(/\.wav$/i, '') + '.features.json', { force: true });
-  // shift a stored transcript's timestamps by the amount cut from the start
+  // shift the stored transcripts' timestamps (every language) by the amount cut from the start
   const tp = p.replace(/\.wav$/i, '') + '.transcript.json';
   try {
-    const tr = JSON.parse(await fsp.readFile(tp, 'utf8'));
-    const dur = t.samples.length / sampleRate;
-    if (Array.isArray(tr.chunks)) {
-      tr.chunks = tr.chunks.map((c) => ({ ...c, start: Math.max(0, (c.start || 0) - t.removedStart), end: c.end == null ? null : Math.max(0, Math.min(dur, c.end - t.removedStart)) }));
-      await fsp.writeFile(tp, JSON.stringify(tr));
-    }
+    const store = normalizeStore(JSON.parse(await fsp.readFile(tp, 'utf8')));
+    if (store) await fsp.writeFile(tp, JSON.stringify(shiftStore(store, t.removedStart, t.samples.length / sampleRate)));
   } catch { /* no transcript */ }
   rec.duration = t.samples.length / sampleRate;
   rec.sampleRate = sampleRate;

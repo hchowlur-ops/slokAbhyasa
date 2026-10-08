@@ -37,6 +37,10 @@
       </button>
     </nav>
     <div class="sidebar-footer">
+      <div class="bg-status" id="bg-status" hidden title="Transcribing saved slokas in the other languages. Your own transcriptions always go first.">
+        <span class="muted small" id="bg-status-text"></span>
+        <button class="btn btn-ghost btn-sm" id="bg-status-stop" type="button">Stop</button>
+      </div>
       <div class="learner-box" title="Who recites in Self Evaluation and quizzes. The evaluation makes allowances for a child's voice and pace.">
         <label class="field">
           <span>Who's reciting</span>
@@ -562,6 +566,10 @@
         <button class="btn btn-sm" id="library-trim-all" type="button" title="Remove silence at the start and end of every sloka WAV">
           <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M3 11h3v2H3zm15 0h3v2h-3zM7 5h2v14H7zm8 0h2v14h-2zm-4 4h2v6h-2z"/></svg>
           <span>Trim silence in all slokas</span>
+        </button>
+        <button class="btn btn-sm" id="library-transcribe-all" type="button" title="Transcribe every sloka in each supported language it lacks, in the background; your own transcriptions always go first">
+          <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12.87 15.07l-2.54-2.51.03-.03A17.52 17.52 0 0 0 14.07 6H17V4h-7V2H8v2H1v2h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2l-4.5-12zm-2.62 7l1.62-4.33L19.12 17h-3.24z"/></svg>
+          <span>Transcribe all in every language</span>
         </button>
         <span class="muted small">Originals are kept in <code>library/backup</code>.</span>
         <div class="progress" id="library-progress" hidden>

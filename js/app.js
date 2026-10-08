@@ -12,7 +12,8 @@ import { MISMATCH_CONTRAST } from './dsp/compare.js';
 import { QUIZ_CATEGORIES, DEFAULT_QUIZ_CATEGORIES, DEFAULT_TOLERANCE, CATEGORY_WEIGHTS, itemScores, attemptSummary, scoreFor, normalizeCategories, normalizeTolerance, withinTolerance, itemVerdict, correctness, pickBaselines, overallScore, attemptOverall, gradeOf } from './quizscore.js';
 import { mixToMono } from './dsp/resample.js';
 import { trimSilence } from './dsp/trim.js';
-import { Transcriber, STT_LANGUAGES, STT_TIERS, sttLanguageLabel, sttLanguageTag, sttTierLabel, isStopped } from './stt.js';
+import { Transcriber, STT_LANGUAGES, STT_LANGUAGE_CODES, STT_TIERS, sttLanguageLabel, sttLanguageTag, sttTierLabel, isStopped } from './stt.js';
+import { normalizeStore, putInStore, pickTranscript, availableLanguages } from './transcripts.js';
 import { diffWords, diffSummary, compareWords, tokenizeTranscript, windowedTokens } from './textdiff.js';
 import { AGE_GROUPS, VOICE_TYPES, STYLE_MODES, DEFAULT_STYLE_MODE, presetsFor, compareModeFor, speakerLabel, ageGroupLabel, styleMode, voiceStats, deriveText } from './meta.js';
 
@@ -284,15 +285,23 @@ const stt = new Transcriber();
 const STT_KEY = 'tutor-stt';
 const sttSettings = (() => {
   // cpuTiers: models this browser's GPU has been seen to get wrong; they run on the CPU.
-  const d = { language: 'sanskrit', tier: null, auto: true, cpuTiers: [] };
+  // auto: transcribe without being asked (Learn, Self Evaluation, quizzes); on by default,
+  // and switched back on once for settings saved before that was the default (autoV).
+  const d = { language: 'sanskrit', tier: null, auto: true, autoV: 2, cpuTiers: [] };
   let s = d;
   try { s = { ...d, ...JSON.parse(localStorage.getItem(STT_KEY) || '{}') }; } catch { /* defaults */ }
   if (!STT_LANGUAGES.some((l) => l.code === s.language)) s.language = d.language;
   if (s.tier && s.tier !== 'tiny' && !STT_TIERS.some((t) => t.id === s.tier)) s.tier = null;
+  if (s.autoV !== 2) { s.auto = true; s.autoV = 2; }
   s.auto = s.auto !== false;
   if (!Array.isArray(s.cpuTiers)) s.cpuTiers = [];
   return s;
 })();
+// Called with the new language when the speech-to-text language is changed anywhere.
+const sttLanguageListeners = new Set();
+// The transcript of a sloka in the language chosen for speech to text (none if it has not
+// been transcribed in that language yet).
+const transcriptIn = (store, language = sttSettings.language) => pickTranscript(store, language);
 let sttDevice = null;
 async function sttTier() {
   if (sttSettings.tier) return sttSettings.tier;
@@ -320,7 +329,12 @@ function buildSttControls(host) {
     }
     label.append(span, sel);
     host.appendChild(label);
-    sel.addEventListener('change', () => { sttSettings[key] = sel.value; saveStt(); syncSttControls(); });
+    sel.addEventListener('change', () => {
+      sttSettings[key] = sel.value;
+      saveStt();
+      syncSttControls();
+      if (key === 'language') for (const fn of sttLanguageListeners) fn(sel.value);
+    });
     return sel;
   };
   const set = {
@@ -348,19 +362,21 @@ function syncSttAuto() {
 
 // Transcribes in the speech worker; the caller carries on meanwhile. `signal` (an
 // AbortSignal) stops the job, and the promise then rejects with an error isStopped() accepts.
-async function runTranscription(samples, sampleRate, progress, what, signal) {
-  const language = sttSettings.language;
+// The language is the chosen one unless given; `background` jobs give way to everything else.
+async function runTranscription(samples, sampleRate, progress, what, signal, { language = sttSettings.language, background = false } = {}) {
   const tier = await sttTier();
   const result = await stt.transcribe({
-    samples, sampleRate, language, tier, signal,
+    samples, sampleRate, language, tier, signal, background,
     device: sttSettings.cpuTiers.includes(tier) ? 'wasm' : null,
     onProgress: (p) => {
+      if (!progress) return;
       if (p.stage === 'load') progress.set(0.02, 'Preparing the speech model…');
       else if (p.stage === 'download') progress.set(0.6 * p.progress, `Downloading the speech model (${sttTierLabel(tier)}, ${Math.round((p.total || 0) / 1048576)} MB)… ${Math.round(p.progress * 100)}%`);
       else if (p.stage === 'ready') progress.set(0.62, `Listening to ${what}…`);
       else if (p.stage === 'transcribe') progress.set(0.7, `Transcribing ${what}…${p.partial ? ' ' + p.partial.slice(-70) : ''}`);
       else if (p.stage === 'retry') progress.set(0.65, `The first answer was nonsense; listening to ${what} once more…`);
       else if (p.stage === 'fallback') progress.set(0.65, `The graphics card's answer was nonsense; transcribing ${what} on the processor instead…`);
+      else if (p.stage === 'steady') progress.set(0.72, `The words came out in a loop; transcribing ${what} once more, held steady…`);
     },
   });
   if (result.fellBack && !sttSettings.cpuTiers.includes(tier)) {
@@ -371,6 +387,88 @@ async function runTranscription(samples, sampleRate, progress, what, signal) {
   delete result.fellBack; // the stored transcript records the device it was made on; that is enough
   result.createdAt = new Date().toISOString();
   return result;
+}
+
+// ---------- background transcription: every saved sloka in every language ----------
+// After a sloka is saved (and for the whole library on request) its recording is
+// transcribed in each supported language it lacks, in the speech worker at background
+// priority: anything a person is waiting for goes first, and a running background job
+// gives way. Results are stored beside the existing ones without changing which language
+// the .txt follows, and never over a transcript someone corrected.
+
+const bgQueue = []; // { rec, getAudio: async () => ({ samples, sampleRate }), languages }
+let bgRun = null; // { ctrl } while the queue is being worked through
+const transcriptListeners = new Set(); // fn(id, store): a sloka's stored transcripts changed
+const notifyTranscripts = (id, store) => { for (const fn of transcriptListeners) fn(id, store); };
+const langName = (code) => sttLanguageLabel(code).split(' · ')[0];
+
+// The supported languages a store lacks, the chosen one first.
+function missingLanguages(store) {
+  const have = new Set(availableLanguages(store));
+  return [sttSettings.language, ...STT_LANGUAGE_CODES].filter((c, i, a) => !have.has(c) && a.indexOf(c) === i);
+}
+
+function queueBackgroundTranscription(rec, getAudio, languages) {
+  const langs = languages.filter((c) => STT_LANGUAGE_CODES.includes(c));
+  if (!langs.length) return;
+  const existing = bgQueue.find((q) => q.rec.id === rec.id);
+  if (existing) { for (const l of langs) if (!existing.languages.includes(l)) existing.languages.push(l); }
+  else bgQueue.push({ rec, getAudio, languages: langs.slice() });
+  renderBgStatus();
+  if (!bgRun) runBackgroundQueue();
+}
+const bgRemaining = () => bgQueue.reduce((n, q) => n + q.languages.length, 0);
+function renderBgStatus(doing = '') {
+  const left = bgRemaining();
+  setHidden($('#bg-status'), !bgRun && !left);
+  $('#bg-status-text').textContent = doing ? `${doing}${left > 1 ? ` · ${left - 1} more to go` : ''}` : left ? `${left} transcription${left === 1 ? '' : 's'} waiting…` : '';
+}
+function runBackgroundQueue() {
+  const ctrl = new AbortController();
+  bgRun = { ctrl };
+  let failed = 0;
+  (async () => {
+    try {
+      while (bgQueue.length && !ctrl.signal.aborted) {
+        const item = bgQueue[0];
+        let audio = null;
+        try { audio = await item.getAudio(); } catch (err) { console.warn(`background transcription: cannot read "${item.rec.name}": ${err.message}`); bgQueue.shift(); failed++; continue; }
+        while (item.languages.length && !ctrl.signal.aborted) {
+          const lang = item.languages[0];
+          renderBgStatus(`Transcribing “${item.rec.name}” in ${langName(lang)}…`);
+          try {
+            // made meanwhile (inline, or corrected by hand)? then it is not redone
+            const now = await api.getTranscript(item.rec.id).catch(() => null);
+            if (!transcriptIn(now, lang)) {
+              const t = await runTranscription(audio.samples, audio.sampleRate, null, item.rec.name, ctrl.signal, { language: lang, background: true });
+              const store = await api.putTranscript(item.rec.id, t, { primary: false });
+              notifyTranscripts(item.rec.id, store);
+            }
+            item.languages.shift();
+          } catch (err) {
+            if (isStopped(err)) break;
+            console.warn(`background transcription of "${item.rec.name}" in ${lang} failed: ${err.message}`);
+            item.languages.shift();
+            failed++;
+          }
+        }
+        if (!ctrl.signal.aborted) bgQueue.shift();
+      }
+    } finally {
+      if (ctrl.signal.aborted) bgQueue.length = 0;
+      bgRun = null;
+      renderBgStatus();
+      if (failed) toast(`${failed} background transcription${failed === 1 ? '' : 's'} failed; see the browser console.`, 'error', 6000);
+    }
+  })();
+}
+$('#bg-status-stop').addEventListener('click', () => { if (bgRun) { bgRun.ctrl.abort(); toast('Background transcription stopped.', 'info'); } });
+
+// A saved sloka: the languages it lacks are transcribed in the background from the take
+// still in memory. `have` lists what is (or is about to be) stored already.
+function transcribeSavedInAllLanguages(rec, samples, sampleRate, have = []) {
+  const store = { languages: Object.fromEntries(have.map((c) => [c, true])) };
+  queueBackgroundTranscription(rec, async () => ({ samples, sampleRate }), missingLanguages(store));
 }
 
 // Move chunk timestamps by `delta` seconds (e.g. after trimming the start of the audio).
@@ -449,6 +547,7 @@ function createTranscriptPanel(host, { editable = false, play = null, onChange =
   const saveBtn = $('[data-act="save"]', host);
   const cancelBtn = $('[data-act="cancel"]', host);
   let transcript = null;
+  let others = []; // the other languages this recording is transcribed in
   let flagged = new Set();
   let flagClass = 'w-del';
   let source = null;
@@ -467,11 +566,12 @@ function createTranscriptPanel(host, { editable = false, play = null, onChange =
     setHidden(editHint, !editing);
     setHidden(runBtn, editing);
     runBtn.textContent = transcript ? 'Transcribe again' : 'Transcribe';
-    if (!transcript) { statusEl.textContent = 'No transcript yet.'; return; }
+    const alsoIn = others.length ? ` · also in ${others.map((c) => sttLanguageLabel(c).split(' · ')[0]).join(', ')}` : '';
+    if (!transcript) { statusEl.textContent = `No transcript in ${sttLanguageLabel(sttSettings.language).split(' · ')[0]} yet.${alsoIn}`; return; }
     renderTranscriptText(textEl, transcript, tokenizeTranscript(transcript), flagged, flagClass, play, dimmed);
     const how = transcript.edited ? (transcript.editedIn === 'file' ? 'edited in the text file' : 'corrected by you') : sttTierLabel(transcript.tier);
     const lang = transcript.language && transcript.language !== 'unknown' ? sttLanguageLabel(transcript.language) : 'Text';
-    statusEl.textContent = `${lang} · ${how}${transcript.createdAt ? ' · ' + fmtDate(transcript.createdAt) : ''}`;
+    statusEl.textContent = `${lang} · ${how}${transcript.createdAt ? ' · ' + fmtDate(transcript.createdAt) : ''}${alsoIn}`;
   };
   // Editing works line by line: each timed phrase is one line, so corrections keep their timings.
   const editText = (t) => (t.chunks && t.chunks.length ? t.chunks.map((c) => c.text).join('\n') : t.text);
@@ -492,8 +592,21 @@ function createTranscriptPanel(host, { editable = false, play = null, onChange =
     get transcript() { return transcript; },
     get busy() { return !!inflight; },
     wait() { return inflight || Promise.resolve(transcript); },
-    set(t) { transcript = t || null; flagged = new Set(); dimmed = null; setHidden(editEl, true); render(); },
+    // Shows a transcript; with the sloka's store, the other languages it exists in are listed.
+    set(t, store = null) {
+      transcript = t || null;
+      others = store ? availableLanguages(store).filter((c) => !t || c !== t.language) : [];
+      flagged = new Set(); dimmed = null; setHidden(editEl, true); render();
+    },
     highlight(set, cls = 'w-del', dim = null) { flagged = set || new Set(); flagClass = cls; dimmed = dim; render(); },
+    // Updates the list of other languages without touching the text or its highlights.
+    setOthers(store) { others = store ? availableLanguages(store).filter((c) => !transcript || c !== transcript.language) : []; render(); },
+    // Shows another transcript, dropping a transcription in flight (a late result is ignored).
+    swap(t, store = null) {
+      if (stopper) stopper.abort();
+      gen++; inflight = null; stopper = null; runBtn.disabled = false; prog.hide();
+      panel.set(t, store);
+    },
     setSource(fn, key = null) { source = fn; sourceKey = key; },
     // The panel forgets its content. A transcription still running carries on in the
     // worker; its result goes to onStale (or nowhere). cancel() first to stop it instead.
@@ -501,7 +614,7 @@ function createTranscriptPanel(host, { editable = false, play = null, onChange =
       gen++;
       inflight = null; stopper = null;
       runBtn.disabled = false;
-      transcript = null; flagged = new Set(); dimmed = null; source = null; sourceKey = null;
+      transcript = null; others = []; flagged = new Set(); dimmed = null; source = null; sourceKey = null;
       setHidden(editEl, true); prog.hide(); render();
     },
     // Stops the in-flight transcription (the Stop button does the same).
@@ -546,6 +659,7 @@ function createTranscriptPanel(host, { editable = false, play = null, onChange =
     },
   };
   runBtn.addEventListener('click', () => panel.transcribe());
+  sttLanguageListeners.add(() => render()); // the "no transcript in …" wording follows the language
   editBtn.addEventListener('click', () => {
     editEl.value = editText(transcript);
     editEl.rows = Math.min(12, Math.max(3, editEl.value.split('\n').length + 1));
@@ -932,9 +1046,13 @@ function saveTranscriptLater(late, rec, adjust = (t) => t) {
   late.then((t) => {
     if (!t) return;
     const tr = adjust(t);
-    return api.putTranscript(rec.id, tr).then(() => {
+    return api.putTranscript(rec.id, tr).then((store) => {
       const b = practice.bases.get(rec.id);
-      if (b && !b.transcript) { b.transcript = tr; if (practice.activeId === rec.id) practicePanel.set(tr); }
+      if (b) {
+        b.transcripts = store;
+        if (!b.transcript) { b.transcript = transcriptIn(store); if (practice.activeId === rec.id && b.transcript) practicePanel.set(b.transcript, store); }
+      }
+      notifyTranscripts(rec.id, store);
       toast(`Transcript added to "${rec.name}".`, 'success');
     }, () => toast(`The transcript of "${rec.name}" could not be saved.`, 'error'));
   });
@@ -954,7 +1072,9 @@ $('#learn-save-form').addEventListener('submit', async (e) => {
     const transcript = late ? null : learnPanel.transcript;
     if (transcript) await api.putTranscript(rec.id, transcript).catch(() => toast('The transcript could not be saved.', 'error'));
     if (late) saveTranscriptLater(late, rec);
-    toast(`Saved "${rec.name}"${transcript ? ' with its transcript' : ''} to the library.${late ? ' Its transcript is still being written and will be added when ready.' : ''}`, 'success', late ? 5000 : 3500);
+    // the other languages follow in the background, from the take still in memory
+    transcribeSavedInAllLanguages(rec, learnTake.samples, learnTake.sampleRate, transcript ? [transcript.language] : []);
+    toast(`Saved "${rec.name}"${transcript ? ' with its transcript' : ''} to the library.${late ? ' Its transcript is still being written and will be added when ready.' : ''} The other languages are transcribed in the background.`, 'success', late ? 5000 : 3500);
     $('#learn-discard').click();
   } catch (err) {
     toast(err.message, 'error', 6000);
@@ -1087,6 +1207,7 @@ $('#learn-file-form').addEventListener('submit', async (e) => {
     const transcript = late ? null : adjust(learnFilePanel.transcript);
     if (transcript) await api.putTranscript(rec.id, transcript).catch(() => toast('The transcript could not be saved.', 'error'));
     if (late) saveTranscriptLater(late, rec, adjust);
+    transcribeSavedInAllLanguages(rec, take.samples, take.sampleRate, transcript ? [transcript.language] : []);
     toast(`Saved "${rec.name}"${transcript ? ' with its transcript' : ''} to the library.${changed ? ` ${info}` : ''}${late ? ' Its transcript is still being written and will be added when ready.' : ''}`, 'success', changed || late ? 5000 : 3500);
   } catch (err) {
     toast(err.message, 'error', 6000);
@@ -1144,15 +1265,19 @@ const practicePanel = createTranscriptPanel($('#practice-transcript'), {
   // a transcription that finished after another sloka was opened still belongs to its own sloka
   onStale: async (t, id) => {
     if (!id || !t) return;
+    const store = await api.putTranscript(id, t).catch(() => null);
     const b = practice.bases.get(id);
-    if (b) b.transcript = t;
-    await api.putTranscript(id, t).catch(() => {});
+    if (b) { if (store) b.transcripts = store; if (t.language === sttSettings.language) b.transcript = t; }
+    if (store) notifyTranscripts(id, store);
   },
   onChange: async (t) => {
     if (!practice.base) return;
-    practice.base.transcript = t;
+    const base = practice.base;
+    base.transcript = t;
     try {
-      await api.putTranscript(practice.base.record.id, t);
+      base.transcripts = await api.putTranscript(base.record.id, t);
+      notifyTranscripts(base.record.id, base.transcripts);
+      practicePanel.setOthers(base.transcripts);
       if (t.edited) toast('Corrected text saved with the sloka.', 'success');
     } catch (err) {
       toast(`The text could not be saved: ${err.message}`, 'error', 6000);
@@ -1435,8 +1560,9 @@ function ensureBase(id) {
       practiceProgress.hide();
       api.putFeatures(id, serializeFeatures(features)).catch(() => {});
     }
-    const transcript = await api.getTranscript(id).catch(() => null);
-    const base = { record, ...dec, blob, features, transcript };
+    const transcripts = await api.getTranscript(id).catch(() => null);
+    // `transcript` is the one in the language chosen for speech to text, if it exists
+    const base = { record, ...dec, blob, features, transcripts, transcript: transcriptIn(transcripts) };
     if (practice.selection.includes(id)) practice.bases.set(id, base);
     // a sloka from before metadata existed gets its voice measured now that it is loaded
     if (record.meta && !record.meta.voice) {
@@ -1483,8 +1609,8 @@ async function setActiveBase(id) {
     drawBaseWave();
     practicePanel.reset();
     practicePanel.setSource(() => ({ samples: base.samples, sampleRate: base.sampleRate, what: `“${base.record.name}”` }), id);
-    if (base.transcript) practicePanel.set(base.transcript);
-    else if (sttSettings.auto) practicePanel.transcribe();
+    if (base.transcript) practicePanel.set(base.transcript, base.transcripts);
+    else { practicePanel.set(null, base.transcripts); if (sttSettings.auto) practicePanel.transcribe(); }
     showActiveReport();
   } catch (err) {
     if (token !== activeToken) return;
@@ -1494,6 +1620,29 @@ async function setActiveBase(id) {
     if (token === activeToken) updateRecLabel();
   }
 }
+
+// Another speech-to-text language: the loaded slokas switch to their transcript in that
+// language (transcribed on the spot when they have none and transcription is automatic),
+// and an open report's word comparison is redone in it.
+sttLanguageListeners.add((language) => {
+  for (const b of practice.bases.values()) b.transcript = transcriptIn(b.transcripts, language);
+  const base = practice.base;
+  if (!base) return;
+  practicePanel.swap(base.transcript, base.transcripts);
+  if (!base.transcript && sttSettings.auto) practicePanel.transcribe();
+  if (practice.result && (sttSettings.auto || practice.heardTranscripts.size)) transcribeBoth(false);
+});
+// A transcript stored in the background reaches the loaded slokas too.
+transcriptListeners.add((id, store) => {
+  const b = practice.bases.get(id);
+  if (!b) return;
+  b.transcripts = store;
+  if (!b.transcript) b.transcript = transcriptIn(store);
+  if (practice.activeId === id && practice.base === b) {
+    if (b.transcript && !practicePanel.transcript && !practicePanel.busy) practicePanel.set(b.transcript, store);
+    else practicePanel.setOthers(store);
+  }
+});
 
 $('#practice-rec').addEventListener('click', async () => {
   const rec = getPracticeRecorder();
@@ -1891,8 +2040,8 @@ async function scoreQuizAttempt() {
           prog.show(`Quiz: listening to the words of “${base.record.name}” (${k + 1} of ${ids.length})…`, stop);
           const t = await runTranscription(base.samples, base.sampleRate, prog, `“${base.record.name}”`, skip.signal);
           base.transcript = t;
-          api.putTranscript(id, t).catch(() => {});
-          if (practice.activeId === id) practicePanel.set(t);
+          api.putTranscript(id, t).then((store) => { base.transcripts = store; notifyTranscripts(id, store); }).catch(() => {});
+          if (practice.activeId === id) practicePanel.set(t, base.transcripts);
         } catch { continue; }
       }
       if (!live()) return;
@@ -2954,14 +3103,17 @@ function libTranscriptPanel(li, r) {
   host = document.createElement('div');
   host.className = 'lib-transcript transcript-panel';
   li.appendChild(host);
+  let store = null; // every language this sloka is transcribed in; the panel shows the chosen one
   const panel = createTranscriptPanel(host, {
     editable: true,
     play: (s, e) => playLibraryRange(r, s, e),
     onChange: async (t) => {
-      await api.putTranscript(r.id, t);
+      store = await api.putTranscript(r.id, t);
+      panel.setOthers(store);
       const loaded = practice.bases.get(r.id);
-      if (loaded) loaded.transcript = t;
-      if (practice.activeId === r.id && practice.base) practicePanel.set(t);
+      if (loaded) { loaded.transcripts = store; loaded.transcript = transcriptIn(store); }
+      if (practice.activeId === r.id && practice.base) practicePanel.set(transcriptIn(store), store);
+      notifyTranscripts(r.id, store);
       toast('Transcript saved with the sloka.', 'success');
     },
   });
@@ -2970,8 +3122,37 @@ function libTranscriptPanel(li, r) {
     const dec = await decodeBlob(await api.fetchAudioBlob(r.id));
     return { samples: dec.samples, sampleRate: dec.sampleRate, what: `"${r.name}"` };
   });
-  api.getTranscript(r.id).then((t) => panel.set(t)).catch(() => {});
+  const show = () => panel.swap(transcriptIn(store), store);
+  api.getTranscript(r.id).then((s) => { store = s; show(); }).catch(() => {});
+  const onLanguage = () => { if (!host.isConnected) { sttLanguageListeners.delete(onLanguage); return; } show(); };
+  sttLanguageListeners.add(onLanguage);
+  const onStored = (id, s) => {
+    if (!host.isConnected) { transcriptListeners.delete(onStored); return; }
+    if (id !== r.id) return;
+    store = s;
+    if (!panel.transcript && !panel.busy && transcriptIn(store)) show(); else panel.setOthers(store);
+  };
+  transcriptListeners.add(onStored);
 }
+
+// Library › every sloka, every language it lacks, in the background.
+$('#library-transcribe-all').addEventListener('click', async () => {
+  const list = await getLibrary();
+  let queued = 0;
+  for (const r of list) {
+    const store = await api.getTranscript(r.id).catch(() => null);
+    const missing = missingLanguages(store);
+    if (!missing.length) continue;
+    queueBackgroundTranscription(r, async () => {
+      const loaded = practice.bases.get(r.id);
+      if (loaded) return { samples: loaded.samples, sampleRate: loaded.sampleRate };
+      getCtx();
+      return decodeBlob(await api.fetchAudioBlob(r.id));
+    }, missing);
+    queued += missing.length;
+  }
+  toast(queued ? `${queued} transcription${queued === 1 ? '' : 's'} queued in the background (see the sidebar).` : 'Every sloka is already transcribed in every language.', 'info', 5000);
+});
 
 async function playLibraryRange(r, s, e) {
   getCtx();

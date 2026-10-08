@@ -21,6 +21,7 @@ import { cleanFolder, parseBaselineFilename, nameFromSlug, parseWavHeader, RESER
 import { normalizeCategories, normalizeTolerance, correctness, attemptOverall, gradeOf } from './js/quizscore.js';
 import { resolveDataDir } from './datadir.js';
 import { readMeta, writeMeta, removeMeta, moveMeta, ensureMeta, sanitizeMeta, audioInfo, withBext, bextDescription, readProfiles, writeProfiles, sanitizeProfile } from './meta-store.js';
+import { normalizeStore, pickTranscript, putInStore, removeFromStore, shiftStore, transcriptToText, applyTextEdit, publicStore } from './js/transcripts.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const DATA = resolveDataDir(ROOT);
@@ -224,37 +225,34 @@ const featuresPath = (rec) => path.join(LIB, ...rec.file.replace(/\.wav$/i, '.fe
 const transcriptPath = (rec) => path.join(LIB, ...rec.file.replace(/\.wav$/i, '.transcript.json').split('/'));
 const textPath = (rec) => path.join(LIB, ...rec.file.replace(/\.wav$/i, '.txt').split('/'));
 
-// The plain-text twin of a transcript: one line per timed phrase (or the whole text).
-function transcriptToText(tr) {
-  const lines = Array.isArray(tr.chunks) && tr.chunks.length
-    ? tr.chunks.map((c) => String(c.text || '').trim()).filter(Boolean)
-    : [String(tr.text || '').trim()];
-  return lines.join('\n') + '\n';
-}
-
-// Reads the stored transcript. If <name>.txt was edited by hand more recently than the
-// JSON, its text wins (timings are kept when the line count still matches the phrases).
-async function readTranscript(rec) {
+// Reads the stored transcripts (one per language; see js/transcripts.js). If <name>.txt
+// was edited by hand more recently than the JSON, its text wins for the current language
+// (timings are kept when the line count still matches the phrases).
+async function readTranscripts(rec) {
   const jp = transcriptPath(rec);
   const tp = textPath(rec);
-  let tr = null;
+  let store = null;
   let jStat = null;
   let tStat = null;
-  try { tr = JSON.parse(await fsp.readFile(jp, 'utf8')); jStat = await fsp.stat(jp); } catch { tr = null; }
+  try { store = normalizeStore(JSON.parse(await fsp.readFile(jp, 'utf8'))); jStat = await fsp.stat(jp); } catch { store = null; }
   try { tStat = await fsp.stat(tp); } catch { tStat = null; }
-  if (tStat && (!tr || tStat.mtimeMs > jStat.mtimeMs + 1500)) {
-    const lines = (await fsp.readFile(tp, 'utf8')).split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
-    const base = tr || { language: 'unknown', tier: null };
-    const chunks = Array.isArray(base.chunks) && base.chunks.length === lines.length ? base.chunks.map((c, i) => ({ ...c, text: lines[i] })) : [];
-    tr = { ...base, text: lines.join(' '), chunks, edited: true, editedIn: 'file', createdAt: tStat.mtime.toISOString() };
-    await fsp.writeFile(jp, JSON.stringify(tr)); // JSON is now the newer file until the .txt is edited again
+  if (tStat && (!store || tStat.mtimeMs > jStat.mtimeMs + 1500)) {
+    const edited = applyTextEdit(pickTranscript(store), await fsp.readFile(tp, 'utf8'), tStat.mtime.toISOString());
+    store = putInStore(store, edited, { primary: true });
+    await fsp.writeFile(jp, JSON.stringify(store)); // JSON is now the newer file until the .txt is edited again
   }
-  return tr;
+  return store;
 }
 
-async function writeTranscript(rec, tr) {
-  await fsp.writeFile(textPath(rec), transcriptToText(tr));
-  await fsp.writeFile(transcriptPath(rec), JSON.stringify(tr));
+// Writes the store; the .txt follows the current language's text.
+async function writeTranscripts(rec, store) {
+  if (!store) {
+    await fsp.rm(transcriptPath(rec), { force: true });
+    await fsp.rm(textPath(rec), { force: true });
+    return;
+  }
+  await fsp.writeFile(textPath(rec), transcriptToText(pickTranscript(store)));
+  await fsp.writeFile(transcriptPath(rec), JSON.stringify(store));
 }
 
 function publicRecord(rec, meta = undefined) {
@@ -648,38 +646,48 @@ async function handleApi(req, res, url) {
       await writeWavWithBext(rec, trimmed, meta);
       await writeMeta(audioPath(rec), meta);
       await fsp.rm(featuresPath(rec), { force: true });
-      // A stored transcript keeps its words; only its timestamps shift.
+      // Stored transcripts keep their words; only their timestamps shift.
       try {
-        const tr = await readTranscript(rec);
-        if (tr && Array.isArray(tr.chunks)) {
-          tr.chunks = tr.chunks.map((c) => ({ ...c, start: Math.max(0, (c.start || 0) - t.removedStart), end: c.end == null ? null : Math.max(0, Math.min(duration, c.end - t.removedStart)) }));
-          await writeTranscript(rec, tr);
-        }
+        const store = await readTranscripts(rec);
+        if (store) await writeTranscripts(rec, shiftStore(store, t.removedStart, duration));
       } catch { /* no transcript */ }
       await withIndex((l) => { const r = l.find((x) => x.id === id); if (r) { r.duration = duration; r.sampleRate = sampleRate; } });
     }
     return sendJson(res, 200, { changed: t.changed, removedStart: t.removedStart, removedEnd: t.removedEnd, duration });
   }
 
-  // GET / PUT / DELETE /api/baselines/:id/transcript
+  // GET / PUT / DELETE /api/baselines/:id/transcript — the transcripts, one per language.
+  //   GET            → { current, available, languages: { code: transcript } } (404 when none)
+  //   PUT {language, text, chunks…} [?primary=0]  → stores that language; by default it
+  //                  becomes the current one (the .txt follows it); primary=0 keeps the
+  //                  current one as it is and never replaces an existing transcript
+  //                  (background transcription of the other languages)
+  //   DELETE [?language=code]  → that language, or everything
   if (sub === 'transcript') {
     if (req.method === 'GET') {
-      const tr = await readTranscript(rec);
-      if (!tr) return sendJson(res, 404, { error: 'No transcript yet' });
-      return sendJson(res, 200, tr);
+      const store = await readTranscripts(rec);
+      if (!store) return sendJson(res, 404, { error: 'No transcript yet' });
+      return sendJson(res, 200, publicStore(store));
     }
     if (req.method === 'PUT') {
       let body;
       try { body = JSON.parse((await readBody(req, 5e6)).toString('utf8')); } catch { return sendJson(res, 400, { error: 'Transcript must be JSON' }); }
       if (!body || typeof body !== 'object' || typeof body.text !== 'string') return sendJson(res, 400, { error: 'Transcript needs a text field' });
       if (!body.text.trim() && !(Array.isArray(body.chunks) && body.chunks.some((c) => c && String(c.text || '').trim()))) return sendJson(res, 400, { error: 'An empty transcript is not stored' });
-      await writeTranscript(rec, body);
-      return sendJson(res, 200, { ok: true, textFile: path.basename(textPath(rec)) });
+      const primary = url.searchParams.get('primary') !== '0';
+      const current = await readTranscripts(rec);
+      // a background result only fills a gap: it never replaces a transcript that exists
+      // (least of all one someone corrected); "Transcribe again" is a primary put
+      const kept = !primary && !!pickTranscript(current, body.language);
+      const store = kept ? current : putInStore(current, body, { primary });
+      if (!kept) await writeTranscripts(rec, store);
+      return sendJson(res, 200, { ok: true, kept: !!kept, textFile: path.basename(textPath(rec)), ...publicStore(store) });
     }
     if (req.method === 'DELETE') {
-      await fsp.rm(transcriptPath(rec), { force: true });
-      await fsp.rm(textPath(rec), { force: true });
-      return sendJson(res, 200, { ok: true });
+      const language = url.searchParams.get('language');
+      const store = language ? removeFromStore(await readTranscripts(rec), language) : null;
+      await writeTranscripts(rec, store);
+      return sendJson(res, 200, { ok: true, ...(publicStore(store) || { available: [] }) });
     }
     return sendJson(res, 405, { error: 'Method not allowed' });
   }

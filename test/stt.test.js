@@ -144,12 +144,63 @@ test('degenerate output: nothing, or a word or two repeated to the token limit',
   assert.equal(looksDegenerate(' "D"'.repeat(140)), true);
   assert.equal(looksDegenerate('.'), true); // a cold GPU's first answer for a whole sloka
   assert.equal(looksDegenerate(' ... , .'), true);
+  // the decoder looping on a syllable inside one word (Telugu, on the CPU)
+  assert.equal(looksDegenerate('మరిలా' + 'రా'.repeat(30)), true);
+  assert.equal(looksDegenerate('Ṣākā'.repeat(12)), true);
+  assert.equal(looksDegenerate('om namah shivaya'), false);
+  assert.equal(looksDegenerate('ಕರ್ಮಣ್ಯೇವಾಧಿಕಾರಸ್ತೇ ಮಾ ಫಲೇಷು ಕದಾಚನ'), false);
   // real answers, from the CPU
   assert.equal(looksDegenerate('Ṣākṣāraṁ ānir desh yam avyaktam parjupāsate sarvatra gama chintyam ca kūtasthamacalam truvam'), false);
   assert.equal(looksDegenerate('येत्वक्षरम निर्देश्यम अव्यक्तं पर्युपासते सर्वत्रगम चिंत्यम्चा गूटस्थम चलं थुवं।'), false);
   // short answers are never judged, a chant that repeats a line is fine
   assert.equal(looksDegenerate('om om om'), false);
   assert.equal(looksDegenerate('om namah shivaya '.repeat(3) + 'om shanti shanti shanti'), false);
+});
+
+test('background jobs wait behind foreground ones, and a running one gives way', async () => {
+  const stt = new Transcriber({ stopGraceMs: 1000 });
+  const bgA = stt.transcribe({ samples: samples(), sampleRate: 16000, language: 'kannada', tier: 'fast', background: true });
+  const bgB = stt.transcribe({ samples: samples(), sampleRate: 16000, language: 'telugu', tier: 'fast', background: true });
+  const w = latest();
+  assert.equal(w.transcribes.length, 1, 'the first background job runs when nothing else is waiting');
+  assert.equal(stt.backlog, 2);
+  const firstId = w.transcribes[0].id;
+  // a person's job arrives: the running background job is asked to stop and the new job goes first
+  const fg = stt.transcribe({ samples: samples(), sampleRate: 16000, language: 'sanskrit', tier: 'fast' });
+  assert.deepEqual(w.sent.filter((m) => m.type === 'stop').map((m) => m.id), [firstId]);
+  assert.equal(w.transcribes.length, 1, 'the foreground job waits for the acknowledgement');
+  w.reply({ type: 'stopped', id: firstId });
+  assert.equal(w.transcribes.length, 2);
+  assert.equal(w.transcribes[1].language, 'sanskrit', 'the foreground job runs next');
+  w.reply({ type: 'result', id: w.transcribes[1].id, result: { text: 'fg' } });
+  assert.equal((await fg).text, 'fg');
+  await settle();
+  assert.equal(w.transcribes.length, 3);
+  assert.equal(w.transcribes[2].language, 'telugu', 'the untouched background job keeps its place');
+  w.reply({ type: 'result', id: w.transcribes[2].id, result: { text: 'te' } });
+  assert.equal((await bgB).text, 'te');
+  await settle();
+  assert.equal(w.transcribes.length, 4);
+  assert.equal(w.transcribes[3].language, 'kannada', 'the job that gave way runs again from the start');
+  assert.ok(w.transcribes[3].samples.length === 1600, 'with its own copy of the samples');
+  w.reply({ type: 'result', id: w.transcribes[3].id, result: { text: 'kn' } });
+  assert.equal((await bgA).text, 'kn', 'its promise follows the rerun');
+  assert.equal(stt.backlog, 0);
+});
+
+test('a background job that gave way can still be stopped through its signal', async () => {
+  const stt = new Transcriber({ stopGraceMs: 1000 });
+  const ctrl = new AbortController();
+  const bg = outcome(stt.transcribe({ samples: samples(), sampleRate: 16000, language: 'kannada', tier: 'fast', background: true, signal: ctrl.signal }));
+  const w = latest();
+  const fg = stt.transcribe({ samples: samples(), sampleRate: 16000, language: 'sanskrit', tier: 'fast' });
+  w.reply({ type: 'stopped', id: w.transcribes[0].id });
+  ctrl.abort(); // the rerun is waiting in the queue: dropped there
+  assert.ok(isStopped((await bg).error));
+  w.reply({ type: 'result', id: w.transcribes[1].id, result: { text: 'fg' } });
+  assert.equal((await fg).text, 'fg');
+  await settle();
+  assert.equal(w.transcribes.length, 2, 'the stopped rerun never reached the worker');
 });
 
 test('probe answers come back by id, independent of transcriptions', async () => {

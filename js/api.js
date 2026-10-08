@@ -44,6 +44,7 @@ export async function trimBaseline(id) {
   return res.json();
 }
 
+// The sloka's transcripts, one per language: { current, available, languages: { code: transcript } }, or null.
 export async function getTranscript(id) {
   const res = await fetch(`/api/baselines/${encodeURIComponent(id)}/transcript`);
   if (res.status === 404) return null;
@@ -51,12 +52,23 @@ export async function getTranscript(id) {
   return res.json();
 }
 
-export async function putTranscript(id, transcript) {
-  await check(await fetch(`/api/baselines/${encodeURIComponent(id)}/transcript`, {
+// Stores one language's transcript (its `language` field says which). By default it becomes
+// the current one, whose text the .txt file carries; `primary: false` leaves the current
+// one alone and only fills a gap, never replacing a transcript that exists (background
+// transcription of the other languages). Returns the store.
+export async function putTranscript(id, transcript, { primary = true } = {}) {
+  const res = await check(await fetch(`/api/baselines/${encodeURIComponent(id)}/transcript${primary ? '' : '?primary=0'}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(transcript),
   }));
+  return res.json();
+}
+
+export async function deleteTranscript(id, language = null) {
+  const q = language ? `?language=${encodeURIComponent(language)}` : '';
+  const res = await check(await fetch(`/api/baselines/${encodeURIComponent(id)}/transcript${q}`, { method: 'DELETE' }));
+  return res.json();
 }
 
 export async function getFeatures(id) {
