@@ -420,6 +420,31 @@ It re-runs the same DSP in Node and prints the match, the windows, the scores, t
 deviations and the search both ways, so a parameter in `js/dsp` can be tuned against a real
 take rather than a guess.
 
+### Reports
+Everything you have been assessed on, in one place: every quiz attempt and every Self
+Evaluation or Teach take (each take is kept as a **session**, `sessions/<id>.json` with its
+recording in `sessions/<id>/take.wav`, the moment its first comparisons are in; it is
+updated as more slokas are ticked or pronunciation scores arrive).
+
+* **By date** — pick a **day**, a **week** (Monday to Sunday) or a **month** with the date
+  box and ‹ › (or "All time"). The summary line gives the period, how many sessions it
+  holds, how many slokas were assessed, the average and best overall. Each row is one
+  session: when, what (Quiz with its name, or Self Evaluation / Teach with the slokas), how
+  many slokas were recited, the overall score and grade. Click a row for its results: one
+  line per sloka with every category, the overall and grade (and, for a quiz, whether it was
+  correct), a totals line, and **Listen** for the recording. A quiz is shown on its chosen
+  categories; an evaluation's overall is the mean over the slokas actually recited, since
+  one often ticks several and recites one (a quiz, which expects them all, counts a sloka
+  not recited as 0).
+* **By folder** — choose a folder (its subfolders count) and the same period, and every
+  assessment of every sloka in it is listed on a single line: when, the sloka, where it was
+  assessed (Quiz · name, Self Evaluation, Teach), content, pronunciation, timing, pitch,
+  dynamics, and the overall with its grade at the end. **Group by sloka** gathers the lines
+  under each sloka with its number of assessments and best score. Click a line to open that
+  session's results.
+
+The choices (mode, period, date, folder, grouping) are remembered.
+
 ### Library
 Play, rename, move, delete, or jump straight into evaluating yourself against a sloka. The WAV files live in
 `library/` and its subfolders with a small `index.json`; feel free to copy or back them up.
@@ -536,7 +561,8 @@ Node's built-in test runner.
 ## Layout
 
 ```
-serve.js               local server: static files + /api/baselines, /api/folders, /api/quizzes, /api/profiles
+serve.js               local server: static files + /api/baselines, /api/folders, /api/quizzes, /api/sessions,
+                       /api/assessments, /api/profiles
 meta-store.js          server side of the details: sidecar files, audio hash, bext chunk, profiles.json
 index.html, css/       the single-page UI
 js/app.js              controller for the views (Teach shares the Self Evaluation screen)
@@ -550,6 +576,7 @@ js/transcripts.js      a sloka's transcripts, one per language (pure, shared wit
 js/translit.js         romanised Indic text back into Devanagari / Kannada / Telugu (pure, shared)
 js/textdiff.js         word tokenisation and diff for transcripts
 js/quizscore.js        quiz scoring and random picking (pure, Node-testable)
+js/reports.js          periods, assessments in one shape, per-sloka rows for the Reports dashboard (pure, shared)
 js/libutil.js          folder-name cleaning, sloka file names, WAV header reading (shared with the server)
 js/dsp/                features, alignment, locating a part inside a longer recording, deviations,
                        scoring, silence trimming (pure, Node-testable)
@@ -566,6 +593,7 @@ library/               your slokas, in folders if you like: <name>.wav, <name>.j
                        <name>.features.json (analysis cache), index.json; library/backup holds pre-trim originals
 profiles.json          the people (names, voice type, age group) — never inside library/
 quizzes/<id>.json, quizzes/<id>/attempt-N.wav   quizzes with their attempts, and each attempt's recording
+sessions/<id>.json, sessions/<id>/take.wav      Self Evaluation / Teach takes with their scores and recording
 quizzes/               one JSON file per quiz: picked slokas, chosen categories, every attempt's scores
 local.json             { "data": "..." } when the two folders above live somewhere else
 ```

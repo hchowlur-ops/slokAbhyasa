@@ -32,6 +32,9 @@
       <button class="nav-btn" data-view="quiz" type="button">
         <svg viewBox="0 0 24 24"><path fill="currentColor" d="M19 3h-4.18C14.4 1.84 13.3 1 12 1s-2.4.84-2.82 2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zm-7 0a1 1 0 1 1 0 2 1 1 0 0 1 0-2zm-2 14-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/></svg><span>Quiz</span>
       </button>
+      <button class="nav-btn" data-view="reports" type="button">
+        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M19 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zM9 17H7v-7h2zm4 0h-2V7h2zm4 0h-2v-4h2z"/></svg><span>Reports</span>
+      </button>
       <button class="nav-btn" data-view="library" type="button">
         <svg viewBox="0 0 24 24"><path fill="currentColor" d="M4 4h4v16H4zm6 0h4v16h-4zm6.6.3 3.9-1 4 15.5-3.9 1z"/></svg><span>Library</span>
       </button>
@@ -547,6 +550,58 @@
         <div class="step-body">
           <p id="quiz-none" class="muted small">No quizzes yet.</p>
           <ul class="quiz-list" id="quiz-list"></ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= REPORTS ================= -->
+    <section class="view" id="view-reports" aria-labelledby="reports-title-h">
+      <header class="view-header">
+        <h1 id="reports-title-h">Reports</h1>
+        <p class="subtitle">Every quiz attempt and Self Evaluation you have done, by date or by folder, with the scores it earned.</p>
+      </header>
+      <div class="card">
+        <div class="reports-controls">
+          <div class="chips" id="reports-mode" aria-label="How to review">
+            <button class="chip active" type="button" data-mode="date" aria-pressed="true">By date</button>
+            <button class="chip" type="button" data-mode="folder" aria-pressed="false">By folder</button>
+          </div>
+          <div class="chips" id="reports-period" aria-label="Period">
+            <button class="chip" type="button" data-period="day">Day</button>
+            <button class="chip active" type="button" data-period="week" aria-pressed="true">Week</button>
+            <button class="chip" type="button" data-period="month">Month</button>
+            <button class="chip" type="button" data-period="all">All time</button>
+          </div>
+          <div class="reports-nav" id="reports-nav">
+            <button class="btn btn-sm" id="reports-prev" type="button" title="Earlier">‹</button>
+            <input type="date" id="reports-date" aria-label="Date" />
+            <button class="btn btn-sm" id="reports-next" type="button" title="Later">›</button>
+            <button class="btn btn-sm btn-ghost" id="reports-today" type="button">Today</button>
+          </div>
+          <label class="field inline" id="reports-folder-field" hidden><span>Folder</span><select id="reports-folder"></select></label>
+        </div>
+        <div class="reports-summary" id="reports-summary"></div>
+        <div id="reports-by-date">
+          <ul class="session-list" id="reports-list"></ul>
+          <p class="muted small" id="reports-empty" hidden>Nothing in this period. Take a quiz or evaluate yourself and it appears here.</p>
+          <div class="session-detail" id="reports-detail" hidden>
+            <div class="session-detail-head">
+              <h3 id="reports-detail-title"></h3>
+              <span class="muted small" id="reports-detail-sub"></span>
+              <div class="grow"></div>
+              <button class="btn btn-sm" id="reports-detail-listen" type="button" hidden>Listen</button>
+              <button class="btn btn-sm btn-ghost" id="reports-detail-close" type="button">Close</button>
+            </div>
+            <div id="reports-detail-audio"></div>
+            <div class="quiz-table-wrap"><table class="quiz-table" id="reports-detail-table"></table></div>
+          </div>
+        </div>
+        <div id="reports-by-folder" hidden>
+          <div class="row-actions left">
+            <label class="toggle small"><input type="checkbox" id="reports-group" /><span>Group by sloka</span></label>
+          </div>
+          <div class="quiz-table-wrap"><table class="quiz-table" id="reports-folder-table"></table></div>
+          <p class="muted small" id="reports-folder-empty" hidden>No sloka of this folder has been assessed in this period.</p>
         </div>
       </div>
     </section>

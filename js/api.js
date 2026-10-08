@@ -196,3 +196,33 @@ export async function patchQuiz(id, patch) {
 export async function deleteQuiz(id) {
   await check(await fetch(quizUrl(id), { method: 'DELETE' }));
 }
+
+// ---------- evaluation sessions and the reports dashboard ----------
+
+const sessionUrl = (id, sub = '') => `/api/sessions/${encodeURIComponent(id)}${sub}`;
+
+export async function createSession(session) {
+  const res = await check(await fetch('/api/sessions', jsonReq('POST', session)));
+  return res.json();
+}
+
+export async function updateSession(id, patch) {
+  const res = await check(await fetch(sessionUrl(id), jsonReq('PUT', patch)));
+  return res.json();
+}
+
+export async function deleteSession(id) {
+  await check(await fetch(sessionUrl(id), { method: 'DELETE' }));
+}
+
+export async function putSessionAudio(id, blob) {
+  const res = await check(await fetch(sessionUrl(id, '/audio'), { method: 'PUT', headers: { 'Content-Type': 'audio/wav' }, body: blob }));
+  return res.json();
+}
+export const sessionAudioUrl = (id) => sessionUrl(id, '/audio');
+
+// Every quiz attempt and evaluation session in one shape, newest first (see js/reports.js).
+export async function listAssessments() {
+  const res = await check(await fetch('/api/assessments'));
+  return res.json();
+}

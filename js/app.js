@@ -15,6 +15,7 @@ import { trimSilence } from './dsp/trim.js';
 import { Transcriber, STT_LANGUAGES, STT_LANGUAGE_CODES, STT_TIERS, sttLanguageLabel, sttLanguageTag, sttTierLabel, isStopped } from './stt.js';
 import { normalizeStore, putInStore, pickTranscript, availableLanguages } from './transcripts.js';
 import { transliterateTranscript } from './translit.js';
+import { periodRange, shiftPeriod, inRange, isoDate, slokaRows, summarize, KIND_LABEL } from './reports.js';
 import { diffWords, diffSummary, compareWords, tokenizeTranscript, windowedTokens } from './textdiff.js';
 import { AGE_GROUPS, VOICE_TYPES, STYLE_MODES, DEFAULT_STYLE_MODE, presetsFor, compareModeFor, speakerLabel, ageGroupLabel, styleMode, voiceStats, deriveText } from './meta.js';
 
@@ -260,7 +261,7 @@ function progressUI(target) {
 
 // ---------- routing ----------
 
-const VIEWS = ['player', 'learn', 'teach', 'evaluate', 'quiz', 'library'];
+const VIEWS = ['player', 'learn', 'teach', 'evaluate', 'quiz', 'reports', 'library'];
 function showView(name) {
   if (!VIEWS.includes(name)) name = 'player';
   const section = name === 'teach' ? 'evaluate' : name; // Teach is Self Evaluation for one sloka at a time
@@ -270,6 +271,7 @@ function showView(name) {
   if (name === 'library') refreshLibrary();
   if (name === 'evaluate' || name === 'teach') { setTeachMode(name === 'teach'); refreshPracticeSelect(); }
   if (name === 'quiz') refreshQuizView();
+  if (name === 'reports') refreshReports();
   if (name === 'learn') refreshLearnFolders();
   redrawAll();
 }
@@ -1241,6 +1243,7 @@ let practice = {
   result: null, // = results.get(activeId) when it is a real result
   selected: null,
   teach: false, // Teach: one sloka at a time, Play then Listen
+  session: null, // the stored record of this take (Self Evaluation / Teach), see saveSession()
 };
 let practiceRecorder = null;
 function getPracticeRecorder() {
@@ -1720,6 +1723,7 @@ async function analyseAttempt() {
     else await setActiveBase(pool[0]);
     $('#practice-results').scrollIntoView({ behavior: 'smooth', block: 'start' });
     if (practice.quiz) scoreQuizAttempt();
+    else saveSession(); // a Self Evaluation / Teach take is kept for the Reports dashboard
   } catch (err) {
     toast(err.message, 'error', 7000);
   } finally {
@@ -1764,11 +1768,71 @@ async function compareMissing(p0) {
       }
     }
     await comparePairs();
+    syncSession(); // slokas ticked after the take join its session
   } finally {
     practiceProgress.hide();
     setListBusy(false);
     updateRecLabel();
   }
+}
+
+// ---------- sessions: a Self Evaluation or Teach take, kept for the Reports dashboard ----------
+// Created when the take's first comparisons are in, with the recording; updated as more
+// slokas are ticked or pronunciation scores arrive from the transcripts.
+
+function sessionItems() {
+  return practice.selection.map((id) => {
+    const r = practice.results.get(id);
+    const rec = (libraryCache || []).find((x) => x.id === id);
+    const sim = practice.wordSims.has(id) ? practice.wordSims.get(id) : null;
+    const sc = itemScores(r, { wordSimilarity: sim, sttAvailable: sim != null });
+    return { id, name: rec ? rec.name : nameOf(id), folder: rec ? rec.folder || '' : '', ...sc, diag: comparisonDiag(r) };
+  });
+}
+// A session's overall counts the slokas recited (ticked ones that were not found in the
+// take are left out; a quiz counts them as 0).
+const sessionSummary = (items) => attemptSummary(items.filter((it) => it.matched), QUIZ_CATEGORIES.map((c) => c.id), activeTolerance());
+async function saveSession() {
+  const take = practice.take;
+  if (!take || practice.quiz || practice.session) return;
+  const items = sessionItems();
+  if (!items.length) return;
+  const sum = sessionSummary(items);
+  const session = { pending: true };
+  practice.session = session;
+  try {
+    const saved = await api.createSession({
+      kind: practice.teach ? 'teach' : 'evaluation', at: new Date().toISOString(), takeDuration: take.duration,
+      items, overall: sum.overall, grade: sum.grade, options: { ignoreKey: practice.options.ignoreKey, judgeSpeed: practice.options.judgeSpeed },
+      tolerance: activeTolerance(), learner: learnerSpeaker(),
+    });
+    if (practice.session !== session) { api.deleteSession(saved.id).catch(() => {}); return; } // the take was discarded meanwhile
+    session.id = saved.id;
+    session.pending = false;
+    session.sent = JSON.stringify(items);
+    api.putSessionAudio(saved.id, take.blob).catch((err) => console.warn(`The session's recording could not be kept: ${err.message}`));
+    if (session.dirty) syncSession();
+  } catch (err) {
+    practice.session = null;
+    console.warn(`The session could not be saved: ${err.message}`);
+  }
+}
+let sessionSyncTimer = null;
+function syncSession() {
+  const session = practice.session;
+  if (!session) return;
+  if (session.pending) { session.dirty = true; return; }
+  clearTimeout(sessionSyncTimer);
+  sessionSyncTimer = setTimeout(async () => {
+    if (practice.session !== session || !session.id) return;
+    const items = sessionItems();
+    const body = JSON.stringify(items);
+    if (body === session.sent) return;
+    session.sent = body;
+    session.dirty = false;
+    const sum = sessionSummary(items);
+    try { await api.updateSession(session.id, { items, overall: sum.overall, grade: sum.grade }); } catch (err) { console.warn(`The session could not be updated: ${err.message}`); }
+  }, 600);
 }
 
 // ---------- reports: one per sloka, plus the conflicts between them ----------
@@ -2288,6 +2352,191 @@ function renderTrend(host, quiz) {
 
 // ---------- the Quiz view: set one up, and the saved ones ----------
 
+// ======================================================================
+// REPORTS — past quiz attempts and evaluation sessions, by date or by folder
+// ======================================================================
+
+const REPORTS_KEY = 'tutor-reports';
+const reports = (() => {
+  const d = { mode: 'date', period: 'week', date: isoDate(), folder: '', group: false };
+  try { return { ...d, ...JSON.parse(localStorage.getItem(REPORTS_KEY) || '{}'), selected: null }; } catch { return { ...d, selected: null }; }
+})();
+const saveReports = () => { try { const { selected, ...rest } = reports; localStorage.setItem(REPORTS_KEY, JSON.stringify(rest)); } catch { /* ignore */ } };
+let assessmentsCache = null;
+
+const catCols = QUIZ_CATEGORIES;
+const scoreCell = (v, on = true) => `<td class="${on ? 'on' : 'off'}">${v == null ? '–' : v}</td>`;
+const gradeHtml = (overall) => { const g = gradeOf(overall); return overall == null ? '–' : `${overall} <span class="rr-grade ${g.id}">${g.label}</span>`; };
+const fmtWhen = (iso) => new Date(iso).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+const fmtWhenShort = (iso) => new Date(iso).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+// "CH-12-1008" for "CH-12-1008 · 2026-10-08 06:58": the date is shown beside it anyway
+const quizShortName = (name) => String(name || '').split(' · ')[0];
+
+async function refreshReports() {
+  try { assessmentsCache = await api.listAssessments(); } catch (err) { assessmentsCache = assessmentsCache || []; toast(err.message, 'error'); }
+  await getFolders(true);
+  renderReports();
+}
+
+function reportsRange() { return periodRange(reports.period, reports.date); }
+function reportsInPeriod() {
+  const range = reportsRange();
+  return (assessmentsCache || []).filter((a) => inRange(a.at, range));
+}
+
+function renderReports() {
+  // controls
+  $$('#reports-mode .chip').forEach((b) => { const on = b.dataset.mode === reports.mode; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+  $$('#reports-period .chip').forEach((b) => { const on = b.dataset.period === reports.period; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+  $('#reports-date').value = reports.date;
+  setHidden($('#reports-nav'), reports.period === 'all');
+  setHidden($('#reports-folder-field'), reports.mode !== 'folder');
+  const folderSel = $('#reports-folder');
+  const folders = visibleFolders(foldersCache || []).map((f) => f.path).filter(Boolean);
+  fillSelect(folderSel, [{ value: '', label: 'All folders' }, ...folders.map((f) => ({ value: f, label: f }))], reports.folder);
+  if (folderSel.value !== reports.folder) { reports.folder = folderSel.value; saveReports(); }
+  $('#reports-group').checked = !!reports.group;
+  // what the period holds
+  const range = reportsRange();
+  const inPeriod = reportsInPeriod();
+  const shown = reports.mode === 'folder' && reports.folder ? inPeriod.filter((a) => a.folders.some((f) => f === reports.folder || f.startsWith(`${reports.folder}/`))) : inPeriod;
+  const sum = summarize(shown);
+  const summary = $('#reports-summary');
+  summary.innerHTML = '';
+  const bits = [[range.label, 'range'], [`<b>${sum.count}</b> session${sum.count === 1 ? '' : 's'} · ${sum.quizzes} quiz${sum.quizzes === 1 ? '' : 'zes'}, ${sum.evaluations} evaluation${sum.evaluations === 1 ? '' : 's'}`], [`<b>${sum.slokas}</b> sloka${sum.slokas === 1 ? '' : 's'} assessed`]];
+  if (sum.mean != null) bits.push([`average overall <b>${sum.mean}</b> · best <b>${sum.best}</b> ${(gradeOf(sum.best) || {}).label || ''}`]);
+  for (const [html, cls] of bits) { const s = document.createElement('span'); if (cls) s.className = cls; s.innerHTML = html; summary.appendChild(s); }
+  setHidden($('#reports-by-date'), reports.mode !== 'date');
+  setHidden($('#reports-by-folder'), reports.mode !== 'folder');
+  if (reports.mode === 'date') renderReportsList(inPeriod);
+  else renderReportsFolder(shown);
+}
+
+function renderReportsList(list) {
+  const ul = $('#reports-list');
+  ul.innerHTML = '';
+  setHidden($('#reports-empty'), list.length > 0);
+  if (reports.selected && !list.some((a) => a.key === reports.selected)) reports.selected = null;
+  for (const a of list) {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = `session-row${a.key === reports.selected ? ' active' : ''}`;
+    row.innerHTML = '<span class="sr-when"></span><span class="sr-name"><span class="kind"></span><span class="label"></span></span><span class="sr-count"></span><span class="sr-score mono"><span></span><span class="rr-grade"></span></span>';
+    $('.sr-when', row).textContent = fmtWhen(a.at);
+    const kind = $('.kind', row);
+    kind.textContent = KIND_LABEL[a.kind] || a.kind;
+    kind.classList.toggle('quiz', a.kind === 'quiz');
+    $('.label', row).textContent = a.kind === 'quiz' ? a.name : (a.items || []).map((it) => it.name).slice(0, 4).join(', ') + ((a.items || []).length > 4 ? '…' : '');
+    $('.sr-count', row).textContent = `${a.recited ?? 0} of ${a.counted ?? (a.items || []).length} recited${a.kind === 'quiz' && a.correct != null ? ` · ${a.correct}% correct` : ''}`;
+    const g = gradeOf(a.overall);
+    $('.sr-score > span:first-child', row).textContent = a.overall == null ? '–' : String(a.overall);
+    if (g) { $('.rr-grade', row).textContent = g.label; $('.rr-grade', row).classList.add(g.id); }
+    row.addEventListener('click', () => { reports.selected = reports.selected === a.key ? null : a.key; renderReports(); });
+    ul.appendChild(row);
+  }
+  renderReportsDetail(list.find((a) => a.key === reports.selected) || null);
+}
+
+function renderReportsDetail(a) {
+  const box = $('#reports-detail');
+  $('#reports-detail-audio').innerHTML = '';
+  if (!a) { setHidden(box, true); return; }
+  setHidden(box, false);
+  $('#reports-detail-title').textContent = a.kind === 'quiz' ? `Quiz · ${a.name} · attempt ${a.attempt}` : `${KIND_LABEL[a.kind]} · ${fmtWhen(a.at)}`;
+  const who = a.learner && speakerLabel(a.learner);
+  const subs = [fmtWhen(a.at)];
+  if (a.takeDuration) subs.push(`${fmtTime(a.takeDuration)} recording`);
+  if (a.kind === 'quiz') subs.push(`scored on ${a.categories.map(catLabel).join(' + ')}`);
+  if (who) subs.push(`judged as ${who}`);
+  $('#reports-detail-sub').textContent = subs.join(' · ');
+  const listen = $('#reports-detail-listen');
+  setHidden(listen, !a.audio);
+  listen.onclick = () => {
+    const host = $('#reports-detail-audio');
+    if (host.firstChild) { host.innerHTML = ''; return; }
+    const au = document.createElement('audio');
+    au.controls = true;
+    au.src = a.kind === 'quiz' ? api.quizAttemptAudioUrl(a.quizId, a.attempt) : api.sessionAudioUrl(a.sessionId);
+    host.appendChild(au);
+    au.play().catch(() => {});
+  };
+  const table = $('#reports-detail-table');
+  table.innerHTML = '';
+  const head = document.createElement('tr');
+  head.innerHTML = '<th>Sloka</th><th>Recited</th>' + catCols.map((c) => `<th title="tolerance ${a.tolerance[c.id]} % · weight ${CATEGORY_WEIGHTS[c.id]}">${c.label}</th>`).join('') + `<th>Overall</th>${a.kind === 'quiz' ? '<th>Correct</th>' : ''}`;
+  table.appendChild(head);
+  for (const it of a.items || []) {
+    const tr = document.createElement('tr');
+    tr.className = it.missing ? 'missing' : it.matched ? '' : 'unmatched';
+    const d = it.diag || {};
+    const recited = it.missing ? 'not compared' : it.matched ? 'yes' : `not found${d.contrast != null ? ` <span class="muted small">· contrast ${Number(d.contrast).toFixed(2)}</span>` : ''}`;
+    const cells = ['<td class="sloka-cell"></td>', `<td>${recited}</td>`];
+    for (const c of catCols) cells.push(scoreCell(it[c.id], a.categories.includes(c.id)));
+    cells.push(`<td class="on">${it.missing ? '–' : gradeHtml(it.overall)}</td>`);
+    if (a.kind === 'quiz') { const v = itemVerdict(it, a.categories, a.tolerance); cells.push(`<td class="on">${v.ok === null ? '–' : v.ok ? 'yes' : 'no'}</td>`); }
+    tr.innerHTML = cells.join('');
+    tr.firstChild.textContent = it.folder ? `${it.name} · ${it.folder}` : it.name;
+    table.appendChild(tr);
+  }
+  const tot = document.createElement('tr');
+  tot.className = 'total';
+  // a quiz averages every sloka (one not recited counts 0); an evaluation only those recited
+  const counted = (a.items || []).filter((it) => !it.missing && (a.kind === 'quiz' || it.matched));
+  const avg = (c) => { const vs = counted.filter((it) => it[c] != null).map((it) => it[c]); return vs.length ? Math.round(vs.reduce((x, y) => x + y, 0) / vs.length) : null; };
+  tot.innerHTML = `<td>${a.kind === 'quiz' ? 'Overall' : 'Overall · recited slokas'}</td><td>${a.recited ?? 0} of ${a.counted ?? 0}</td>` + catCols.map((c) => scoreCell(avg(c.id), a.categories.includes(c.id))).join('') + `<td class="on">${gradeHtml(a.overall)}</td>${a.kind === 'quiz' ? `<td class="on">${a.correct == null ? '–' : `${a.correct}%`}</td>` : ''}`;
+  table.appendChild(tot);
+}
+
+// By folder: one line per sloka per assessment — the sloka, every category, the overall.
+function renderReportsFolder(list) {
+  const rows = slokaRows(list, { folder: reports.folder || null });
+  const table = $('#reports-folder-table');
+  table.innerHTML = '';
+  setHidden($('#reports-folder-empty'), rows.length > 0);
+  setHidden(table.parentElement, rows.length === 0);
+  if (!rows.length) return;
+  const grouped = !!reports.group; // grouped: the sloka is the group heading, not a column
+  const head = document.createElement('tr');
+  head.innerHTML = `<th>When</th>${grouped ? '' : '<th>Sloka</th>'}<th>In</th>` + catCols.map((c) => `<th>${c.label}</th>`).join('') + '<th>Overall</th>';
+  table.appendChild(head);
+  const ordered = grouped ? rows.slice().sort((x, y) => x.sloka.localeCompare(y.sloka) || String(y.at).localeCompare(String(x.at))) : rows;
+  let lastSloka = null;
+  for (const r of ordered) {
+    if (grouped && r.sloka !== lastSloka) {
+      lastSloka = r.sloka;
+      const mine = ordered.filter((x) => x.slokaId === r.slokaId && x.overall != null);
+      const best = mine.length ? Math.max(...mine.map((x) => x.overall)) : null;
+      const gh = document.createElement('tr');
+      gh.className = 'group-head';
+      gh.innerHTML = `<td colspan="${2 + catCols.length + 1}"></td>`;
+      gh.firstChild.textContent = `${r.sloka}${r.folder ? ` · ${r.folder}` : ''} — ${mine.length} assessment${mine.length === 1 ? '' : 's'}${best != null ? `, best ${best} ${(gradeOf(best) || {}).label || ''}` : ''}`;
+      table.appendChild(gh);
+    }
+    const tr = document.createElement('tr');
+    tr.className = r.missing ? 'missing' : r.matched ? '' : 'unmatched';
+    tr.innerHTML = `<td></td>${grouped ? '' : '<td class="sloka-cell"></td>'}<td class="sloka-cell"></td>` + catCols.map((c) => scoreCell(r[c.id])).join('') + `<td class="on">${r.missing ? '–' : gradeHtml(r.overall)}</td>`;
+    tr.children[0].textContent = fmtWhenShort(r.at);
+    if (!grouped) tr.children[1].textContent = `${r.sloka}${r.folder && !reports.folder ? ` · ${r.folder}` : ''}`;
+    const inCell = tr.children[grouped ? 1 : 2];
+    inCell.textContent = r.kind === 'quiz' ? `Quiz · ${quizShortName(r.name)}` : KIND_LABEL[r.kind];
+    if (r.kind === 'quiz') inCell.title = r.name;
+    tr.title = r.matched ? '' : r.missing ? 'Not compared' : 'Not found in the recording';
+    tr.style.cursor = 'pointer';
+    tr.addEventListener('click', () => { reports.mode = 'date'; reports.selected = r.assessment; reports.period = 'all'; saveReports(); renderReports(); $('#reports-detail').scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+    table.appendChild(tr);
+  }
+}
+
+$$('#reports-mode .chip').forEach((b) => b.addEventListener('click', () => { reports.mode = b.dataset.mode; saveReports(); renderReports(); }));
+$$('#reports-period .chip').forEach((b) => b.addEventListener('click', () => { reports.period = b.dataset.period; saveReports(); renderReports(); }));
+$('#reports-prev').addEventListener('click', () => { reports.date = shiftPeriod(reports.period, reports.date, -1); saveReports(); renderReports(); });
+$('#reports-next').addEventListener('click', () => { reports.date = shiftPeriod(reports.period, reports.date, 1); saveReports(); renderReports(); });
+$('#reports-today').addEventListener('click', () => { reports.date = isoDate(); saveReports(); renderReports(); });
+$('#reports-date').addEventListener('change', (e) => { if (e.target.value) { reports.date = e.target.value; saveReports(); renderReports(); } });
+$('#reports-folder').addEventListener('change', (e) => { reports.folder = e.target.value; saveReports(); renderReports(); });
+$('#reports-group').addEventListener('change', (e) => { reports.group = e.target.checked; saveReports(); renderReports(); });
+$('#reports-detail-close').addEventListener('click', () => { reports.selected = null; renderReports(); });
+
 const QUIZ_SETUP_KEY = 'tutor-quiz-setup';
 let quizListCache = [];
 let quizPicks = []; // ids of the slokas chosen for the next quiz, in the order they were ticked
@@ -2528,6 +2777,7 @@ function hideResults() {
   practice.heardTranscripts.clear();
   stopTakeTranscriptions();
   practice.quizAttempt = null;
+  practice.session = null;
   setHidden($('#quiz-score'), true);
   if (practice.quiz) { practice.take = null; setHidden($('#practice-base'), true); } // the next attempt is from memory again
   setHidden($('#practice-results'), true);
@@ -3070,7 +3320,7 @@ function renderTranscriptDiff() {
   const res = practice.result;
   if (!res || !practice.base || !practice.take || !sttPractice.base || !sttPractice.heard) return;
   const { A, B, ai, delA, insB, dimA, dimB, summary: sm } = windowedDiff(res, sttPractice.base, sttPractice.heard, practice.base.duration, practice.take.duration);
-  if (ai.length) practice.wordSims.set(practice.activeId, sm.similarity);
+  if (ai.length) { practice.wordSims.set(practice.activeId, sm.similarity); syncSession(); }
   refreshVerdicts();
   renderTranscriptText($('#stt-base'), sttPractice.base, A.toks, delA, 'w-del', (s, e) => { heardPlayer.pause(); basePlayer.playRange(s, e); }, dimA);
   renderTranscriptText($('#stt-heard'), sttPractice.heard, B.toks, insB, 'w-ins', (s, e) => { basePlayer.pause(); heardPlayer.playRange(s, e); }, dimB);

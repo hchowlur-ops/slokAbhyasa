@@ -23,12 +23,14 @@ import { resolveDataDir } from './datadir.js';
 import { readMeta, writeMeta, removeMeta, moveMeta, ensureMeta, sanitizeMeta, audioInfo, withBext, bextDescription, readProfiles, writeProfiles, sanitizeProfile } from './meta-store.js';
 import { normalizeStore, pickTranscript, putInStore, removeFromStore, shiftStore, transcriptToText, applyTextEdit, publicStore } from './js/transcripts.js';
 import { transliterateTranscript } from './js/translit.js';
+import { assessmentsFromQuiz, assessmentFromSession, byDateDesc } from './js/reports.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const DATA = resolveDataDir(ROOT);
 const LIB = path.join(DATA, 'library');
 const INDEX = path.join(LIB, 'index.json');
 const QUIZZES = path.join(DATA, 'quizzes');
+const SESSIONS = path.join(DATA, 'sessions');
 const PROFILES = path.join(DATA, 'profiles.json');
 const HOST = '127.0.0.1';
 const PORT = Number(process.env.PORT) || 8787;
@@ -54,6 +56,7 @@ const MIME = {
 async function ensureLibrary() {
   await fsp.mkdir(LIB, { recursive: true });
   await fsp.mkdir(QUIZZES, { recursive: true });
+  await fsp.mkdir(SESSIONS, { recursive: true });
   try { await fsp.access(INDEX); } catch { await fsp.writeFile(INDEX, '[]\n'); }
   await syncIndex();
 }
@@ -443,6 +446,118 @@ async function handleQuizzes(req, res, parts) {
   return sendJson(res, 405, { error: 'Method not allowed' });
 }
 
+// ---------- evaluation sessions ----------
+// One JSON file per Self Evaluation / Teach take in <data>/sessions, with the per-sloka
+// scores, what the comparison decided, and the recording (sessions/<id>/take.wav), so past
+// sessions can be reviewed in the Reports dashboard like quiz attempts.
+
+const sessionPath = (id) => path.join(SESSIONS, `${id}.json`);
+const sessionAudioPath = (id) => path.join(SESSIONS, id, 'take.wav');
+async function readSession(id) {
+  if (!QUIZ_ID.test(id)) return null;
+  try { return JSON.parse(await fsp.readFile(sessionPath(id), 'utf8')); } catch { return null; }
+}
+async function writeSession(s) { await fsp.writeFile(sessionPath(s.id), JSON.stringify(s, null, 2) + '\n'); }
+async function listSessions() {
+  let names = [];
+  try { names = await fsp.readdir(SESSIONS); } catch { return []; }
+  const out = [];
+  for (const n of names) {
+    if (!n.endsWith('.json')) continue;
+    const s = await readSession(n.slice(0, -5));
+    if (s) out.push(s);
+  }
+  return out;
+}
+const cleanSessionItems = (items) => (Array.isArray(items) ? items : []).filter((it) => it && typeof it.id === 'string').slice(0, 500);
+function sessionFields(body, s) {
+  if (Array.isArray(body.items)) s.items = cleanSessionItems(body.items);
+  if (body.overall !== undefined) s.overall = body.overall == null ? null : Number(body.overall);
+  if (body.grade !== undefined) s.grade = typeof body.grade === 'string' ? body.grade.slice(0, 20) : null;
+  if (body.options && typeof body.options === 'object') s.options = { ignoreKey: !!body.options.ignoreKey, judgeSpeed: !!body.options.judgeSpeed };
+  if (body.tolerance && typeof body.tolerance === 'object') s.tolerance = normalizeTolerance(body.tolerance);
+  if (body.learner && typeof body.learner === 'object') s.learner = { profileId: typeof body.learner.profileId === 'string' ? body.learner.profileId.slice(0, 40) : null, voiceType: String(body.learner.voiceType || 'preferNotToSay').slice(0, 20), ageGroup: String(body.learner.ageGroup || 'unspecified').slice(0, 20) };
+  else if (body.learner === null) s.learner = null;
+  return s;
+}
+
+async function handleSessions(req, res, parts) {
+  const id = parts[2];
+  const sub = parts[3];
+  const json = async (limit = 5e6) => { try { return JSON.parse((await readBody(req, limit)).toString('utf8')); } catch { return null; } };
+  if (!id && req.method === 'GET') return sendJson(res, 200, (await listSessions()).sort(byDateDesc));
+  if (!id && req.method === 'POST') {
+    const body = await json();
+    if (!body || typeof body !== 'object') return sendJson(res, 400, { error: 'Invalid JSON' });
+    const s = sessionFields(body, {
+      id: newId(),
+      kind: body.kind === 'teach' ? 'teach' : 'evaluation',
+      at: typeof body.at === 'string' ? body.at : new Date().toISOString(),
+      takeDuration: Number(body.takeDuration) || 0,
+      items: [],
+      overall: null,
+      grade: null,
+    });
+    await writeSession(s);
+    return sendJson(res, 201, s);
+  }
+  if (!id) return sendJson(res, 405, { error: 'Method not allowed' });
+  const s = await readSession(id);
+  if (!s) return sendJson(res, 404, { error: 'No such session' });
+  // PUT / GET /api/sessions/:id/audio — the recording of the take
+  if (sub === 'audio') {
+    const p = sessionAudioPath(id);
+    if (req.method === 'PUT') {
+      const body = await readBody(req);
+      if (!isWav(body)) return sendJson(res, 400, { error: 'Body must be a RIFF/WAVE file' });
+      await fsp.mkdir(path.dirname(p), { recursive: true });
+      await fsp.writeFile(p, body);
+      s.audio = 'take.wav';
+      await writeSession(s);
+      return sendJson(res, 200, { ok: true });
+    }
+    if (req.method === 'GET' || req.method === 'HEAD') {
+      let stat;
+      try { stat = await fsp.stat(p); } catch { return sendJson(res, 404, { error: 'No recording kept for this session' }); }
+      res.writeHead(200, { 'Content-Type': 'audio/wav', 'Content-Length': stat.size, 'Cache-Control': 'no-store' });
+      if (req.method === 'HEAD') return res.end();
+      return fs.createReadStream(p).pipe(res);
+    }
+    return sendJson(res, 405, { error: 'Method not allowed' });
+  }
+  if (sub) return sendJson(res, 404, { error: 'Not found' });
+  if (req.method === 'GET') return sendJson(res, 200, s);
+  if (req.method === 'PUT' || req.method === 'PATCH') {
+    const body = await json();
+    if (!body || typeof body !== 'object') return sendJson(res, 400, { error: 'Invalid JSON' });
+    sessionFields(body, s);
+    await writeSession(s);
+    return sendJson(res, 200, s);
+  }
+  if (req.method === 'DELETE') {
+    await fsp.rm(sessionPath(id), { force: true });
+    await fsp.rm(path.join(SESSIONS, id), { recursive: true, force: true });
+    return sendJson(res, 200, { ok: true });
+  }
+  return sendJson(res, 405, { error: 'Method not allowed' });
+}
+
+// GET /api/assessments — every quiz attempt and evaluation session in one shape, newest
+// first (see js/reports.js), for the Reports dashboard.
+async function handleAssessments(req, res) {
+  if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+  const out = [];
+  let names = [];
+  try { names = await fsp.readdir(QUIZZES); } catch { names = []; }
+  for (const n of names) {
+    if (!n.endsWith('.json')) continue;
+    const q = await readQuiz(n.slice(0, -5));
+    if (q) out.push(...assessmentsFromQuiz(q));
+  }
+  for (const s of await listSessions()) out.push(assessmentFromSession(s));
+  return sendJson(res, 200, out.sort(byDateDesc));
+}
+
 async function handleFolders(req, res) {
   if (req.method === 'GET') {
     const list = await readIndex();
@@ -563,6 +678,8 @@ async function handleProfiles(req, res, parts) {
 async function handleApi(req, res, url) {
   const parts = url.pathname.split('/').filter(Boolean); // ['api','baselines',id?,sub?]
   if (parts[1] === 'quizzes') return handleQuizzes(req, res, parts);
+  if (parts[1] === 'sessions') return handleSessions(req, res, parts);
+  if (parts[1] === 'assessments') return handleAssessments(req, res);
   if (parts[1] === 'folders') return handleFolders(req, res);
   if (parts[1] === 'profiles') return handleProfiles(req, res, parts);
   if (parts[1] !== 'baselines') return sendJson(res, 404, { error: 'Not found' });
