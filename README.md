@@ -461,7 +461,9 @@ see "What is scored"; "Defaults" restores the recommended 30/25/15/10/10/5/5), *
 (the acceptable variation per category for Self Evaluation and Teach; a quiz always uses the
 defaults for the chosen learner), and **Speech recognition** (the language the words are
 heard in, the model, and whether transcripts are made automatically — the same controls
-that sit beside every transcript panel).
+that sit beside every transcript panel). Beside them, "Why these defaults" explains how the
+weights and tolerances are tuned for Sanskrit śloka recitation and lists the references
+(reproduced under "References" below).
 
 ### Library
 Play, rename, move, delete, or jump straight into evaluating yourself against a sloka. The WAV files live in
@@ -588,6 +590,65 @@ The comparison's own `scores.overall` (content 45 %, timing 35 %, pitch 20 % for
 content 60 %, timing 40 % for recited text — see `MODES` in `js/dsp/compare.js`) is kept for
 the tests and the API; the app shows and grades the weighted mean above (`overallScore` and
 `gradeOf` in `js/quizscore.js`).
+
+### Why the defaults are what they are
+
+The defaults are tuned for the recitation of Sanskrit ślokas, the Bhagavad Gītā first of
+all, where correctness lives in the akṣara and not in the voice. **The words carry 70 %**:
+Sanskrit is written as it is spoken, so a slip of the tongue is a slip of a letter. Phonemes
+(30) compares every consonant and vowel with the text by the features the Śikṣā treatises
+classify sounds with — *sthāna*, the place of articulation, and *prayatna*, the effort:
+voicing, aspiration, nasality — plus visarga and double consonants; one feature off earns
+half credit, a different sound none. Vowel length (25) stands on its own because it is
+meaning-bearing (*hrasva* one mātrā, *dīrgha* two) and the commonest slip of learners whose
+languages do not use length. Syllables (15) counts akṣaras missing, added or replaced; in
+an anuṣṭubh śloka a missing akṣara also breaks the metre. **The manner carries 30 %,
+relative to the reciter's own voice**: Gītā recitation prescribes no absolute pitch, so pitch
+contour (10) judges only the rise and fall after the key difference is removed; emphasis (10)
+compares which syllables stand out, each recording standardised to its own range; phrasing
+(5) where the pauses fall; timing (5) pauses and material the śloka does not have. No
+category uses timbre or voice quality. **Tolerances** — phonemes 15 %, vowel length 20 %,
+syllables 10 % — are set so a correct recitation passes though the transcript it is read from
+is approximate (a real, well-recited take scored 97 / 92 / 95) while a wrong akṣara or
+several length slips fail; a child's allowance (+5 % at 12–15, +10 % at 8–11, +20 % under 8)
+follows the measured error rate of speech recognisers on children; the manner categories get
+60 % (phrasing 50 %) because their measures are approximate and style-dependent.
+
+### References
+
+* Witt & Young, *Phone-level pronunciation scoring and assessment for interactive language
+  learning*, Speech Communication 30 (2000) — <http://mi.eng.cam.ac.uk/~sjy/papers/wiyo00.pdf>.
+  Phone-by-phone scoring against the expected phones with a threshold per phone ("Goodness of
+  Pronunciation"), the idea the phoneme category follows.
+* *Automatic Pronunciation Assessment — A Review*, Findings of EMNLP 2023 —
+  <https://aclanthology.org/2023.findings-emnlp.557.pdf>. Phoneme-level assessment, and why
+  articulatory features make scores interpretable and robust to the speaker.
+* Wei et al., *Articulatory-Enhanced Mispronunciation Detection and Diagnosis*, SLaTE 2025 —
+  <https://www.isca-archive.org/slate_2025/wei25_slate.pdf>. Diagnosing slips by place,
+  manner, aspiration and voicing.
+* Śikṣā, the Vedāṅga of phonetics — <https://en.wikipedia.org/wiki/Shiksha>. The classical
+  classification of Sanskrit sounds by *sthāna* and *prayatna*.
+* learnsanskrit.org, *Vowels* — <https://www.learnsanskrit.org/guide/sounds/vowels/>; *Sanskrit
+  prosody* — <https://en.wikipedia.org/wiki/Sanskrit_prosody>. Vowel length in mātrās, laghu
+  and guru syllables, the 32-syllable śloka.
+* *Intonation contour similarity: f0 representations and distance measures compared to human
+  perception in two languages*, JASA 154 (2023) —
+  <https://pubs.aip.org/asa/jasa/article-abstract/154/1/95/2901344/Intonation-contour-similarity-f0-representations>.
+  Pitch contours in semitones relative to the speaker's median, aligned by DTW, match how
+  listeners hear likeness.
+* Rilliard, Allauzen & Boula de Mareüil, *Using Dynamic Time Warping to Compute Prosodic
+  Similarity Measures*, Interspeech 2011 —
+  <https://www.isca-archive.org/interspeech_2011/rilliard11_interspeech.html>. Prosody compared
+  along a time alignment, as emphasis and phrasing are here.
+* Jain et al., *Kid-Whisper* (2023) — <https://arxiv.org/abs/2309.07927>. Whisper's word error
+  rate on children's speech is several times that on adults'.
+* *Automatic Speech Recognition for Sanskrit with Transfer Learning* (2025) —
+  <https://arxiv.org/abs/2501.10024>; *Automatic Speech Recognition in Sanskrit: A New Speech
+  Corpus and Modelling Insights* (2021) — <https://arxiv.org/abs/2106.05852>; *Vedavani: A
+  Benchmark Corpus for ASR on Vedic Sanskrit Poetry* (2025) — <https://arxiv.org/pdf/2506.00145>.
+  The state of Sanskrit speech recognition, on which the word categories rest.
+* The project's own research: `reports/Voice characteristics by age and gender.md` and
+  `reports/Baseline recording metadata.md`.
 
 ## Tests
 

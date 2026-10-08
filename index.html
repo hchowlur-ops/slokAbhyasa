@@ -589,6 +589,8 @@
         <p class="subtitle">How a recitation is judged, and how its words are heard. Everything here is remembered in this browser.</p>
       </header>
 
+      <div class="settings-grid">
+      <div class="settings-main">
       <div class="card settings-card">
         <h2>Weights · what the overall score is made of</h2>
         <p class="muted small">The overall score is the weighted mean of the categories that could be judged; the grade follows it (Excellent from 90, Good from 80, Fair from 65, Needs practice below). The weights recommended for Gītā recitation are phonemes 30, vowel length 25, syllables 15, emphasis 10, pitch contour 10, phrasing 5, timing 5. The weights in force are saved with every attempt and session, so changing them later never rewrites an old score.</p>
@@ -615,6 +617,39 @@
           <div class="stt-controls" id="settings-stt-controls"></div>
           <label class="toggle"><input type="checkbox" id="settings-stt-auto" /><span>Transcribe automatically (Learn, Self Evaluation, quizzes)</span></label>
         </div>
+      </div>
+      </div>
+
+      <aside class="settings-aside">
+        <div class="card settings-card about-card">
+          <h2>Why these defaults</h2>
+          <p>The defaults are tuned for the recitation of Sanskrit ślokas — the Bhagavad Gītā first of all — where correctness lives in the akṣara, not in the voice.</p>
+
+          <h3>The words carry 70 %</h3>
+          <p>Sanskrit is written as it is spoken, so a slip of the tongue is a slip of a letter. <b>Phonemes (30)</b> compares every consonant and vowel of the recitation with the text by the features the Śikṣā treatises classify sounds with — <i>sthāna</i>, the place of articulation (dental <i>t</i> against retroflex <i>ṭ</i>, <i>s/ś/ṣ</i>), and <i>prayatna</i>, the effort (voicing <i>k/g</i>, aspiration <i>k/kh</i>, nasality) — together with visarga and double consonants. A sound one feature off earns half credit, since it is heard but rarely changes the word; a different sound earns none.</p>
+          <p><b>Vowel length (25)</b> stands on its own because it is meaning-bearing in Sanskrit: a short vowel (<i>hrasva</i>, one <i>mātrā</i>) against a long one (<i>dīrgha</i>, two) can change the word, and it is the commonest slip of learners who think in languages where length is not phonemic. <b>Syllables (15)</b> counts akṣaras missing, added or replaced — in a śloka of 32 syllables (<i>anuṣṭubh</i>, eight to a quarter) a missing akṣara also breaks the metre.</p>
+
+          <h3>The manner carries 30 %, relative to your own voice</h3>
+          <p>Gītā recitation prescribes no absolute pitch, unlike Vedic chant with its svaras, so <b>pitch contour (10)</b> judges only the rise and fall after the key difference is removed, and <b>emphasis (10)</b> compares which syllables stand out — loudness, pitch movement — each standardised to the speaker's own range, so a child or a deep voice is on the same scale as the reference. <b>Phrasing (5)</b> looks at where the pauses fall (the pāda and half-verse boundaries); <b>timing (5)</b> at pauses the śloka does not have and material skipped or added, with the pace itself judged only when asked. None of these uses timbre or voice quality: those are the reciter's voice, not the recitation.</p>
+
+          <h3>Tolerances</h3>
+          <p>Phonemes 15 %, vowel length 20 %, syllables 10 % are set so that a correct recitation passes even though the transcript it is read from is approximate (on a real, well-recited take the three scored 97 / 92 / 95), while a wrong akṣara or several length slips do not. A child's allowance (+5 % at 12–15, +10 % at 8–11, +20 % under 8) follows the finding that speech recognisers make several times more errors on children's voices. The manner categories get 60 % (phrasing 50 %) because they are style-dependent and their measures approximate.</p>
+
+          <h3>References</h3>
+          <ul class="refs">
+            <li><a href="http://mi.eng.cam.ac.uk/~sjy/papers/wiyo00.pdf" target="_blank" rel="noopener">Witt &amp; Young, <i>Phone-level pronunciation scoring and assessment for interactive language learning</i>, Speech Communication 30 (2000)</a> — scoring a recitation phone by phone against the expected phones, with a threshold per phone: the "Goodness of Pronunciation" idea the phoneme category follows.</li>
+            <li><a href="https://aclanthology.org/2023.findings-emnlp.557.pdf" target="_blank" rel="noopener"><i>Automatic Pronunciation Assessment — A Review</i>, Findings of EMNLP 2023</a> — the field's survey: phoneme-level assessment, and why articulatory features (place, manner, voicing) make scores interpretable and robust to who is speaking.</li>
+            <li><a href="https://www.isca-archive.org/slate_2025/wei25_slate.pdf" target="_blank" rel="noopener">Wei et al., <i>Articulatory-Enhanced Mispronunciation Detection and Diagnosis</i>, SLaTE 2025</a> — diagnosing slips by place, manner, aspiration and voicing rather than by sound alone.</li>
+            <li><a href="https://en.wikipedia.org/wiki/Shiksha" target="_blank" rel="noopener">Śikṣā, the Vedāṅga of phonetics</a> — the classical classification of Sanskrit sounds by <i>sthāna</i> and <i>prayatna</i> that the feature comparison mirrors.</li>
+            <li><a href="https://www.learnsanskrit.org/guide/sounds/vowels/" target="_blank" rel="noopener">learnsanskrit.org — Vowels</a> and <a href="https://en.wikipedia.org/wiki/Sanskrit_prosody" target="_blank" rel="noopener">Sanskrit prosody (chandas)</a> — <i>hrasva</i> and <i>dīrgha</i>, one and two mātrās; <i>laghu</i> and <i>guru</i> syllables; the 32-syllable śloka.</li>
+            <li><a href="https://pubs.aip.org/asa/jasa/article-abstract/154/1/95/2901344/Intonation-contour-similarity-f0-representations" target="_blank" rel="noopener"><i>Intonation contour similarity: f0 representations and distance measures compared to human perception</i>, JASA 154 (2023)</a> — comparing pitch contours in semitones relative to the speaker's own median, aligned by dynamic time warping, matches how listeners hear likeness.</li>
+            <li><a href="https://www.isca-archive.org/interspeech_2011/rilliard11_interspeech.html" target="_blank" rel="noopener">Rilliard, Allauzen &amp; Boula de Mareüil, <i>Using Dynamic Time Warping to Compute Prosodic Similarity Measures</i>, Interspeech 2011</a> — prosody (pitch, loudness, duration) compared along a time alignment, as emphasis and phrasing are here.</li>
+            <li><a href="https://arxiv.org/abs/2309.07927" target="_blank" rel="noopener">Jain et al., <i>Kid-Whisper</i> (2023)</a> — Whisper's word error rate on children's speech is several times that on adults': the reason for the learner's allowance on the word categories.</li>
+            <li><a href="https://arxiv.org/abs/2501.10024" target="_blank" rel="noopener"><i>Automatic Speech Recognition for Sanskrit with Transfer Learning</i> (2025)</a>, <a href="https://arxiv.org/abs/2106.05852" target="_blank" rel="noopener"><i>Automatic Speech Recognition in Sanskrit: A New Speech Corpus and Modelling Insights</i> (2021)</a> and <a href="https://arxiv.org/pdf/2506.00145" target="_blank" rel="noopener"><i>Vedavani: A Benchmark Corpus for ASR on Vedic Sanskrit Poetry</i> (2025)</a> — the state of Sanskrit speech recognition, on which the word categories rest, and why its transcripts are treated as approximate.</li>
+          </ul>
+          <p class="muted small">The app's own research notes on voice by age and sex and on recording metadata are in <code>reports/</code> in the project folder.</p>
+        </div>
+      </aside>
       </div>
     </section>
 
