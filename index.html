@@ -339,8 +339,14 @@
               <span class="field-label">Tolerance · acceptable variation</span>
               <div class="tol-fields" id="tol-fields"></div>
               <button class="btn btn-ghost btn-sm" id="tol-reset" type="button">Defaults</button>
-              <p class="muted small" id="tol-hint">A category is within tolerance when its score is at least 100 % minus the tolerance. Defaults: content 10 %, pronunciation 10 %, everything else 60 %.</p>
-              <p class="muted small" id="tol-quiz-note" hidden>In a quiz the tolerances are fixed: content 10 %, pronunciation 10 %, everything else 60 %.</p>
+              <p class="muted small" id="tol-hint">A category is within tolerance when its score is at least 100 % minus the tolerance.</p>
+              <p class="muted small" id="tol-quiz-note" hidden>In a quiz the tolerances are fixed.</p>
+            </div>
+            <div class="tol-row" id="weights-row">
+              <span class="field-label">Weights · what the overall score is made of</span>
+              <div class="tol-fields" id="weight-fields"></div>
+              <button class="btn btn-ghost btn-sm" id="weights-reset" type="button">Defaults</button>
+              <p class="muted small">The overall is the weighted mean of the categories that could be judged. Recommended for Gītā recitation: phonemes 30, vowel length 25, syllables 15, emphasis 10, pitch contour 10, phrasing 5, timing 5. The weights in force are saved with every attempt.</p>
             </div>
           </div>
           <div class="progress" id="practice-progress" hidden>
@@ -409,35 +415,47 @@
               <div class="score-sub muted small" id="score-overall-sub"></div>
               <div class="score-verdict" id="score-verdict"></div>
             </div>
-            <div class="score" data-cat="content">
-              <div class="score-val mono" id="score-content">–</div>
-              <div class="score-label">Content</div>
-              <div class="score-sub muted small" id="score-content-sub"></div>
-              <div class="score-tol" id="score-content-tol"></div>
+            <div class="score" data-cat="phoneme" title="The right sounds: place of articulation (t/ṭ, s/ś/ṣ), voicing (k/g), aspiration (k/kh), nasals and anusvāra, visarga, double consonants — from the words heard against the sloka's text">
+              <div class="score-val mono" id="score-phoneme">–</div>
+              <div class="score-label">Phonemes</div>
+              <div class="score-sub muted small" id="score-phoneme-sub"></div>
+              <div class="score-tol" id="score-phoneme-tol"></div>
             </div>
-            <div class="score" data-cat="pronunciation">
-              <div class="score-val mono" id="score-pronunciation">–</div>
-              <div class="score-label">Pronunciation</div>
-              <div class="score-sub muted small" id="score-pronunciation-sub"></div>
-              <div class="score-tol" id="score-pronunciation-tol"></div>
+            <div class="score" data-cat="vowel" title="Short against long vowels: a/ā, i/ī, u/ū — from the words heard">
+              <div class="score-val mono" id="score-vowel">–</div>
+              <div class="score-label">Vowel length</div>
+              <div class="score-sub muted small" id="score-vowel-sub"></div>
+              <div class="score-tol" id="score-vowel-tol"></div>
             </div>
-            <div class="score" data-cat="timing">
+            <div class="score" data-cat="syllable" title="Akṣaras missing, added or replaced — from the words heard">
+              <div class="score-val mono" id="score-syllable">–</div>
+              <div class="score-label">Syllables</div>
+              <div class="score-sub muted small" id="score-syllable-sub"></div>
+              <div class="score-tol" id="score-syllable-tol"></div>
+            </div>
+            <div class="score" data-cat="emphasis" title="Which moments stand out — loudness, pitch movement, length — relative to your own voice, against the sloka's pattern">
+              <div class="score-val mono" id="score-emphasis">–</div>
+              <div class="score-label">Emphasis</div>
+              <div class="score-sub muted small" id="score-emphasis-sub"></div>
+              <div class="score-tol" id="score-emphasis-tol"></div>
+            </div>
+            <div class="score" data-cat="pitch" title="The rise and fall of the chant, with the key difference removed: never the voice range">
+              <div class="score-val mono" id="score-pitch">–</div>
+              <div class="score-label">Pitch contour</div>
+              <div class="score-sub muted small" id="score-pitch-sub"></div>
+              <div class="score-tol" id="score-pitch-tol"></div>
+            </div>
+            <div class="score" data-cat="phrasing" title="Where the pauses fall, against the sloka's">
+              <div class="score-val mono" id="score-phrasing">–</div>
+              <div class="score-label">Phrasing</div>
+              <div class="score-sub muted small" id="score-phrasing-sub"></div>
+              <div class="score-tol" id="score-phrasing-tol"></div>
+            </div>
+            <div class="score" data-cat="timing" title="Tempo and rhythm: pauses the sloka does not have, skipped or added material; the pace itself only when speed is judged">
               <div class="score-val mono" id="score-timing">–</div>
               <div class="score-label">Timing</div>
               <div class="score-sub muted small" id="score-timing-sub"></div>
               <div class="score-tol" id="score-timing-tol"></div>
-            </div>
-            <div class="score" data-cat="pitch">
-              <div class="score-val mono" id="score-pitch">–</div>
-              <div class="score-label">Pitch</div>
-              <div class="score-sub muted small" id="score-pitch-sub"></div>
-              <div class="score-tol" id="score-pitch-tol"></div>
-            </div>
-            <div class="score" data-cat="dynamics">
-              <div class="score-val mono" id="score-dynamics">–</div>
-              <div class="score-label">Dynamics</div>
-              <div class="score-sub muted small" id="score-dynamics-sub"></div>
-              <div class="score-tol" id="score-dynamics-tol"></div>
             </div>
           </div>
 
@@ -456,6 +474,7 @@
               <div class="stt-row"><div class="stt-label base">Sloka</div><div class="stt-text" id="stt-base"></div></div>
               <div class="stt-row"><div class="stt-label heard">Yours</div><div class="stt-text" id="stt-heard"></div></div>
               <p class="stt-summary" id="stt-summary"></p>
+              <div class="phon-report" id="stt-phon" hidden></div>
               <p class="muted small">Click any phrase to hear it. <span class="w-del">Highlighted</span> sloka words were not heard in your attempt; <span class="w-ins">highlighted</span> words in yours are extra or different. <span class="w-dim">Greyed</span> words lie outside the part that was compared.</p>
             </div>
             <p class="muted small">Your attempt is transcribed automatically after each take (switch "Automatic" off in any transcript panel to stop that). Words of the sloka text that were not heard are highlighted here and at the top of this page. Speech is turned into text on this computer with Whisper; the first use downloads the model from Hugging Face and keeps it cached. Chanted or sung words are recognised approximately, so treat the text as a guide.</p>

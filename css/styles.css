@@ -349,9 +349,22 @@ canvas { display: block; }
 .progress-stop { flex: none; }
 
 /* ---------- results ---------- */
-.scores { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 12px; align-items: start; margin-bottom: 12px; }
-.scores > .score-main { width: 160px; }
-.score { text-align: center; padding: 12px 8px; border-radius: 14px; background: var(--surface-2); }
+/* the ring, then the seven category tiles, which wrap into a second row on narrower screens */
+.scores { display: grid; grid-template-columns: 160px repeat(auto-fit, minmax(118px, 1fr)); grid-auto-flow: row dense; gap: 12px; align-items: start; margin-bottom: 12px; }
+.scores > .score-main { width: 160px; grid-row: span 2; }
+.unjudged .scores { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+.unjudged .scores > .score-main { display: none; }
+.score { text-align: center; padding: 12px 6px; border-radius: 14px; background: var(--surface-2); }
+.score-val { font-size: 1.6rem; }
+.score-label { font-size: 0.72rem; }
+.score-sub { font-size: 0.78rem; }
+/* the phonology breakdown under the transcript diff */
+.phon-report { margin: 10px 0 0; padding: 10px 12px; border-radius: 10px; background: var(--surface); font-size: 0.9rem; }
+.phon-report h4 { margin: 0 0 6px; font-size: 0.85rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.phon-report ul { margin: 4px 0 0; padding-left: 18px; }
+.phon-report li { margin: 2px 0; }
+.phon-report .ak { font-weight: 650; }
+.phon-report .ak-heard { color: var(--danger); font-weight: 650; }
 .score-main { background: transparent; }
 /* the grade an overall earns */
 .score-grade { display: inline-block; margin-top: 8px; padding: 3px 12px; border-radius: 999px; font-size: 0.85rem; font-weight: 700; letter-spacing: .02em; }
@@ -618,11 +631,13 @@ canvas { display: block; }
 .trend-legend .sw { width: 14px; height: 4px; border-radius: 2px; display: inline-block; margin-right: 6px; vertical-align: middle; }
 .trend-legend .sw.overall { background: var(--accent); height: 6px; }
 .trend-legend .sw.weighted { background: var(--text); height: 5px; }
-.trend-legend .sw.content { background: var(--content); }
-.trend-legend .sw.pronunciation { background: var(--heard); }
-.trend-legend .sw.timing { background: var(--timing); }
+.trend-legend .sw.phoneme { background: var(--content); }
+.trend-legend .sw.vowel { background: var(--heard); }
+.trend-legend .sw.syllable { background: var(--missing); }
+.trend-legend .sw.emphasis { background: var(--dynamics); }
 .trend-legend .sw.pitch { background: var(--pitch); }
-.trend-legend .sw.dynamics { background: var(--dynamics); }
+.trend-legend .sw.phrasing { background: var(--muted); }
+.trend-legend .sw.timing { background: var(--timing); }
 @media (max-width: 720px) {
   .quiz-score-main { flex-direction: column; }
 }

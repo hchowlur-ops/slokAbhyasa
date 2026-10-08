@@ -436,6 +436,8 @@ function computeScores(ctx, dev) {
     wsum = w.timing + w.content;
   }
   const overall = clamp(((pitch ?? 0) * w.pitch + timing * w.timing + content * w.content) / wsum, 0, 100);
+  const emphasis = emphasisScore(ctx);
+  const phrasing = phrasingScore(ctx);
 
   return {
     overall: Math.round(overall),
@@ -443,6 +445,10 @@ function computeScores(ctx, dev) {
     timing: Math.round(timing),
     content: Math.round(content),
     dynamics: dynamics === null ? null : Math.round(dynamics),
+    emphasis: emphasis.score,
+    emphasisCorr: emphasis.corr,
+    phrasing: phrasing.score,
+    phrasingDetail: phrasing.detail,
     pitchInTunePct: ps.usable ? Math.round(100 * ps.inTuneFrac) : null,
     pitchMeanCents: ps.usable ? Math.round(100 * ps.meanAbs) : null,
     pitchUsableFrames: ps.usable,
@@ -451,6 +457,104 @@ function computeScores(ctx, dev) {
     dynamicsCoveredPct: dynamics === null ? null : Math.round((100 * covD) / activeBase),
     weights: w,
   };
+}
+
+// ---------- emphasis and phrasing (speaker-normalised) ----------
+
+// Which moments stand out in a recording: loudness relative to its own peak and pitch
+// movement away from its own median, each scaled by the recording's own spread, summed and
+// smoothed over ~150 ms. A child and a man, a near and a far microphone, all come out on
+// the same scale: what is compared is the shape, where the prominence falls.
+function prominence(F, i0, i1) {
+  const n = F.n;
+  const st = [];
+  for (let i = i0; i <= i1; i++) if (F.active[i] && !Number.isNaN(F.st[i])) st.push(F.st[i]);
+  st.sort((a, b) => a - b);
+  const medSt = st.length ? st[st.length >> 1] : 0;
+  const raw = new Float32Array(n).fill(NaN);
+  for (let i = i0; i <= i1; i++) {
+    if (!F.active[i]) continue;
+    const pitchPart = Number.isNaN(F.st[i]) ? 0 : foldOctave(F.st[i] - medSt, true);
+    raw[i] = F.loud[i] / 6 + pitchPart / 3; // 6 dB of loudness counts like 3 semitones of pitch movement
+  }
+  const sm = movingMeanNaN(raw, 7);
+  let sum = 0; let sq = 0; let cnt = 0;
+  for (let i = i0; i <= i1; i++) if (!Number.isNaN(sm[i])) { sum += sm[i]; sq += sm[i] * sm[i]; cnt++; }
+  const mean = cnt ? sum / cnt : 0;
+  const sd = cnt ? Math.sqrt(Math.max(1e-6, sq / cnt - mean * mean)) : 1;
+  const z = new Float32Array(n).fill(NaN);
+  for (let i = i0; i <= i1; i++) if (!Number.isNaN(sm[i])) z[i] = (sm[i] - mean) / sd;
+  return z;
+}
+function movingMeanNaN(x, w) {
+  const n = x.length; const out = new Float32Array(n).fill(NaN); const h = w >> 1;
+  for (let i = 0; i < n; i++) {
+    let s = 0; let c = 0;
+    for (let k = Math.max(0, i - h); k <= Math.min(n - 1, i + h); k++) if (!Number.isNaN(x[k])) { s += x[k]; c++; }
+    if (c) out[i] = s / c;
+  }
+  return out;
+}
+// Score: the correlation of the two prominence contours along the alignment, mapped so that
+// 0.7 and above (two readings by the same person) is 100 and no relation at all is 40.
+export const EMPHASIS_FULL_CORR = 0.7;
+function emphasisScore(ctx) {
+  const { B, H, jOf, matched } = ctx;
+  const pb = prominence(B, matched.iStart, matched.iEnd);
+  const ph = prominence(H, matched.jStart, matched.jEnd);
+  let sx = 0; let sy = 0; let sxx = 0; let syy = 0; let sxy = 0; let n = 0;
+  for (let i = matched.iStart; i <= matched.iEnd; i++) {
+    const j = jOf[i];
+    if (j < 0 || Number.isNaN(pb[i]) || Number.isNaN(ph[j])) continue;
+    const x = pb[i]; const y = ph[j];
+    sx += x; sy += y; sxx += x * x; syy += y * y; sxy += x * y; n++;
+  }
+  if (n < 25) return { score: null, corr: null };
+  const cov = sxy / n - (sx / n) * (sy / n);
+  const vx = sxx / n - (sx / n) ** 2; const vy = syy / n - (sy / n) ** 2;
+  const corr = vx > 0 && vy > 0 ? cov / Math.sqrt(vx * vy) : 0;
+  return { score: Math.round(clamp(40 + (60 * corr) / EMPHASIS_FULL_CORR, 0, 100)), corr: Number(corr.toFixed(3)) };
+}
+
+// Phrasing: where the pauses fall. A pause is a stretch of silence of PAUSE_MIN_SEC or more
+// inside the part compared. Each pause of the sloka should have one in the take within
+// PAUSE_SLACK_SEC of the aligned moment, and the take should add none; the score is the
+// F-measure of that (100 when neither has a pause).
+export const PAUSE_MIN_SEC = 0.15;
+export const PAUSE_SLACK_SEC = 0.3;
+// A pause is where the sound drops PAUSE_BELOW_PEAK_DB under the recording's peak, or under
+// its activity threshold when that is higher (a noisy room). The activity threshold alone
+// misses the pauses of a clean recording: with a floor 45 dB down, a breath is "sound".
+export const PAUSE_BELOW_PEAK_DB = 25;
+function pauses(F, i0, i1) {
+  const out = [];
+  const minFrames = Math.round(PAUSE_MIN_SEC / HOP_SEC);
+  const thr = Math.max(Number.isFinite(F.thrDb) && Number.isFinite(F.peakDb) ? F.thrDb - F.peakDb : -Infinity, -PAUSE_BELOW_PEAK_DB);
+  let start = -1;
+  for (let i = i0; i <= i1 + 1; i++) {
+    const inactive = i <= i1 && (!F.active[i] || F.loud[i] < thr);
+    if (inactive && start < 0) start = i;
+    if (!inactive && start >= 0) { if (i - start >= minFrames) out.push({ start, end: i - 1, mid: (start + i - 1) / 2 }); start = -1; }
+  }
+  return out;
+}
+function phrasingScore(ctx) {
+  const { B, H, jOf, iOf, matched } = ctx;
+  const pb = pauses(B, matched.iStart, matched.iEnd);
+  const ph = pauses(H, matched.jStart, matched.jEnd);
+  const slack = PAUSE_SLACK_SEC / HOP_SEC;
+  // the take's frame that corresponds to a sloka frame (nearest aligned frame around it)
+  const mapTo = (map, i, limit) => { for (let d = 0; d < 50; d++) { if (i - d >= 0 && map[i - d] >= 0) return map[i - d]; if (i + d < limit && map[i + d] >= 0) return map[i + d]; } return -1; };
+  let hit = 0;
+  for (const p of pb) { const j = mapTo(jOf, Math.round(p.mid), B.n); if (j >= 0 && ph.some((q) => Math.abs(q.mid - j) <= slack)) hit++; }
+  let extra = 0;
+  for (const q of ph) { const i = mapTo(iOf, Math.round(q.mid), H.n); if (!(i >= 0 && pb.some((p) => Math.abs(p.mid - i) <= slack))) extra++; }
+  const detail = { sloka: pb.length, take: ph.length, kept: hit, extra };
+  if (!pb.length && !ph.length) return { score: 100, detail };
+  const recall = pb.length ? hit / pb.length : 1;
+  const precision = ph.length ? (ph.length - extra) / ph.length : 1;
+  const f = precision + recall > 0 ? (2 * precision * recall) / (precision + recall) : 0;
+  return { score: Math.round(100 * f), detail };
 }
 
 function buildNotes(ctx, dev, key, offsetApplied) {

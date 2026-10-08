@@ -2,7 +2,7 @@
 // evaluation sessions brought into one shape ("assessments"), and the per-sloka rows of the
 // folder view. Pure; shared by the browser and the server, and tested in Node.
 
-import { QUIZ_CATEGORIES, overallScore, attemptOverall, gradeOf, correctness, normalizeTolerance, DEFAULT_TOLERANCE } from './quizscore.js';
+import { QUIZ_CATEGORIES, overallScore, attemptOverall, gradeOf, correctness, normalizeTolerance, normalizeWeights, DEFAULT_TOLERANCE, CATEGORY_WEIGHTS } from './quizscore.js';
 
 export const PERIODS = ['day', 'week', 'month', 'all'];
 const CAT_IDS = QUIZ_CATEGORIES.map((c) => c.id);
@@ -58,11 +58,12 @@ export function inRange(at, range) {
   return t >= range.from.getTime() && t < range.to.getTime();
 }
 
-const itemWithOverall = (it, categories) => {
-  const overall = it && !it.missing ? overallScore(it, categories) : null;
+const itemWithOverall = (it, categories, weights = CATEGORY_WEIGHTS) => {
+  const overall = it && !it.missing ? overallScore(it, categories, weights) : null;
   const g = gradeOf(overall);
   return { ...it, overall, grade: g ? g.id : null };
 };
+const weightsOf = (rec) => (rec && rec.weights ? normalizeWeights(rec.weights) : CATEGORY_WEIGHTS);
 const foldersOf = (items) => [...new Set((items || []).map((it) => it.folder || ''))];
 
 // A quiz's attempts as assessments: scored on the quiz's current categories and each
@@ -72,13 +73,14 @@ export function assessmentsFromQuiz(quiz) {
   const categories = quiz.categories || [];
   return attempts.map((a, i) => {
     const tolerance = a.tolerance ? normalizeTolerance(a.tolerance) : DEFAULT_TOLERANCE;
-    const items = (a.items || []).map((it) => itemWithOverall(it, categories));
-    const overall = items.length ? attemptOverall(items, categories) : a.overall == null ? null : a.overall;
+    const weights = weightsOf(a);
+    const items = (a.items || []).map((it) => itemWithOverall(it, categories, weights));
+    const overall = items.length ? attemptOverall(items, categories, weights) : a.overall == null ? null : a.overall;
     const corr = items.length ? correctness(items, categories, tolerance) : null;
     const g = gradeOf(overall);
     return {
       key: `quiz:${quiz.id}:${i + 1}`, kind: 'quiz', quizId: quiz.id, attempt: i + 1, at: a.at,
-      name: quiz.name, categories, tolerance, learner: a.learner || null,
+      name: quiz.name, categories, tolerance, weights, learner: a.learner || null,
       items, overall, grade: g ? g.id : null, correct: corr ? corr.pct : a.score == null ? null : a.score,
       counted: corr ? corr.counted : a.counted, recited: a.recited ?? items.filter((it) => it.matched).length,
       audio: !!a.audio, folders: foldersOf(items), takeDuration: a.takeDuration || null,
@@ -90,13 +92,14 @@ export function assessmentsFromQuiz(quiz) {
 // session's overall is the mean over the slokas actually recited (in Self Evaluation one
 // often ticks several slokas and recites one; a quiz, by contrast, expects them all).
 export function assessmentFromSession(s) {
-  const items = (s.items || []).map((it) => itemWithOverall(it, CAT_IDS));
+  const weights = weightsOf(s);
+  const items = (s.items || []).map((it) => itemWithOverall(it, CAT_IDS, weights));
   const recited = items.filter((it) => it.matched);
-  const overall = recited.length ? attemptOverall(recited, CAT_IDS) : items.length ? 0 : s.overall == null ? null : s.overall;
+  const overall = recited.length ? attemptOverall(recited, CAT_IDS, weights) : items.length ? 0 : s.overall == null ? null : s.overall;
   const g = gradeOf(overall);
   return {
     key: `session:${s.id}`, kind: s.kind === 'teach' ? 'teach' : 'evaluation', sessionId: s.id, at: s.at,
-    name: s.kind === 'teach' ? 'Teach' : 'Self Evaluation', categories: CAT_IDS, tolerance: s.tolerance ? normalizeTolerance(s.tolerance) : DEFAULT_TOLERANCE, learner: s.learner || null,
+    name: s.kind === 'teach' ? 'Teach' : 'Self Evaluation', categories: CAT_IDS, tolerance: s.tolerance ? normalizeTolerance(s.tolerance) : DEFAULT_TOLERANCE, weights, learner: s.learner || null,
     items, overall, grade: g ? g.id : null, correct: null,
     counted: items.filter((it) => !it.missing).length, recited: items.filter((it) => it.matched).length,
     audio: !!s.audio, folders: foldersOf(items), takeDuration: s.takeDuration || null,
@@ -120,7 +123,8 @@ export function slokaRows(assessments, { folder = null } = {}) {
       rows.push({
         key: `${a.key}:${it.id}`, assessment: a.key, at: a.at, kind: a.kind, name: a.name,
         slokaId: it.id, sloka: it.name, folder: it.folder || '', matched: !!it.matched, missing: !!it.missing,
-        content: it.content ?? null, pronunciation: it.pronunciation ?? null, timing: it.timing ?? null, pitch: it.pitch ?? null, dynamics: it.dynamics ?? null,
+        phoneme: it.phoneme ?? null, vowel: it.vowel ?? null, syllable: it.syllable ?? null, emphasis: it.emphasis ?? null, pitch: it.pitch ?? null, phrasing: it.phrasing ?? null, timing: it.timing ?? null,
+        content: it.content ?? null, pronunciation: it.pronunciation ?? null, dynamics: it.dynamics ?? null,
         overall: it.overall ?? null, grade: it.grade || null,
       });
     }

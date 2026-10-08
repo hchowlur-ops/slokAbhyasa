@@ -148,16 +148,17 @@ slokas you had ticked there.
 2. Record your attempt once. If you wear headphones you can have the previewed sloka play
    while you record. The one recording is compared with every ticked sloka.
 3. Read the results (one report per sloka, see "Several slokas at once" below):
-   * **Scores** for content, pronunciation (once the transcript is there), timing, pitch and
-     dynamics, and an **overall score**: their weighted mean, content weighing 80,
-     pronunciation 70, and timing, pitch and dynamics 40 each (`CATEGORY_WEIGHTS` in
-     `js/quizscore.js`). The overall earns a **grade**: Excellent from 90, Good from 80, Fair
-     from 65, Needs practice below. Only the categories that could be judged count: the
-     overall is recomputed when the pronunciation score arrives with the transcript, and a
-     category that cannot be judged for this report (no transcript yet, pitch shown for
-     interest only for recited text, dynamics not measured) is collapsed under "Not judged"
-     at the bottom of the report. Each tile says whether it is **within tolerance** (see
-     below), and the ring carries the verdict for the whole report.
+   * **Scores** in seven categories (see "What is scored" below) — phonemes, vowel length and
+     syllables from the words heard; emphasis, pitch contour, phrasing and timing from the
+     sound — and an **overall score**: their weighted mean (phonemes 30, vowel length 25,
+     syllables 15, emphasis 10, pitch contour 10, phrasing 5, timing 5 by default; the
+     **Weights** row under the recording options changes them). The overall earns a **grade**:
+     Excellent from 90, Good from 80, Fair from 65, Needs practice below. Only the categories
+     that could be judged count: the overall is recomputed when the word scores arrive with
+     the transcript, and a category that cannot be judged for this report (no transcript yet,
+     pitch shown for interest only for recited text) is collapsed under "Not judged" at the
+     bottom of the report. Each tile says whether it is **within tolerance** (see below), and
+     the ring carries the verdict for the whole report.
    * The **transcript** of the sloka and of your attempt, directly under the scores, with the
      words that differ highlighted (see "Transcripts" below).
    * A **chart** with the sloka pitch contour and yours stretched onto the same timeline,
@@ -228,13 +229,13 @@ The chosen person is the learner: Self Evaluation, Teach and quizzes judge with 
 allowances their voice calls for, following the research summarised in
 `reports/Voice characteristics by age and gender.md`:
 
-| Learner | Pitch counts as off beyond | Pace band (when speed is judged) | Pronunciation tolerance |
+| Learner | Pitch counts as off beyond | Pace band (when speed is judged) | Allowance on the words (added to the word tolerances) |
 | --- | --- | --- | --- |
-| Adult (or no one chosen) | 0.5 semitone | 0.75–1.33× | 10 % |
-| Under 8 | 1 semitone | 0.67–1.5× | 30 % |
-| 8 to 11 | ¾ semitone | 0.67–1.5× | 20 % |
-| 12 to 15 | 0.6 semitone | 0.75–1.33× | 15 % |
-| 60 and over | 0.5 semitone | 0.67–1.33× | 10 % |
+| Adult (or no one chosen) | 0.5 semitone | 0.75–1.33× | none |
+| Under 8 | 1 semitone | 0.67–1.5× | +20 % |
+| 8 to 11 | ¾ semitone | 0.67–1.5× | +10 % |
+| 12 to 15 | 0.6 semitone | 0.75–1.33× | +5 % |
+| 60 and over | 0.5 semitone | 0.67–1.33× | none |
 
 A sustained pitch difference has to last a quarter of a second to be reported (an older
 voice's tremor averages out at that scale), the content detector's floor is raised for young
@@ -247,9 +248,10 @@ the figure "for interest, not judged" and the overall score is content 60 %, tim
 
 **Tolerance.** How much variation is acceptable in each category, as a percentage: a category
 is within tolerance when its score is at least 100 minus the tolerance. The defaults are
-content 10 %, pronunciation 10 % (wider for a child learner, see the table above: speech
-recognition is 2–5 times less accurate on children's voices), and 60 % for timing, pitch and
-dynamics. Change them in the "Tolerance" row under the recording options (Self Evaluation and
+phonemes 15 %, vowel length 20 %, syllables 10 % (each widened by the learner's allowance on
+the words, see the table above: speech recognition is 2–5 times less accurate on children's
+voices), emphasis, pitch contour and timing 60 %, phrasing 50 %. Change them in the
+"Tolerance" row under the recording options (Self Evaluation and
 Teach share the setting, which is remembered); "Defaults" puts them back. Verdicts on screen
 follow a change at once. In the list of reports each row says "Within tolerance" or which
 categories are outside it. A quiz always judges on the default tolerances for the chosen
@@ -316,17 +318,19 @@ files next to the recording in `library/`:
 
 Corrected text is used as the reference when your attempts are compared.
 
-**How your words are judged.** The pronunciation score is the share of the sloka's text that
-was heard in your attempt. The two texts are compared sound by sound rather than word by
-word: each word is turned into a plain-Latin phonetic key (Devanagari, Kannada and the other
-Indic scripts transliterated, diacritics dropped), the two streams are aligned character by
-character with the spaces left out, and a word counts as heard when at least half of its
-sound is there. That makes the score blind to the things the recogniser does differently
-from one run to the next: spelling (निर्देश्यम or निर्देश्यम्), where it breaks words, and even
-the script it chooses (Whisper writes Sanskrit now in Devanagari, now in IAST). A take
-longer than 30 s is transcribed stretch by stretch, each stretch being where a sloka was
-found in it: Whisper loses its way in a long chant, but transcribes a single sloka's worth
-well.
+**How your words are judged.** The transcript of your attempt is set against the sloka's
+text (the text typed in its details, else its own transcript) in two ways. First, loosely,
+to see whether it is the same sloka at all: each word is turned into a plain-Latin phonetic
+key (Devanagari, Kannada and the other Indic scripts transliterated, diacritics dropped), the
+two streams are aligned character by character with the spaces left out, and a word counts
+as heard when at least half of its sound is there; the "% of the sloka's text heard" line is
+that, and it is what confirms a sloka whose recording merely sounds different from yours.
+Then, strictly, for the scores (see "What is scored"): both texts are split into akṣaras and
+phonemes, aligned akṣara by akṣara, and every slip is named — a dental for a retroflex, a
+missing aspiration, a short vowel for a long one, a dropped visarga, a syllable left out.
+That breakdown is shown under the transcripts. A take longer than 30 s is transcribed
+stretch by stretch, each stretch being where a sloka was found in it: Whisper loses its way
+in a long chant, but transcribes a single sloka's worth well.
 
 Languages: **English, Sanskrit (Devanagari), Kannada, Telugu**. Models: Fast (whisper-base,
 about 75 MB), Better (whisper-small, about 250 MB), Best (whisper-large-v3-turbo, about
@@ -377,22 +381,23 @@ A memory test drawn from your library.
    you recite everything in one recording, in any order. Then the reports open exactly as in
    Self Evaluation, with the quiz score card on top.
 
-**The scores.** Each sloka is scored in five categories: **content** (the acoustic
-comparison's content score, with skipped material counting against it), **pronunciation**
-(the share of the sloka's words that speech recognition heard in your recording), **timing**,
-**pitch** and **dynamics**; a sloka that was not found in your recording scores 0 everywhere.
-The card leads with the **overall score**: each sloka's weighted mean over the chosen
-categories (content 80, pronunciation 70, the others 40), averaged over the slokas, with its
-**grade** — Excellent from 90, Good from 80, Fair from 65, Needs practice below. Beside it is
-the **correctness**: the share of the picked slokas that are *correct*, a sloka being correct
-when every chosen category is within the quiz tolerance (fixed: content 10 %, pronunciation
-10 %, others 60 %). The chosen categories are **content and pronunciation** by default; click
-the chips on the card to require timing, pitch or dynamics too (or drop one). The choice is
-saved with the quiz and applies to every attempt, past and future, because every category is
-measured and stored whatever you choose. The table under the card gives, per sloka, every
-category with ✓ / ✗ marks, the overall with its grade, and whether it was correct, then the
-shares within tolerance and the average scores. Pronunciation needs the speech model; if it
-cannot run, that category is left out of the verdict and of the overall, and the card says so.
+**The scores.** Each sloka is scored in the seven categories of "What is scored" (phonemes,
+vowel length, syllables, emphasis, pitch contour, phrasing, timing); a sloka that was not
+found in your recording scores 0 everywhere. The card leads with the **overall score**: each
+sloka's weighted mean over the chosen categories, with the weights in force when the attempt
+was made, averaged over the slokas, with its **grade** — Excellent from 90, Good from 80,
+Fair from 65, Needs practice below. Beside it is the **correctness**: the share of the picked
+slokas that are *correct*, a sloka being correct when every chosen category is within the
+quiz tolerance (fixed: the defaults for the learner). The chosen categories are **phonemes,
+vowel length and syllables** by default; click the chips on the card to require emphasis,
+pitch contour, phrasing or timing too (or drop one). The choice is saved with the quiz and
+applies to every attempt, past and future, because every category is measured and stored
+whatever you choose. The table under the card gives, per sloka, every category with ✓ / ✗
+marks, the overall with its grade, and whether it was correct, then the shares within
+tolerance and the average scores. The word categories need the speech model; if it cannot
+run, they are left out of the verdict and of the overall, and the card says so. Attempts
+made before this scoring keep their old categories (content, pronunciation, dynamics) and
+old weights, so their scores do not change.
 
 **Attempts and trends.** Every attempt is saved automatically (per-category averages and the
 per-sloka detail). "Record again" is a new attempt of the same quiz. The **Saved quizzes**
@@ -539,17 +544,42 @@ Limits: pitch tracking is monophonic (one voice or instrument at a time), and "c
 acoustic similarity, not words. A very different microphone or room lowers content precision;
 SlokAbhyasa tells you when that seems to be the case.
 
-Scoring: each aspect's score is the share of the sloka that was *not* flagged for that
-aspect (pitch uses the mean in-tune credit instead). The comparison's own `scores.overall`
-(content 45 %, timing 35 %, pitch 20 % for chanting; content 60 %, timing 40 % for recited
-text, where pitch is shown for interest only — see `MODES` in `js/dsp/compare.js`; the
-sloka's "How it is judged" picks the mode) is kept for the tests and the API, but what the
-app shows and grades is the weighted mean of all the judged categories, pronunciation
-included: content 80, pronunciation 70, timing, pitch and dynamics 40 each (`overallScore`
-and `gradeOf` in `js/quizscore.js`). In recitation mode pitch is not judged, so it drops out
-of that mean. The thresholds behind "pitch", "timing" and "content" are scaled by the preset
-for the learner (`presetsFor` in `js/meta.js`): adults keep the calibrated defaults,
-children get the wider bands listed under "Who's reciting".
+### What is scored
+
+A reciter's voice is never the measure: its range, timbre and loudness differ between a
+child and a man, a near and a far microphone, and none of that is a fault in the recitation.
+The timbre comparison above is used to *align* the two recordings, to *find* a verse inside a
+longer one and to point at *where* something differed; the scores come from what the Gītā
+asks of a reciter — the right sounds, the right vowel lengths, every syllable, and a manner
+that follows the sloka's — each measured relative to the speaker:
+
+| Category | Weight | Source | What it measures |
+| --- | --- | --- | --- |
+| Phonemes | 30 | the words heard | In the akṣaras that align with the text, the consonants, nasals and vowel identities: a sound one feature off (aspiration k/kh, voicing k/g, place t/ṭ or s/ś/ṣ, nasality) earns half credit and is named; a missing visarga, a single for a double consonant, a sound missing or added count against it. |
+| Vowel length | 25 | the words heard | Among the akṣaras whose vowel is the right one, how many have the right length (a/ā, i/ī, u/ū; e, o, ai, au are long). |
+| Syllables | 15 | the words heard | Akṣaras of the text missing, added, or replaced by something else altogether. |
+| Emphasis | 10 | the sound | Where the prominence falls: loudness relative to the recording's own peak and pitch movement away from its own median, summed, smoothed over 150 ms and standardised per recording, then correlated along the alignment (0.7 and above scores 100). |
+| Pitch contour | 10 | the sound | The rise and fall after the overall key difference is removed and octave slips folded away — never the voice range. For recited text (style "Sloka or stotra, recited") it is shown for interest and not judged. |
+| Phrasing | 5 | the sound | Where the pauses fall: a pause of 150 ms or more in the sloka should have one in the take within 300 ms of the aligned moment, and the take should add none (F-measure; pauses are stretches 25 dB under the recording's peak, or under its activity threshold in a noisy room). |
+| Timing | 5 | the sound | Pauses the sloka does not have, skipped and added material; with "Judge the speed of recitation", rushed or dragged stretches and the overall tempo too. |
+
+The words are read from the transcript Whisper makes of your take, set against the sloka's
+typed text (or its own transcript). Both are split into akṣaras (`js/phon.js`: Devanagari,
+Kannada and Telugu share one Unicode layout; romanised text is first written in Devanagari),
+aligned akṣara by akṣara with a cost that keeps a slightly mispronounced akṣara aligned with
+itself, and compared phoneme by phoneme with the features above. The word categories are
+therefore as good as the transcript: Whisper hears a chant approximately, so a slip it
+reports may be its own; correcting the sloka's text in its details removes one side of that
+uncertainty. The weights are the defaults recommended for Gītā recitation and can be changed
+in the "Weights" row of Self Evaluation; the weights in force are saved with every attempt
+and session. The thresholds behind pitch, timing and the aligner's content detector are
+scaled by the preset for the learner (`presetsFor` in `js/meta.js`): adults keep the
+calibrated defaults, children get the wider bands listed under "Who's reciting".
+
+The comparison's own `scores.overall` (content 45 %, timing 35 %, pitch 20 % for chanting;
+content 60 %, timing 40 % for recited text — see `MODES` in `js/dsp/compare.js`) is kept for
+the tests and the API; the app shows and grades the weighted mean above (`overallScore` and
+`gradeOf` in `js/quizscore.js`).
 
 ## Tests
 
@@ -581,7 +611,8 @@ js/stt.js, js/stt-worker.js   speech to text (Whisper via transformers.js, in a 
 js/transcripts.js      a sloka's transcripts, one per language (pure, shared with the server)
 js/translit.js         romanised Indic text back into Devanagari / Kannada / Telugu (pure, shared)
 js/textdiff.js         word tokenisation and diff for transcripts
-js/quizscore.js        quiz scoring and random picking (pure, Node-testable)
+js/quizscore.js        the seven categories, weights, tolerances, grades and quiz scoring (pure, Node-testable)
+js/phon.js             akṣaras and phonemes from Indic text; the recitation against the text, slip by slip (pure)
 js/reports.js          periods, assessments in one shape, per-sloka rows for the Reports dashboard (pure, shared)
 js/libutil.js          folder-name cleaning, sloka file names, WAV header reading (shared with the server)
 js/dsp/                features, alignment, locating a part inside a longer recording, deviations,

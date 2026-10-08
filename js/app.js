@@ -9,7 +9,8 @@ import { Analyzer } from './analyzer.js';
 import { drawWaveform, drawLiveWave, ComparisonChart } from './visualizer.js';
 import { serializeFeatures, deserializeFeatures, isValidFeatures } from './dsp/features.js';
 import { MISMATCH_CONTRAST, confirmByWords } from './dsp/compare.js';
-import { QUIZ_CATEGORIES, DEFAULT_QUIZ_CATEGORIES, DEFAULT_TOLERANCE, CATEGORY_WEIGHTS, itemScores, attemptSummary, scoreFor, normalizeCategories, normalizeTolerance, withinTolerance, itemVerdict, correctness, pickBaselines, overallScore, attemptOverall, gradeOf } from './quizscore.js';
+import { QUIZ_CATEGORIES, LEGACY_CATEGORIES, DEFAULT_QUIZ_CATEGORIES, DEFAULT_TOLERANCE, CATEGORY_WEIGHTS, categoryLabel, normalizeWeights, itemScores, attemptSummary, scoreFor, normalizeCategories, normalizeTolerance, withinTolerance, itemVerdict, correctness, pickBaselines, overallScore, attemptOverall, gradeOf } from './quizscore.js';
+import { comparePhonology, ERROR_LABEL } from './phon.js';
 import { mixToMono } from './dsp/resample.js';
 import { trimSilence } from './dsp/trim.js';
 import { Transcriber, STT_LANGUAGES, STT_LANGUAGE_CODES, STT_TIERS, sttLanguageLabel, sttLanguageTag, sttTierLabel, isStopped } from './stt.js';
@@ -17,7 +18,7 @@ import { normalizeStore, putInStore, pickTranscript, availableLanguages } from '
 import { transliterateTranscript } from './translit.js';
 import { periodRange, shiftPeriod, inRange, isoDate, slokaRows, summarize, KIND_LABEL } from './reports.js';
 import { diffWords, diffSummary, compareWords, tokenizeTranscript, windowedTokens } from './textdiff.js';
-import { AGE_GROUPS, VOICE_TYPES, STYLE_MODES, DEFAULT_STYLE_MODE, presetsFor, compareModeFor, speakerLabel, ageGroupLabel, styleMode, voiceStats, deriveText } from './meta.js';
+import { AGE_GROUPS, VOICE_TYPES, STYLE_MODES, DEFAULT_STYLE_MODE, presetsFor, ADULT_PRESET, compareModeFor, speakerLabel, ageGroupLabel, styleMode, voiceStats, deriveText } from './meta.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -1240,6 +1241,7 @@ let practice = {
   results: new Map(), // id → comparison result, or { error }
   pairContrast: new Map(), // "idA|idB" → how alike two slokas are (see locate.js)
   wordSims: new Map(), // id → share of that sloka's words heard (0..1), once its transcript diff was done
+  phonology: new Map(), // id → comparePhonology() of the words heard against the sloka's text
   result: null, // = results.get(activeId) when it is a real result
   selected: null,
   teach: false, // Teach: one sloka at a time, Play then Listen
@@ -1324,7 +1326,12 @@ const TOL_KEY = 'tutor-tolerance';
 // The user's own tolerance, or null for the defaults (which follow the learner: speech
 // recognition is 2–5× less accurate on children, so their pronunciation tolerance is wider).
 let tolerance = (() => { try { const v = JSON.parse(localStorage.getItem(TOL_KEY) || 'null'); return v ? normalizeTolerance(v) : null; } catch { return null; } })();
-const learnerTolerance = (learner = learnerSpeaker()) => ({ ...DEFAULT_TOLERANCE, pronunciation: presetsFor(learner, null).pronunciationTolerance });
+// The learner's allowance on the words (speech recognition is 2–5× less accurate on a child)
+// widens the three word-level tolerances by the same amount.
+const learnerTolerance = (learner = learnerSpeaker()) => {
+  const extra = presetsFor(learner, null).pronunciationTolerance - ADULT_PRESET.pronunciationTolerance;
+  return { ...DEFAULT_TOLERANCE, phoneme: DEFAULT_TOLERANCE.phoneme + extra, vowel: DEFAULT_TOLERANCE.vowel + extra, syllable: DEFAULT_TOLERANCE.syllable + extra, pronunciation: DEFAULT_TOLERANCE.pronunciation + extra };
+};
 // A quiz always judges on the defaults for the learner (fixed for the attempt once scored).
 const activeTolerance = () => (practice.quiz ? (practice.quizAttempt && practice.quizAttempt.tolerance) || learnerTolerance() : tolerance || learnerTolerance());
 const attemptTolerance = (a) => (a && a.tolerance ? normalizeTolerance(a.tolerance) : DEFAULT_TOLERANCE);
@@ -1365,9 +1372,9 @@ function renderToleranceRow() {
   setHidden($('#tol-quiz-note'), !quiz);
   const d = learnerTolerance();
   const who = learnerSpeaker();
-  const pron = d.pronunciation === DEFAULT_TOLERANCE.pronunciation ? `pronunciation ${d.pronunciation} %` : `pronunciation ${d.pronunciation} % (for a learner aged ${ageGroupLabel(who.ageGroup).toLowerCase()})`;
-  $('#tol-hint').textContent = `A category is within tolerance when its score is at least 100 % minus the tolerance. Defaults: content ${d.content} %, ${pron}, everything else ${d.timing} %.`;
-  $('#tol-quiz-note').textContent = `In a quiz the tolerances are fixed: content ${d.content} %, ${pron}, everything else ${d.timing} %.`;
+  const words = `phonemes ${d.phoneme} %, vowel length ${d.vowel} %, syllables ${d.syllable} %${d.phoneme !== DEFAULT_TOLERANCE.phoneme ? ` (widened for a learner aged ${ageGroupLabel(who.ageGroup).toLowerCase()})` : ''}`;
+  $('#tol-hint').textContent = `A category is within tolerance when its score is at least 100 % minus the tolerance. Defaults: ${words}; emphasis, pitch and timing ${d.timing} %, phrasing ${d.phrasing} %.`;
+  $('#tol-quiz-note').textContent = `In a quiz the tolerances are fixed: ${words}; emphasis, pitch and timing ${d.timing} %, phrasing ${d.phrasing} %.`;
 }
 // What the chosen learner means for the evaluation, under the options.
 function renderLearnerNote() {
@@ -1380,19 +1387,55 @@ function renderLearnerNote() {
   el.textContent = `Judging ${learnerName()}${desc ? ` (${desc})` : ''}: pitch within ${st}, pace ${p.speedBand[0]}–${p.speedBand[1]}× when speed is judged, pronunciation tolerance ${p.pronunciationTolerance} %.${who.ageGroup === '12to15' ? ' A voice changes fast at this age: re-record your own baselines every few months.' : ''}`;
 }
 learnerListeners.add(() => { renderToleranceFields(); renderLearnerNote(); refreshVerdicts(); });
-// Scores of one report in the five categories (null where not judgeable), for verdicts.
+// Scores of one report in the seven categories (null where not judgeable), for verdicts.
 function reportScores(id) {
   const r = practice.results.get(id);
   if (!isReport(r)) return null;
-  const sim = practice.wordSims.has(id) ? practice.wordSims.get(id) : null;
-  return itemScores(r, { wordSimilarity: sim, sttAvailable: sim != null });
+  const ph = practice.phonology.get(id) || null;
+  return itemScores(r, { phonology: ph, sttAvailable: practice.wordSims.has(id) });
 }
+
+// ---------- weights: what the overall score is made of ----------
+const WEIGHTS_KEY = 'tutor-weights';
+let weights = (() => { try { const v = JSON.parse(localStorage.getItem(WEIGHTS_KEY) || 'null'); return v ? normalizeWeights(v) : null; } catch { return null; } })();
+const activeWeights = () => (practice.quiz && practice.quizAttempt && practice.quizAttempt.weights) || weights || CATEGORY_WEIGHTS;
+function renderWeightFields() {
+  const host = $('#weight-fields');
+  host.innerHTML = '';
+  const cur = weights || CATEGORY_WEIGHTS;
+  for (const c of QUIZ_CATEGORIES) {
+    const label = document.createElement('label');
+    label.className = 'tol-field';
+    label.innerHTML = '<span></span><input type="number" min="0" max="100" step="1" />';
+    label.firstChild.textContent = c.label;
+    label.title = c.hint;
+    const inp = $('input', label);
+    inp.value = String(cur[c.id]);
+    inp.setAttribute('aria-label', `${c.label} weight`);
+    inp.addEventListener('change', () => {
+      weights = normalizeWeights({ ...(weights || CATEGORY_WEIGHTS), [c.id]: inp.value });
+      inp.value = String(weights[c.id]);
+      try { localStorage.setItem(WEIGHTS_KEY, JSON.stringify(weights)); } catch { /* ignore */ }
+      refreshVerdicts();
+      syncSession();
+    });
+    host.appendChild(label);
+  }
+}
+renderWeightFields();
+$('#weights-reset').addEventListener('click', () => {
+  weights = null;
+  try { localStorage.removeItem(WEIGHTS_KEY); } catch { /* ignore */ }
+  renderWeightFields();
+  refreshVerdicts();
+  syncSession();
+});
 const verdictCategories = () => (practice.quiz ? practice.quiz.categories : QUIZ_CATEGORIES.map((c) => c.id));
 function reportVerdict(id) {
   const sc = reportScores(id);
   return sc ? itemVerdict(sc, verdictCategories(), activeTolerance()) : { ok: null, failed: [], judged: [] };
 }
-const catLabel = (id) => (QUIZ_CATEGORIES.find((c) => c.id === id) || { label: id }).label;
+const catLabel = categoryLabel;
 function verdictText(v) {
   if (v.ok === null) return '';
   return v.ok ? 'Within tolerance' : `Outside tolerance: ${v.failed.map((c) => catLabel(c).toLowerCase()).join(', ')}`;
@@ -1784,14 +1827,13 @@ function sessionItems() {
   return practice.selection.map((id) => {
     const r = practice.results.get(id);
     const rec = (libraryCache || []).find((x) => x.id === id);
-    const sim = practice.wordSims.has(id) ? practice.wordSims.get(id) : null;
-    const sc = itemScores(r, { wordSimilarity: sim, sttAvailable: sim != null });
+    const sc = itemScores(r, { phonology: practice.phonology.get(id) || null, sttAvailable: practice.wordSims.has(id) });
     return { id, name: rec ? rec.name : nameOf(id), folder: rec ? rec.folder || '' : '', ...sc, diag: comparisonDiag(r) };
   });
 }
 // A session's overall counts the slokas recited (ticked ones that were not found in the
 // take are left out; a quiz counts them as 0).
-const sessionSummary = (items) => attemptSummary(items.filter((it) => it.matched), QUIZ_CATEGORIES.map((c) => c.id), activeTolerance());
+const sessionSummary = (items) => attemptSummary(items.filter((it) => it.matched), QUIZ_CATEGORIES.map((c) => c.id), activeTolerance(), activeWeights());
 async function saveSession() {
   const take = practice.take;
   if (!take || practice.quiz || practice.session) return;
@@ -1804,7 +1846,7 @@ async function saveSession() {
     const saved = await api.createSession({
       kind: practice.teach ? 'teach' : 'evaluation', at: new Date().toISOString(), takeDuration: take.duration,
       items, overall: sum.overall, grade: sum.grade, options: { ignoreKey: practice.options.ignoreKey, judgeSpeed: practice.options.judgeSpeed },
-      tolerance: activeTolerance(), learner: learnerSpeaker(),
+      tolerance: activeTolerance(), learner: learnerSpeaker(), weights: activeWeights(),
     });
     if (practice.session !== session) { api.deleteSession(saved.id).catch(() => {}); return; } // the take was discarded meanwhile
     session.id = saved.id;
@@ -2053,7 +2095,7 @@ function renderQuizBox() {
 // Share of a sloka's words heard in the take, over the parts that were compared.
 function wordSimilarity(res, baseT, heardT, baseDuration, takeDuration) {
   const d = windowedDiff(res, baseT, heardT, baseDuration, takeDuration);
-  return d.ai.length ? d.summary.similarity : null;
+  return d.ai.length ? { similarity: d.summary.similarity, phonology: d.phonology } : null;
 }
 
 // What the comparison decided on the way to its scores, kept with a quiz attempt so a
@@ -2083,7 +2125,7 @@ async function scoreQuizAttempt() {
   const quiz = practice.quiz;
   const take = practice.take;
   if (!quiz || !take) return;
-  const attempt = { at: new Date().toISOString(), saved: false, sttAvailable: false, items: [], byCategory: {}, score: null, error: null, tolerance: learnerTolerance(), learner: learnerSpeaker() };
+  const attempt = { at: new Date().toISOString(), saved: false, sttAvailable: false, items: [], byCategory: {}, score: null, error: null, tolerance: learnerTolerance(), learner: learnerSpeaker(), weights: weights || CATEGORY_WEIGHTS };
   practice.quizAttempt = attempt;
   quizScoring = true;
   updateRecLabel();
@@ -2136,11 +2178,12 @@ async function scoreQuizAttempt() {
       }
       if (!live()) return;
       const words = tokenizeTranscript(ref || base.transcript).length;
-      const sim = wordSimilarity(res, ref || base.transcript, heardT, base.duration, take.duration);
-      if (sim != null) {
-        sims.set(id, sim);
-        practice.wordSims.set(id, sim);
-        if (confirmByWords(res, sim, words) && practice.activeId === id) showActiveReport();
+      const ws = wordSimilarity(res, ref || base.transcript, heardT, base.duration, take.duration);
+      if (ws) {
+        sims.set(id, ws);
+        practice.wordSims.set(id, ws.similarity);
+        if (ws.phonology) practice.phonology.set(id, ws.phonology);
+        if (confirmByWords(res, ws.similarity, words) && practice.activeId === id) showActiveReport();
       }
     }
     if (!live()) return;
@@ -2148,10 +2191,10 @@ async function scoreQuizAttempt() {
     // the scores
     attempt.items = quiz.items.map((it) => {
       const r = practice.results.get(it.id);
-      const sc = itemScores(r, { wordSimilarity: sims.has(it.id) ? sims.get(it.id) : null, sttAvailable: stt });
+      const sc = itemScores(r, { phonology: sims.has(it.id) ? sims.get(it.id).phonology : null, sttAvailable: stt });
       return { id: it.id, name: it.name, folder: it.folder, ...sc, diag: comparisonDiag(r) };
     });
-    const sum = attemptSummary(attempt.items, quiz.categories, attempt.tolerance);
+    const sum = attemptSummary(attempt.items, quiz.categories, attempt.tolerance, attempt.weights);
     Object.assign(attempt, sum);
     refreshVerdicts();
     // saved with every category, so the chosen categories can change afterwards, and with
@@ -2159,7 +2202,7 @@ async function scoreQuizAttempt() {
     const saved = await api.addQuizAttempt(quiz.id, {
       at: attempt.at, takeDuration: take.duration, categories: quiz.categories, score: attempt.score, overall: attempt.overall,
       byCategory: attempt.byCategory, counted: attempt.counted, recited: attempt.recited, items: attempt.items, correct: attempt.correct,
-      tolerance: attempt.tolerance, learner: attempt.learner,
+      tolerance: attempt.tolerance, learner: attempt.learner, weights: attempt.weights,
     });
     if (!live()) return;
     quiz.attempts = saved.attempts;
@@ -2190,7 +2233,7 @@ function renderQuizScore() {
   const pct = corr ? corr.pct : null;
   $('#quiz-pct').textContent = pct == null ? '–' : `${pct}%`;
   $('#quiz-pct').parentElement.querySelector('.quiz-pct-label').textContent = corr && corr.counted ? `correct · ${corr.correct} of ${corr.counted}` : 'correct';
-  const overall = corr ? attemptOverall(a.items, quiz.categories) : null;
+  const overall = corr ? attemptOverall(a.items, quiz.categories, weightsOf(a)) : null;
   $('#quiz-overall').textContent = overall == null ? '–' : String(overall);
   setGrade($('#quiz-grade'), gradeOf(overall));
   // category chips with each category's share within tolerance
@@ -2221,9 +2264,10 @@ function renderQuizScore() {
   // per-sloka table
   const table = $('#quiz-table');
   table.innerHTML = '';
-  const cats = QUIZ_CATEGORIES;
+  const cats = columnsFor(a.items);
+  const aw = weightsOf(a);
   const head = document.createElement('tr');
-  head.innerHTML = '<th>Sloka</th><th>Recited</th>' + cats.map((c) => `<th title="tolerance ${tol[c.id]} % · weight ${CATEGORY_WEIGHTS[c.id]}">${c.label}</th>`).join('') + '<th title="Weighted over the chosen categories">Overall</th><th>Correct</th>';
+  head.innerHTML = '<th>Sloka</th><th>Recited</th>' + cats.map((c) => `<th title="tolerance ${tol[c.id]} % · weight ${aw[c.id]}">${c.label}</th>`).join('') + '<th title="Weighted over the chosen categories">Overall</th><th>Correct</th>';
   table.appendChild(head);
   const gradeCell = (o) => { const g = gradeOf(o); return o == null ? '–' : `${o} <span class="rr-grade ${g.id}">${g.label}</span>`; };
   for (const it of a.items) {
@@ -2239,7 +2283,7 @@ function renderQuizScore() {
       const mark = v == null ? '' : `<span class="mark ${w ? 'ok' : 'bad'}" title="${w ? 'within' : 'outside'} ${tol[c.id]} %">${w ? '✓' : '✗'}</span>`;
       cells.push(`<td class="${on ? 'on' : 'off'}">${v == null ? '–' : v}${on ? mark : ''}</td>`);
     }
-    cells.push(`<td class="on">${it.missing ? '–' : gradeCell(overallScore(it, quiz.categories))}</td>`);
+    cells.push(`<td class="on">${it.missing ? '–' : gradeCell(overallScore(it, quiz.categories, aw))}</td>`);
     const v = itemVerdict(it, quiz.categories, tol);
     cells.push(`<td class="on">${v.ok === null ? '–' : v.ok ? 'yes' : 'no'}</td>`);
     tr.innerHTML = cells.join('');
@@ -2266,11 +2310,13 @@ function renderQuizScore() {
 const TREND_SERIES = [
   { id: 'overall', label: 'Correct', color: 'var(--accent)', width: 3 },
   { id: 'weighted', label: 'Overall score', color: 'var(--text)', width: 2.2 },
-  { id: 'content', label: 'Content', color: 'var(--content)', width: 1.6 },
-  { id: 'pronunciation', label: 'Pronunciation', color: 'var(--heard)', width: 1.6 },
+  { id: 'phoneme', label: 'Phonemes', color: 'var(--content)', width: 1.6 },
+  { id: 'vowel', label: 'Vowel length', color: 'var(--heard)', width: 1.6 },
+  { id: 'syllable', label: 'Syllables', color: 'var(--missing)', width: 1.6 },
+  { id: 'emphasis', label: 'Emphasis', color: 'var(--dynamics)', width: 1.6 },
+  { id: 'pitch', label: 'Pitch contour', color: 'var(--pitch)', width: 1.6 },
+  { id: 'phrasing', label: 'Phrasing', color: 'var(--muted)', width: 1.6 },
   { id: 'timing', label: 'Timing', color: 'var(--timing)', width: 1.6 },
-  { id: 'pitch', label: 'Pitch', color: 'var(--pitch)', width: 1.6 },
-  { id: 'dynamics', label: 'Dynamics', color: 'var(--dynamics)', width: 1.6 },
 ];
 function renderTrend(host, quiz) {
   const attempts = (quiz.attempts || []).slice().sort((x, y) => String(x.at).localeCompare(String(y.at)));
@@ -2278,7 +2324,7 @@ function renderTrend(host, quiz) {
   if (!attempts.length) return;
   const hasItems = (a) => Array.isArray(a.items) && a.items.length;
   const attemptScore = (a) => (hasItems(a) ? correctness(a.items, quiz.categories, attemptTolerance(a)).pct : a.score == null ? null : a.score);
-  const weightedOf = (a) => (hasItems(a) ? attemptOverall(a.items, quiz.categories) : a.overall == null ? null : a.overall);
+  const weightedOf = (a) => (hasItems(a) ? attemptOverall(a.items, quiz.categories, weightsOf(a)) : a.overall == null ? null : a.overall);
   const valueOf = (a, id) => (id === 'overall' ? attemptScore(a) : id === 'weighted' ? weightedOf(a) : a.byCategory ? a.byCategory[id] : null);
   const h4 = document.createElement('h4');
   h4.textContent = attempts.length > 1 ? `Trend over ${attempts.length} attempts` : 'Trend';
@@ -2324,13 +2370,14 @@ function renderTrend(host, quiz) {
   wrapT.className = 'quiz-table-wrap';
   const table = document.createElement('table');
   table.className = 'quiz-table';
-  table.innerHTML = '<tr><th>#</th><th>When</th><th>Recited</th>' + QUIZ_CATEGORIES.map((c) => `<th>${c.label}</th>`).join('') + '<th>Overall</th><th>Correct</th><th></th></tr>';
+  const tcols = columnsFor(attempts.flatMap((a) => a.items || []));
+  table.innerHTML = '<tr><th>#</th><th>When</th><th>Recited</th>' + tcols.map((c) => `<th>${c.label}</th>`).join('') + '<th>Overall</th><th>Correct</th><th></th></tr>';
   attempts.forEach((a, i) => {
     const tr = document.createElement('tr');
     const sc = valueOf(a, 'overall');
     const wt = valueOf(a, 'weighted');
     const g = gradeOf(wt);
-    tr.innerHTML = `<td>${i + 1}</td><td></td><td>${a.recited ?? '–'} of ${a.counted ?? '–'}</td>` + QUIZ_CATEGORIES.map((c) => `<td class="${quiz.categories.includes(c.id) ? 'on' : 'off'}">${a.byCategory && a.byCategory[c.id] != null ? a.byCategory[c.id] : '–'}</td>`).join('') + `<td class="on">${wt == null ? '–' : `${wt} <span class="rr-grade ${g.id}">${g.label}</span>`}</td><td class="on">${sc == null ? '–' : `${sc}%`}</td><td></td>`;
+    tr.innerHTML = `<td>${i + 1}</td><td></td><td>${a.recited ?? '–'} of ${a.counted ?? '–'}</td>` + tcols.map((c) => `<td class="${quiz.categories.includes(c.id) ? 'on' : 'off'}">${a.byCategory && a.byCategory[c.id] != null ? a.byCategory[c.id] : '–'}</td>`).join('') + `<td class="on">${wt == null ? '–' : `${wt} <span class="rr-grade ${g.id}">${g.label}</span>`}</td><td class="on">${sc == null ? '–' : `${sc}%`}</td><td></td>`;
     tr.children[1].textContent = fmtDate(a.at);
     // the kept recording of the attempt, played in place
     if (a.audio) {
@@ -2471,8 +2518,10 @@ function renderReportsDetail(a) {
   };
   const table = $('#reports-detail-table');
   table.innerHTML = '';
+  const cols = columnsFor(a.items);
+  const aw = weightsOf(a);
   const head = document.createElement('tr');
-  head.innerHTML = '<th>Sloka</th><th>Recited</th>' + catCols.map((c) => `<th title="tolerance ${a.tolerance[c.id]} % · weight ${CATEGORY_WEIGHTS[c.id]}">${c.label}</th>`).join('') + `<th>Overall</th>${a.kind === 'quiz' ? '<th>Correct</th>' : ''}`;
+  head.innerHTML = '<th>Sloka</th><th>Recited</th>' + cols.map((c) => `<th title="tolerance ${a.tolerance[c.id] ?? '–'} % · weight ${aw[c.id]}">${c.label}</th>`).join('') + `<th>Overall</th>${a.kind === 'quiz' ? '<th>Correct</th>' : ''}`;
   table.appendChild(head);
   for (const it of a.items || []) {
     const tr = document.createElement('tr');
@@ -2480,7 +2529,7 @@ function renderReportsDetail(a) {
     const d = it.diag || {};
     const recited = it.missing ? 'not compared' : it.matched ? 'yes' : `not found${d.contrast != null ? ` <span class="muted small">· contrast ${Number(d.contrast).toFixed(2)}</span>` : ''}`;
     const cells = ['<td class="sloka-cell"></td>', `<td>${recited}</td>`];
-    for (const c of catCols) cells.push(scoreCell(it[c.id], a.categories.includes(c.id)));
+    for (const c of cols) cells.push(scoreCell(it[c.id], a.categories.includes(c.id)));
     cells.push(`<td class="on">${it.missing ? '–' : gradeHtml(it.overall)}</td>`);
     if (a.kind === 'quiz') { const v = itemVerdict(it, a.categories, a.tolerance); cells.push(`<td class="on">${v.ok === null ? '–' : v.ok ? 'yes' : 'no'}</td>`); }
     tr.innerHTML = cells.join('');
@@ -2492,7 +2541,7 @@ function renderReportsDetail(a) {
   // a quiz averages every sloka (one not recited counts 0); an evaluation only those recited
   const counted = (a.items || []).filter((it) => !it.missing && (a.kind === 'quiz' || it.matched));
   const avg = (c) => { const vs = counted.filter((it) => it[c] != null).map((it) => it[c]); return vs.length ? Math.round(vs.reduce((x, y) => x + y, 0) / vs.length) : null; };
-  tot.innerHTML = `<td>${a.kind === 'quiz' ? 'Overall' : 'Overall · recited slokas'}</td><td>${a.recited ?? 0} of ${a.counted ?? 0}</td>` + catCols.map((c) => scoreCell(avg(c.id), a.categories.includes(c.id))).join('') + `<td class="on">${gradeHtml(a.overall)}</td>${a.kind === 'quiz' ? `<td class="on">${a.correct == null ? '–' : `${a.correct}%`}</td>` : ''}`;
+  tot.innerHTML = `<td>${a.kind === 'quiz' ? 'Overall' : 'Overall · recited slokas'}</td><td>${a.recited ?? 0} of ${a.counted ?? 0}</td>` + cols.map((c) => scoreCell(avg(c.id), a.categories.includes(c.id))).join('') + `<td class="on">${gradeHtml(a.overall)}</td>${a.kind === 'quiz' ? `<td class="on">${a.correct == null ? '–' : `${a.correct}%`}</td>` : ''}`;
   table.appendChild(tot);
 }
 
@@ -2782,6 +2831,7 @@ function hideResults() {
   practice.results.clear();
   practice.pairContrast.clear();
   practice.wordSims.clear();
+  practice.phonology.clear();
   practice.heard = null;
   practice.heardTranscripts.clear();
   stopTakeTranscriptions();
@@ -2851,10 +2901,18 @@ function renderResult(res) {
   resetTranscriptUI();
 }
 
+// The categories a stored attempt or session was scored on: today's seven, or, for a record
+// from before this scoring, the old five (content, pronunciation, timing, pitch, dynamics).
+function columnsFor(items) {
+  const legacy = (items || []).some((it) => it && !it.missing && ['phoneme', 'vowel', 'syllable'].every((k) => it[k] == null) && ['content', 'pronunciation', 'dynamics'].some((k) => it[k] != null));
+  return legacy ? [LEGACY_CATEGORIES[0], LEGACY_CATEGORIES[1], QUIZ_CATEGORIES.find((c) => c.id === 'timing'), QUIZ_CATEGORIES.find((c) => c.id === 'pitch'), LEGACY_CATEGORIES[2]] : QUIZ_CATEGORIES;
+}
+const weightsOf = (a) => (a && a.weights ? normalizeWeights(a.weights) : CATEGORY_WEIGHTS);
+
 // The weighted overall of a report over the categories that could be judged, and its grade.
 function reportOverall(id) {
   const sc = reportScores(id);
-  const overall = sc ? overallScore(sc) : null;
+  const overall = sc ? overallScore(sc, undefined, activeWeights()) : null;
   return { overall, grade: gradeOf(overall) };
 }
 // Puts a grade badge in an element (empty when there is no grade).
@@ -2883,13 +2941,21 @@ function renderTiles(res, id) {
     $(`#score-${cat}-tol`).textContent = w === null ? '' : w ? `within ${tol[cat]} %` : `outside ${tol[cat]} %`;
     (sc[cat] == null ? unjudged : judged).push(tile);
   };
-  put('content', s.content, s.contentCoveredPct ? `${s.contentCoveredPct}% of the piece flagged` : 'matches throughout');
-  const sim = practice.wordSims.has(id) ? practice.wordSims.get(id) : null;
-  put('pronunciation', sim == null ? null : Math.round(100 * sim), sim == null ? (practice.heardTranscripts.size || sttSettings.auto || practice.quiz ? 'waiting for the transcript' : 'transcribe to judge') : 'of the words heard');
-  put('timing', s.timing, s.timingCoveredPct ? `${s.timingCoveredPct}% of the piece flagged` : 'steady throughout');
+  // the words: phonemes, vowel length, syllables — once the transcript is in
+  const ph = practice.phonology.get(id) || null;
+  const waiting = practice.heardTranscripts.size || sttSettings.auto || practice.quiz ? 'waiting for the transcript' : 'transcribe to judge';
+  const errs = ph ? ph.errors : {};
+  const slipList = (kinds) => { const parts = kinds.filter((k) => errs[k]).map((k) => `${errs[k]} ${ERROR_LABEL[k].split(' (')[0]}`); return parts.length ? parts.join(', ') : 'all right'; };
+  put('phoneme', sc.phoneme, !ph ? waiting : `${ph.counts.phonemesCompared} sounds · ${slipList(['aspiration', 'voicing', 'place', 'nasality', 'visarga', 'length', 'vowel', 'missing', 'added', 'other'])}`);
+  put('vowel', sc.vowel, !ph ? waiting : ph.counts.vowelsCompared ? `${ph.counts.vowelSlips} of ${ph.counts.vowelsCompared} vowels the wrong length` : 'no vowel to compare');
+  put('syllable', sc.syllable, !ph ? waiting : `${ph.counts.ref} akṣaras · ${ph.counts.missing} missing, ${ph.counts.added} added, ${ph.counts.replaced} replaced`);
+  // the sound, each relative to the speaker
+  put('emphasis', sc.emphasis, s.emphasis == null ? 'too little to compare' : `pattern agreement ${Math.round(100 * Math.max(0, s.emphasisCorr || 0))}%`);
   const pitchStyle = s.weights && s.weights.pitch === 0 && s.pitch != null; // recited text: pitch is shown, not judged
   put('pitch', s.pitch, s.pitch == null ? 'not enough steady pitch' : `in tune ${s.pitchInTunePct}% · avg ${s.pitchMeanCents} cents off${pitchStyle ? ' · for interest, not judged' : ''}`);
-  put('dynamics', s.dynamics, s.dynamics == null ? 'not measured' : s.dynamicsCoveredPct ? `${s.dynamicsCoveredPct}% of the piece flagged` : 'even throughout');
+  const pd = s.phrasingDetail || {};
+  put('phrasing', sc.phrasing, s.phrasing == null ? 'not measured' : pd.sloka || pd.take ? `${pd.kept} of ${pd.sloka} pauses kept · ${pd.extra} added` : 'no pauses in either');
+  put('timing', s.timing, s.timingCoveredPct ? `${s.timingCoveredPct}% of the piece flagged` : 'steady throughout');
   // judged tiles by the ring, in weight order; the rest collapsed at the bottom
   const grid = $('#scores');
   for (const t of judged) grid.appendChild(t);
@@ -2903,7 +2969,8 @@ function renderTiles(res, id) {
   $('#score-ring').style.setProperty('--pct', String(overall == null ? 0 : overall));
   $('#score-overall').textContent = overall == null ? '–' : String(overall);
   setGrade($('#score-grade'), grade);
-  $('#score-overall-sub').textContent = judged.length ? `weighted: ${judged.map((t) => `${catLabel(t.dataset.cat).toLowerCase()} ${CATEGORY_WEIGHTS[t.dataset.cat]}`).join(', ')}` : 'nothing could be judged';
+  const aw = activeWeights();
+  $('#score-overall-sub').textContent = judged.length ? `weighted: ${judged.map((t) => `${catLabel(t.dataset.cat).toLowerCase()} ${aw[t.dataset.cat]}`).join(', ')}` : 'nothing could be judged';
   $('#score-overall-sub').title = 'The overall is the weighted mean of the categories that could be judged';
   const v = reportVerdict(id);
   const vEl = $('#score-verdict');
@@ -3190,6 +3257,7 @@ function resetTranscriptUI() {
   $('#stt-base').innerHTML = '';
   $('#stt-heard').innerHTML = '';
   $('#stt-summary').textContent = '';
+  setHidden($('#stt-phon'), true);
   practicePanel.highlight(new Set());
 }
 
@@ -3322,15 +3390,45 @@ function windowedDiff(res, baseT, heardT, baseDuration, takeDuration) {
   const insB = new Set([...cmp.insB].map((k) => bi[k]));
   const dimA = new Set(A.toks.map((_, i) => i).filter((i) => !A.inside[i]));
   const dimB = new Set(B.toks.map((_, i) => i).filter((i) => !B.inside[i]));
-  return { A, B, ai, bi, delA, insB, dimA, dimB, summary: cmp.summary };
+  // the same words, as text, for the akṣara-and-phoneme comparison
+  const phonology = ai.length ? comparePhonology(ai.map((i) => A.toks[i].word).join(' '), bi.map((i) => B.toks[i].word).join(' ')) : null;
+  return { A, B, ai, bi, delA, insB, dimA, dimB, summary: cmp.summary, phonology };
+}
+
+// The akṣara-and-phoneme breakdown under the word diff: what kind of slips, with examples.
+function renderPhonologyReport(host, ph) {
+  host.innerHTML = '';
+  if (!ph) { setHidden(host, true); return; }
+  setHidden(host, false);
+  const h4 = document.createElement('h4');
+  h4.textContent = `Sounds and syllables · phonemes ${ph.phonemes ?? '–'} · vowel length ${ph.vowels ?? '–'} · syllables ${ph.syllables}`;
+  host.appendChild(h4);
+  const p = document.createElement('div');
+  p.className = 'muted small';
+  const parts = Object.entries(ph.errors).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${n} × ${ERROR_LABEL[k]}`);
+  p.textContent = `${ph.counts.ref} akṣaras in the text, ${ph.counts.heard} heard · ${ph.counts.missing} missing, ${ph.counts.added} added, ${ph.counts.replaced} replaced · ${parts.length ? parts.join(' · ') : 'no slips in the sounds'}`;
+  host.appendChild(p);
+  if (ph.examples.length) {
+    const ul = document.createElement('ul');
+    for (const e of ph.examples) {
+      const li = document.createElement('li');
+      li.innerHTML = `<span class="ak"></span> heard as <span class="ak-heard"></span> <span class="muted small"></span>`;
+      li.children[0].textContent = e.ref;
+      li.children[1].textContent = e.heard || '∅';
+      li.children[2].textContent = `— ${ERROR_LABEL[e.kind]}: ${e.detail}`;
+      ul.appendChild(li);
+    }
+    host.appendChild(ul);
+  }
 }
 
 function renderTranscriptDiff() {
   const res = practice.result;
   if (!res || !practice.base || !practice.take || !sttPractice.base || !sttPractice.heard) return;
-  const { A, B, ai, delA, insB, dimA, dimB, summary: sm } = windowedDiff(res, sttPractice.base, sttPractice.heard, practice.base.duration, practice.take.duration);
+  const { A, B, ai, delA, insB, dimA, dimB, summary: sm, phonology } = windowedDiff(res, sttPractice.base, sttPractice.heard, practice.base.duration, practice.take.duration);
   if (ai.length) {
     practice.wordSims.set(practice.activeId, sm.similarity);
+    if (phonology) practice.phonology.set(practice.activeId, phonology);
     // a "not this sloka" verdict from the timbre is overturned when the words say otherwise
     if (confirmByWords(res, sm.similarity, ai.length)) {
       toast('The words confirm this is the sloka, though the recordings sound different; its scores now count.', 'info', 7000);
@@ -3340,6 +3438,7 @@ function renderTranscriptDiff() {
     }
     syncSession();
   }
+  renderPhonologyReport($('#stt-phon'), phonology);
   refreshVerdicts();
   renderTranscriptText($('#stt-base'), sttPractice.base, A.toks, delA, 'w-del', (s, e) => { heardPlayer.pause(); basePlayer.playRange(s, e); }, dimA);
   renderTranscriptText($('#stt-heard'), sttPractice.heard, B.toks, insB, 'w-ins', (s, e) => { basePlayer.pause(); heardPlayer.playRange(s, e); }, dimB);

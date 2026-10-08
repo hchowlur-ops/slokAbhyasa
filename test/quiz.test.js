@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { cleanFolder, parseBaselineFilename, nameFromSlug, parseWavHeader } from '../js/libutil.js';
 import { encodeWavBytes } from '../js/wav.js';
-import { itemScores, attemptSummary, scoreFor, normalizeCategories, pickBaselines, shuffle, DEFAULT_QUIZ_CATEGORIES, DEFAULT_TOLERANCE, normalizeTolerance, withinTolerance, itemVerdict, correctness, overallScore, attemptOverall, gradeOf, CATEGORY_WEIGHTS } from '../js/quizscore.js';
+import { itemScores, attemptSummary, scoreFor, normalizeCategories, pickBaselines, shuffle, DEFAULT_QUIZ_CATEGORIES, DEFAULT_TOLERANCE, normalizeTolerance, withinTolerance, itemVerdict, correctness, overallScore, attemptOverall, gradeOf, CATEGORY_WEIGHTS, QUIZ_CATEGORIES, normalizeWeights } from '../js/quizscore.js';
 
 test('cleanFolder: usable names pass, traversal and reserved names do not', () => {
   assert.equal(cleanFolder('Chapter 12'), 'Chapter 12');
@@ -42,58 +42,72 @@ test('parseWavHeader reads format and duration from the first bytes', () => {
   assert.equal(parseWavHeader(new Uint8Array(20)), null);
 });
 
-const result = (over) => ({ match: { ok: true }, scores: { content: 90, timing: 80, pitch: 70, dynamics: 95 }, ...over });
+const result = (over) => ({ match: { ok: true }, scores: { content: 90, timing: 80, pitch: 70, dynamics: 95, emphasis: 72, phrasing: 88 }, ...over });
+const phon = (over) => ({ phonemes: 96, vowels: 90, syllables: 100, ...over });
 
 test('itemScores: recited, not recited, and not comparable', () => {
-  const ok = itemScores(result(), { wordSimilarity: 0.756, sttAvailable: true });
-  assert.deepEqual(ok, { matched: true, missing: false, content: 90, pronunciation: 76, timing: 80, pitch: 70, dynamics: 95 });
-  const noStt = itemScores(result(), { wordSimilarity: null, sttAvailable: false });
-  assert.equal(noStt.pronunciation, null);
-  const noPitch = itemScores(result({ scores: { content: 90, timing: 80, pitch: null, dynamics: null } }), { sttAvailable: true, wordSimilarity: 1 });
+  const ok = itemScores(result(), { phonology: phon(), sttAvailable: true });
+  assert.deepEqual(ok, { matched: true, missing: false, phoneme: 96, vowel: 90, syllable: 100, emphasis: 72, pitch: 70, phrasing: 88, timing: 80 });
+  const noStt = itemScores(result(), { phonology: null, sttAvailable: false });
+  assert.equal(noStt.phoneme, null);
+  assert.equal(noStt.vowel, null);
+  assert.equal(noStt.syllable, null);
+  assert.equal(noStt.timing, 80, 'the sound is judged without the words');
+  const noPitch = itemScores(result({ scores: { content: 90, timing: 80, pitch: null, emphasis: null, phrasing: 50 } }), { sttAvailable: true, phonology: phon() });
   assert.equal(noPitch.pitch, null);
-  assert.equal(noPitch.dynamics, null);
+  assert.equal(noPitch.emphasis, null);
+  const styleOnly = itemScores(result({ scores: { timing: 80, pitch: 55, weights: { pitch: 0, timing: 0.4, content: 0.6 } } }), { phonology: phon() });
+  assert.equal(styleOnly.pitch, null, 'recited text: pitch is shown, not judged');
   const notRecited = itemScores(result({ match: { ok: false } }), { sttAvailable: true });
-  assert.deepEqual(notRecited, { matched: false, missing: false, content: 0, pronunciation: 0, timing: 0, pitch: 0, dynamics: 0 });
-  assert.equal(itemScores(result({ match: { ok: false } }), { sttAvailable: false }).pronunciation, null);
+  assert.deepEqual(notRecited, { matched: false, missing: false, phoneme: 0, vowel: 0, syllable: 0, emphasis: 0, pitch: 0, phrasing: 0, timing: 0 });
+  assert.equal(itemScores(result({ match: { ok: false } }), { sttAvailable: false }).phoneme, null);
   assert.equal(itemScores({ error: 'boom' }).missing, true);
   assert.equal(itemScores(null).missing, true);
 });
 
 test('attemptSummary and scoreFor: category averages, then the chosen categories', () => {
   const items = [
-    itemScores(result(), { wordSimilarity: 0.8, sttAvailable: true }), // 90 / 80 / 80 / 70 / 95
+    itemScores(result(), { phonology: phon(), sttAvailable: true }), // 96 / 90 / 100 / 72 / 70 / 88 / 80
     itemScores(result({ match: { ok: false } }), { sttAvailable: true }), // all 0: not recited
     itemScores({ error: 'gone' }), // left out
   ];
-  const sum = attemptSummary(items, ['content', 'pronunciation']);
-  assert.deepEqual(sum.byCategory, { content: 45, pronunciation: 40, timing: 40, pitch: 35, dynamics: 48 });
-  assert.equal(sum.average, 43); // (45 + 40) / 2 rounded
-  assert.equal(sum.score, 0); // neither judgeable item is within tolerance: pronunciation 80 is 20 % off, and the other was not recited
-  assert.equal(sum.correct, 0);
-  assert.equal(attemptSummary(items, ['content']).score, 50, 'on content alone the first item passes (90 is within 10 %)');
+  const sum = attemptSummary(items, ['phoneme', 'vowel', 'syllable']);
+  assert.deepEqual(sum.byCategory, { phoneme: 48, vowel: 45, syllable: 50, emphasis: 36, pitch: 35, phrasing: 44, timing: 40 });
+  assert.equal(sum.average, 48); // (48 + 45 + 50) / 3 rounded
+  assert.equal(sum.score, 50, 'the first item is within every tolerance (phoneme 15, vowel 20, syllable 10); the other was not recited');
+  assert.equal(sum.correct, 1);
+  assert.equal(attemptSummary(items, ['vowel'], { ...DEFAULT_TOLERANCE, vowel: 5 }).score, 0, 'a tighter vowel tolerance fails it');
   assert.equal(sum.counted, 2);
   assert.equal(sum.recited, 1);
-  // weighted overall over the chosen categories: item 1 = (80·90 + 70·80) / 150 = 85.3, item 2 = 0 → mean 43
-  assert.equal(sum.overall, 43);
+  // weighted overall over the chosen categories: item 1 = (30·96 + 25·90 + 15·100) / 70 = 94.7 → 95, item 2 = 0 → mean 47.5 → 48
+  assert.equal(sum.overall, 48);
   assert.equal(sum.grade, 'practice');
-  assert.equal(scoreFor(sum.byCategory, ['content', 'timing', 'pitch']), 40);
-  assert.equal(scoreFor({ content: 50, pronunciation: null }, ['content', 'pronunciation']), 50, 'a category that could not be judged is left out');
-  assert.equal(scoreFor({ content: null }, ['content']), null);
-  assert.deepEqual(normalizeCategories(['bogus', 'timing', 'content']), ['content', 'timing']);
+  assert.equal(scoreFor(sum.byCategory, ['phoneme', 'timing', 'pitch']), 41);
+  assert.equal(scoreFor({ phoneme: 50, vowel: null }, ['phoneme', 'vowel']), 50, 'a category that could not be judged is left out');
+  assert.equal(scoreFor({ phoneme: null }, ['phoneme']), null);
+  assert.deepEqual(normalizeCategories(['bogus', 'timing', 'phoneme']), ['phoneme', 'timing']);
   assert.deepEqual(normalizeCategories([]), DEFAULT_QUIZ_CATEGORIES);
 });
 
-test('overallScore: content weighs 80, pronunciation 70, the rest 40; unjudged categories are left out', () => {
-  assert.deepEqual(CATEGORY_WEIGHTS, { content: 80, pronunciation: 70, timing: 40, pitch: 40, dynamics: 40 });
-  const all = { content: 90, pronunciation: 80, timing: 80, pitch: 70, dynamics: 95 };
-  // (80·90 + 70·80 + 40·80 + 40·70 + 40·95) / 270 = 22600 / 270 = 83.7
-  assert.equal(overallScore(all), 84);
-  assert.equal(overallScore({ ...all, pronunciation: null, pitch: null }), Math.round((80 * 90 + 40 * 80 + 40 * 95) / 160));
-  assert.equal(overallScore(all, ['content', 'pronunciation']), 85);
-  assert.equal(overallScore({ content: null, pronunciation: null, timing: null, pitch: null, dynamics: null }), null);
+test('overallScore: the recommended weights (30/25/15/10/10/5/5), configurable; unjudged categories left out; old records add up on their own', () => {
+  assert.deepEqual(QUIZ_CATEGORIES.map((c) => [c.id, c.weight]), [['phoneme', 30], ['vowel', 25], ['syllable', 15], ['emphasis', 10], ['pitch', 10], ['phrasing', 5], ['timing', 5]]);
+  const all = { phoneme: 96, vowel: 90, syllable: 100, emphasis: 72, pitch: 70, phrasing: 88, timing: 80 };
+  // (30·96 + 25·90 + 15·100 + 10·72 + 10·70 + 5·88 + 5·80) / 100 = 88.9 → 89
+  assert.equal(overallScore(all), 89);
+  assert.equal(overallScore({ ...all, vowel: null, pitch: null }), Math.round((30 * 96 + 15 * 100 + 10 * 72 + 5 * 88 + 5 * 80) / 65));
+  assert.equal(overallScore(all, ['phoneme', 'vowel', 'syllable']), 95);
+  assert.equal(overallScore({ phoneme: null, vowel: null, syllable: null, emphasis: null, pitch: null, phrasing: null, timing: null }), null);
   assert.equal(overallScore(null), null);
-  assert.equal(attemptOverall([{ ...all, missing: false }, { missing: true }, { content: 0, pronunciation: 0, timing: 0, pitch: 0, dynamics: 0 }]), 42);
+  // the weights can be changed
+  const mine = normalizeWeights({ phoneme: 50, vowel: 50, syllable: 0, emphasis: 0, pitch: 0, phrasing: 0, timing: 0 });
+  assert.equal(overallScore(all, undefined, mine), 93);
+  assert.deepEqual(normalizeWeights(null), { ...CATEGORY_WEIGHTS });
+  assert.equal(normalizeWeights({ phoneme: 0, vowel: 0, syllable: 0, emphasis: 0, pitch: 0, phrasing: 0, timing: 0 }).phoneme, 30, 'all zero falls back to the defaults');
+  assert.equal(attemptOverall([{ ...all, missing: false }, { missing: true }, { phoneme: 0, vowel: 0, syllable: 0, emphasis: 0, pitch: 0, phrasing: 0, timing: 0 }]), 45);
   assert.equal(attemptOverall([{ missing: true }]), null);
+  // an attempt from before this scoring (content, pronunciation…) still adds up, on its old weights
+  const old = { content: 90, pronunciation: 80, timing: 80, pitch: 70, dynamics: 95 };
+  assert.equal(overallScore(old), 84); // (80·90 + 70·80 + 40·80 + 40·70 + 40·95) / 270, as it was scored at the time
 });
 
 test('gradeOf: Excellent from 90, Good 80–89, Fair 65–79, Needs practice below', () => {
@@ -125,39 +139,39 @@ test('pickBaselines: at most N, no repeats, spread across folders', () => {
 });
 
 test('tolerance: defaults, normalising, and per-item verdicts', () => {
-  assert.deepEqual(DEFAULT_TOLERANCE, { content: 10, pronunciation: 10, timing: 60, pitch: 60, dynamics: 60 });
-  assert.deepEqual(normalizeTolerance({ content: '25', timing: 150, pitch: -3, bogus: 1 }), { content: 25, pronunciation: 10, timing: 100, pitch: 0, dynamics: 60 });
+  assert.deepEqual(DEFAULT_TOLERANCE, { phoneme: 15, vowel: 20, syllable: 10, emphasis: 60, pitch: 60, phrasing: 50, timing: 60, content: 10, pronunciation: 10 });
+  assert.deepEqual(normalizeTolerance({ phoneme: '25', timing: 150, pitch: -3, bogus: 1 }), { ...DEFAULT_TOLERANCE, phoneme: 25, timing: 100, pitch: 0 });
   assert.deepEqual(normalizeTolerance(null), DEFAULT_TOLERANCE);
   assert.equal(withinTolerance(90, 10), true);
   assert.equal(withinTolerance(89, 10), false);
   assert.equal(withinTolerance(40, 60), true);
   assert.equal(withinTolerance(null, 10), null);
-  const good = itemScores(result({ scores: { content: 92, timing: 45, pitch: 70, dynamics: 95 } }), { wordSimilarity: 0.9, sttAvailable: true });
-  assert.deepEqual(itemVerdict(good, ['content', 'pronunciation']), { ok: true, failed: [], judged: ['content', 'pronunciation'] });
-  assert.deepEqual(itemVerdict(good, ['content', 'timing', 'pitch']), { ok: true, failed: [], judged: ['content', 'timing', 'pitch'] });
-  const slack = itemScores(result({ scores: { content: 92, timing: 39, pitch: null, dynamics: 95 } }), { wordSimilarity: 0.85, sttAvailable: true });
-  assert.deepEqual(itemVerdict(slack, ['content', 'pronunciation', 'timing', 'pitch']), { ok: false, failed: ['pronunciation', 'timing'], judged: ['content', 'pronunciation', 'timing'] });
+  const good = itemScores(result({ scores: { timing: 45, pitch: 70, emphasis: 60, phrasing: 50 } }), { phonology: phon({ phonemes: 90, vowels: 85, syllables: 92 }), sttAvailable: true });
+  assert.deepEqual(itemVerdict(good, ['phoneme', 'vowel', 'syllable']), { ok: true, failed: [], judged: ['phoneme', 'vowel', 'syllable'] });
+  assert.deepEqual(itemVerdict(good, ['phoneme', 'timing', 'pitch']), { ok: true, failed: [], judged: ['phoneme', 'timing', 'pitch'] });
+  const slack = itemScores(result({ scores: { timing: 39, pitch: null, emphasis: 60, phrasing: 50 } }), { phonology: phon({ vowels: 75 }), sttAvailable: true });
+  assert.deepEqual(itemVerdict(slack, ['phoneme', 'vowel', 'timing', 'pitch']), { ok: false, failed: ['vowel', 'timing'], judged: ['phoneme', 'vowel', 'timing'] });
   const noStt = itemScores(result(), { sttAvailable: false });
-  assert.deepEqual(itemVerdict(noStt, ['pronunciation']), { ok: null, failed: [], judged: [] }, 'nothing judgeable: no verdict');
-  assert.equal(itemVerdict(itemScores({ error: 'gone' }), ['content']).ok, null);
+  assert.deepEqual(itemVerdict(noStt, ['phoneme']), { ok: null, failed: [], judged: [] }, 'nothing judgeable: no verdict');
+  assert.equal(itemVerdict(itemScores({ error: 'gone' }), ['phoneme']).ok, null);
   // a looser tolerance turns a fail into a pass
-  assert.equal(itemVerdict(slack, ['pronunciation'], { ...DEFAULT_TOLERANCE, pronunciation: 20 }).ok, true);
+  assert.equal(itemVerdict(slack, ['vowel'], { ...DEFAULT_TOLERANCE, vowel: 30 }).ok, true);
 });
 
 test('correctness: share of items within tolerance, and per-category pass rates', () => {
   const items = [
-    itemScores(result({ scores: { content: 95, timing: 80, pitch: 70, dynamics: 95 } }), { wordSimilarity: 0.95, sttAvailable: true }), // ok
-    itemScores(result({ scores: { content: 85, timing: 80, pitch: 70, dynamics: 95 } }), { wordSimilarity: 0.95, sttAvailable: true }), // content out
+    itemScores(result(), { phonology: phon({ phonemes: 95 }), sttAvailable: true }), // ok
+    itemScores(result(), { phonology: phon({ phonemes: 80 }), sttAvailable: true }), // phonemes out (15 % tolerance)
     itemScores(result({ match: { ok: false } }), { sttAvailable: true }), // not recited: everything 0
     itemScores({ error: 'gone' }), // left out
   ];
-  const c = correctness(items, ['content', 'pronunciation']);
+  const c = correctness(items, ['phoneme', 'vowel']);
   assert.equal(c.counted, 3);
   assert.equal(c.correct, 1);
   assert.equal(c.pct, 33);
-  assert.deepEqual(c.passRate.content, { ok: 1, n: 3, pct: 33 });
-  assert.deepEqual(c.passRate.pronunciation, { ok: 2, n: 3, pct: 67 });
+  assert.deepEqual(c.passRate.phoneme, { ok: 1, n: 3, pct: 33 });
+  assert.deepEqual(c.passRate.vowel, { ok: 2, n: 3, pct: 67 });
   assert.deepEqual(c.passRate.timing, { ok: 2, n: 3, pct: 67 });
-  assert.equal(correctness([], ['content']).pct, null);
-  assert.equal(correctness(items, ['content'], { ...DEFAULT_TOLERANCE, content: 20 }).correct, 2, 'a wider content tolerance accepts the second item');
+  assert.equal(correctness([], ['phoneme']).pct, null);
+  assert.equal(correctness(items, ['phoneme'], { ...DEFAULT_TOLERANCE, phoneme: 25 }).correct, 2, 'a wider phoneme tolerance accepts the second item');
 });
