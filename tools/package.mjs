@@ -20,7 +20,7 @@ const CACHE = path.join(DIST, 'cache');
 const STAGE = path.join(DIST, NAME);
 const NODE_VERSION = process.versions.node;
 const NODE_ZIP = `node-v${NODE_VERSION}-win-x64`;
-const APP_FILES = ['index.html', 'serve.js', 'datadir.js', 'meta-store.js', 'package.json', 'README.md', 'css', 'js'];
+const APP_FILES = ['index.html', 'serve.js', 'datadir.js', 'meta-store.js', 'package.json', 'README.md', 'css', 'js', 'assets'];
 
 const ps = (command) => execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', command], { stdio: 'inherit' });
 

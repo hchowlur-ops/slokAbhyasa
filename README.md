@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/logo.png" width="180" alt="SlokAbhyasa" /></p>
+
 # SlokAbhyasa
 
 A local web app for learning and memorising audio by ear: chants, verses, songs, phrases.
@@ -565,6 +567,7 @@ serve.js               local server: static files + /api/baselines, /api/folders
                        /api/assessments, /api/profiles
 meta-store.js          server side of the details: sidecar files, audio hash, bext chunk, profiles.json
 index.html, css/       the single-page UI
+assets/                the logo (sidebar mark, favicon, README)
 js/app.js              controller for the views (Teach shares the Self Evaluation screen)
 js/meta.js             vocabularies, evaluation presets by learner, text derivation, voice measurements
                        (pure, shared by browser and server)
