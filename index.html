@@ -11,12 +11,15 @@
 <body>
 <div class="app">
   <aside class="sidebar">
-    <a class="brand" href="#player" title="SlokAbhyasa · home">
+    <a class="brand" href="#home" title="SlokAbhyasa · home">
       <img class="brand-logo" src="assets/logo-192.png" width="52" height="52" alt="SlokAbhyasa logo" />
-      <span class="brand-name">SlokAbhyasa</span>
+      <span class="brand-name wordmark"><span class="wm-gold">SlokA</span><span class="wm-blue">bhyasa</span></span>
     </a>
     <nav class="nav" aria-label="Main">
-      <button class="nav-btn active" data-view="player" type="button">
+      <button class="nav-btn active" data-view="home" type="button">
+        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 3 2 12h3v8h5v-6h4v6h5v-8h3z"/></svg><span>Home</span>
+      </button>
+      <button class="nav-btn" data-view="player" type="button">
         <svg viewBox="0 0 24 24"><path fill="currentColor" d="M8 5v14l11-7z"/></svg><span>Player</span>
       </button>
       <button class="nav-btn" data-view="learn" type="button">
@@ -59,8 +62,15 @@
 
   <main class="main">
 
+    <!-- ================= HOME ================= -->
+    <section class="view active" id="view-home" aria-label="Home">
+      <div class="home-hero">
+        <img class="home-logo" src="assets/logo.png" alt="SlokAbhyasa" />
+      </div>
+    </section>
+
     <!-- ================= PLAYER ================= -->
-    <section class="view active" id="view-player" aria-labelledby="player-title">
+    <section class="view" id="view-player" aria-labelledby="player-title">
       <header class="view-header">
         <h1 id="player-title">Player</h1>
         <p class="subtitle">Load a recording and listen to it at any speed.</p>

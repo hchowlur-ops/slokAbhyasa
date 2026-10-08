@@ -9,6 +9,9 @@ and see exactly where your attempt deviates, with the sloka and your own recordi
 SlokAbhyasa calls every recording it has learnt a *sloka* (a verse); the word is used for any short
 piece, chanted, sung or spoken.
 
+The app opens on a home page that shows the logo (more will grow there); the sidebar, with the
+two-tone wordmark linking back to it, is the same on every page.
+
 Everything runs on your machine. Slokas are ordinary WAV files in folders under `library/`
 (one folder per chapter, say); quizzes are JSON files in `quizzes/`.
 

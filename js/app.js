@@ -261,9 +261,9 @@ function progressUI(target) {
 
 // ---------- routing ----------
 
-const VIEWS = ['player', 'learn', 'teach', 'evaluate', 'quiz', 'reports', 'library'];
+const VIEWS = ['home', 'player', 'learn', 'teach', 'evaluate', 'quiz', 'reports', 'library'];
 function showView(name) {
-  if (!VIEWS.includes(name)) name = 'player';
+  if (!VIEWS.includes(name)) name = 'home';
   const section = name === 'teach' ? 'evaluate' : name; // Teach is Self Evaluation for one sloka at a time
   $$('.view').forEach((v) => v.classList.toggle('active', v.id === `view-${section}`));
   $$('.nav-btn').forEach((b) => b.classList.toggle('active', b.dataset.view === name));
@@ -276,7 +276,7 @@ function showView(name) {
   redrawAll();
 }
 $$('.nav-btn').forEach((b) => b.addEventListener('click', () => showView(b.dataset.view)));
-window.addEventListener('hashchange', () => showView(location.hash.slice(1) || 'player'));
+window.addEventListener('hashchange', () => showView(location.hash.slice(1) || 'home'));
 
 // ---------- state ----------
 
@@ -3462,7 +3462,7 @@ async function playLibraryRange(r, s, e) {
 
 // ---------- start ----------
 
-showView(location.hash.slice(1) || 'player');
+showView(location.hash.slice(1) || 'home');
 getLibrary();
 renderLearnerNote();
 renderLearnerSelect();
