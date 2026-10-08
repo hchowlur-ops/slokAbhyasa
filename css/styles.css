@@ -112,9 +112,13 @@ canvas { display: block; }
 .brand:hover .wm-gold { background-image: linear-gradient(180deg, #ffe27a 0%, #f7c04a 45%, #e68a1f 100%); }
 .brand:hover .wm-blue { background-image: linear-gradient(180deg, #9adcfb 0%, #55a9ea 50%, #2a73c4 100%); }
 
-/* home: the logo alone, in the middle of the page */
-.home-hero { min-height: calc(100vh - 120px); display: grid; place-items: center; }
-.home-logo { width: min(440px, 72vw); height: auto; border-radius: 12%; box-shadow: 0 18px 50px rgba(0, 0, 0, .28); }
+/* home: the sloka, the logo and its translation, in the middle of the page */
+.home-hero { min-height: calc(100vh - 120px); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px; text-align: center; }
+.home-logo { width: min(400px, 68vw); height: auto; border-radius: 12%; box-shadow: 0 18px 50px rgba(0, 0, 0, .28); }
+.home-sloka, .home-translation { margin: 0; padding: 0; max-width: 720px; }
+.home-sloka p { margin: 0; font-size: clamp(1.35rem, 2.6vw, 1.9rem); line-height: 1.75; font-weight: 600; letter-spacing: .01em; color: var(--text); }
+.home-translation p { margin: 0; font-size: clamp(1.05rem, 1.8vw, 1.25rem); line-height: 1.6; color: var(--text); font-style: italic; }
+.home-translation footer { margin-top: 10px; font-size: 0.85rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .nav { display: flex; flex-direction: column; gap: 4px; }
 .nav-btn {
   display: flex; align-items: center; gap: 12px;
