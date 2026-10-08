@@ -40,6 +40,9 @@
       <button class="nav-btn" data-view="library" type="button">
         <svg viewBox="0 0 24 24"><path fill="currentColor" d="M4 4h4v16H4zm6 0h4v16h-4zm6.6.3 3.9-1 4 15.5-3.9 1z"/></svg><span>Library</span>
       </button>
+      <button class="nav-btn" data-view="settings" type="button">
+        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M19.4 13a7.6 7.6 0 0 0 .1-1 7.6 7.6 0 0 0-.1-1l2.1-1.6a.5.5 0 0 0 .1-.6l-2-3.5a.5.5 0 0 0-.6-.2l-2.5 1a7.3 7.3 0 0 0-1.7-1l-.4-2.6a.5.5 0 0 0-.5-.5h-4a.5.5 0 0 0-.5.4l-.4 2.7a7.3 7.3 0 0 0-1.7 1l-2.5-1a.5.5 0 0 0-.6.2l-2 3.5a.5.5 0 0 0 .1.6L4.6 11a7.6 7.6 0 0 0 0 2l-2.1 1.6a.5.5 0 0 0-.1.6l2 3.5a.5.5 0 0 0 .6.2l2.5-1a7.3 7.3 0 0 0 1.7 1l.4 2.6a.5.5 0 0 0 .5.5h4a.5.5 0 0 0 .5-.4l.4-2.7a7.3 7.3 0 0 0 1.7-1l2.5 1a.5.5 0 0 0 .6-.2l2-3.5a.5.5 0 0 0-.1-.6zM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"/></svg><span>Settings</span>
+      </button>
     </nav>
     <div class="sidebar-footer">
       <div class="bg-status" id="bg-status" hidden title="Transcribing saved slokas in the other languages. Your own transcriptions always go first.">
@@ -335,19 +338,7 @@
               <label class="toggle"><input type="checkbox" id="practice-trim" checked /><span>Trim silence at the start and end of my recording</span></label>
             </div>
             <p class="muted small" id="practice-learner-note"></p>
-            <div class="tol-row" id="tol-row">
-              <span class="field-label">Tolerance · acceptable variation</span>
-              <div class="tol-fields" id="tol-fields"></div>
-              <button class="btn btn-ghost btn-sm" id="tol-reset" type="button">Defaults</button>
-              <p class="muted small" id="tol-hint">A category is within tolerance when its score is at least 100 % minus the tolerance.</p>
-              <p class="muted small" id="tol-quiz-note" hidden>In a quiz the tolerances are fixed.</p>
-            </div>
-            <div class="tol-row" id="weights-row">
-              <span class="field-label">Weights · what the overall score is made of</span>
-              <div class="tol-fields" id="weight-fields"></div>
-              <button class="btn btn-ghost btn-sm" id="weights-reset" type="button">Defaults</button>
-              <p class="muted small">The overall is the weighted mean of the categories that could be judged. Recommended for Gītā recitation: phonemes 30, vowel length 25, syllables 15, emphasis 10, pitch contour 10, phrasing 5, timing 5. The weights in force are saved with every attempt.</p>
-            </div>
+            <p class="muted small" id="practice-settings-note">Tolerances (what counts as within tolerance) and weights (what the overall is made of) are set in <a href="#settings">Settings</a>.</p>
           </div>
           <div class="progress" id="practice-progress" hidden>
             <div class="progress-bar"><div class="progress-fill" id="practice-progress-fill"></div></div>
@@ -587,6 +578,42 @@
         <div class="step-body">
           <p id="quiz-none" class="muted small">No quizzes yet.</p>
           <ul class="quiz-list" id="quiz-list"></ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= SETTINGS ================= -->
+    <section class="view" id="view-settings" aria-labelledby="settings-title">
+      <header class="view-header">
+        <h1 id="settings-title">Settings</h1>
+        <p class="subtitle">How a recitation is judged, and how its words are heard. Everything here is remembered in this browser.</p>
+      </header>
+
+      <div class="card settings-card">
+        <h2>Weights · what the overall score is made of</h2>
+        <p class="muted small">The overall score is the weighted mean of the categories that could be judged; the grade follows it (Excellent from 90, Good from 80, Fair from 65, Needs practice below). The weights recommended for Gītā recitation are phonemes 30, vowel length 25, syllables 15, emphasis 10, pitch contour 10, phrasing 5, timing 5. The weights in force are saved with every attempt and session, so changing them later never rewrites an old score.</p>
+        <div class="tol-row settings-row" id="weights-row">
+          <div class="tol-fields" id="weight-fields"></div>
+          <button class="btn btn-ghost btn-sm" id="weights-reset" type="button">Defaults</button>
+        </div>
+      </div>
+
+      <div class="card settings-card">
+        <h2>Tolerance · acceptable variation</h2>
+        <p class="muted small" id="tol-hint">A category is within tolerance when its score is at least 100 % minus the tolerance.</p>
+        <div class="tol-row settings-row" id="tol-row">
+          <div class="tol-fields" id="tol-fields"></div>
+          <button class="btn btn-ghost btn-sm" id="tol-reset" type="button">Defaults</button>
+        </div>
+        <p class="muted small" id="tol-quiz-note">These tolerances apply to Self Evaluation and Teach. A quiz always judges on the defaults for the chosen learner, and every attempt records the tolerance it was judged with.</p>
+      </div>
+
+      <div class="card settings-card">
+        <h2>Speech recognition</h2>
+        <p class="muted small">The language the words are heard in, the model, and whether transcripts are made without being asked. The same settings appear beside every transcript panel. Saved slokas are transcribed in every supported language in the background, so changing the language later shows that transcript at once.</p>
+        <div class="settings-row">
+          <div class="stt-controls" id="settings-stt-controls"></div>
+          <label class="toggle"><input type="checkbox" id="settings-stt-auto" /><span>Transcribe automatically (Learn, Self Evaluation, quizzes)</span></label>
         </div>
       </div>
     </section>

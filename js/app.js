@@ -262,7 +262,7 @@ function progressUI(target) {
 
 // ---------- routing ----------
 
-const VIEWS = ['home', 'player', 'learn', 'teach', 'evaluate', 'quiz', 'reports', 'library'];
+const VIEWS = ['home', 'player', 'learn', 'teach', 'evaluate', 'quiz', 'reports', 'library', 'settings'];
 function showView(name) {
   if (!VIEWS.includes(name)) name = 'home';
   const section = name === 'teach' ? 'evaluate' : name; // Teach is Self Evaluation for one sloka at a time
@@ -1364,17 +1364,13 @@ $('#tol-reset').addEventListener('click', () => {
   renderToleranceFields();
   refreshVerdicts();
 });
+// The explanatory lines of the Tolerance settings (the fields live on the Settings page).
 function renderToleranceRow() {
-  const quiz = !!practice.quiz;
-  $$('.tol-field input', $('#tol-fields')).forEach((i) => { i.disabled = quiz; });
-  $('#tol-reset').disabled = quiz;
-  setHidden($('#tol-hint'), quiz);
-  setHidden($('#tol-quiz-note'), !quiz);
   const d = learnerTolerance();
   const who = learnerSpeaker();
-  const words = `phonemes ${d.phoneme} %, vowel length ${d.vowel} %, syllables ${d.syllable} %${d.phoneme !== DEFAULT_TOLERANCE.phoneme ? ` (widened for a learner aged ${ageGroupLabel(who.ageGroup).toLowerCase()})` : ''}`;
-  $('#tol-hint').textContent = `A category is within tolerance when its score is at least 100 % minus the tolerance. Defaults: ${words}; emphasis, pitch and timing ${d.timing} %, phrasing ${d.phrasing} %.`;
-  $('#tol-quiz-note').textContent = `In a quiz the tolerances are fixed: ${words}; emphasis, pitch and timing ${d.timing} %, phrasing ${d.phrasing} %.`;
+  const words = `phonemes ${d.phoneme} %, vowel length ${d.vowel} %, syllables ${d.syllable} %${d.phoneme !== DEFAULT_TOLERANCE.phoneme ? ` (widened for ${learnerName()}, aged ${ageGroupLabel(who.ageGroup).toLowerCase()})` : ''}`;
+  $('#tol-hint').textContent = `A category is within tolerance when its score is at least 100 % minus the tolerance. Defaults: ${words}; emphasis, pitch contour and timing ${d.timing} %, phrasing ${d.phrasing} %.`;
+  $('#tol-quiz-note').textContent = `These tolerances apply to Self Evaluation and Teach. A quiz always judges on the defaults for the chosen learner (${words}; emphasis, pitch contour and timing ${d.timing} %, phrasing ${d.phrasing} %), and every attempt records the tolerance it was judged with.`;
 }
 // What the chosen learner means for the evaluation, under the options.
 function renderLearnerNote() {
@@ -3248,6 +3244,14 @@ async function refreshLibrary() {
 const sttPractice = { base: null, heard: null };
 const sttProgress = progressUI('stt-progress');
 buildSttControls($('#stt-controls'));
+// the same controls on the Settings page, with the Automatic switch
+buildSttControls($('#settings-stt-controls'));
+{
+  const cb = $('#settings-stt-auto');
+  cb.checked = sttSettings.auto;
+  cb.addEventListener('change', () => { sttSettings.auto = cb.checked; saveStt(); syncSttAuto(); });
+  sttAutoBoxes.add(cb);
+}
 $('#stt-run').addEventListener('click', () => transcribeBoth(true));
 
 function resetTranscriptUI() {

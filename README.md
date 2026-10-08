@@ -152,7 +152,7 @@ slokas you had ticked there.
      syllables from the words heard; emphasis, pitch contour, phrasing and timing from the
      sound — and an **overall score**: their weighted mean (phonemes 30, vowel length 25,
      syllables 15, emphasis 10, pitch contour 10, phrasing 5, timing 5 by default; the
-     **Weights** row under the recording options changes them). The overall earns a **grade**:
+     **Settings** page changes them). The overall earns a **grade**:
      Excellent from 90, Good from 80, Fair from 65, Needs practice below. Only the categories
      that could be judged count: the overall is recomputed when the word scores arrive with
      the transcript, and a category that cannot be judged for this report (no transcript yet,
@@ -251,7 +251,7 @@ is within tolerance when its score is at least 100 minus the tolerance. The defa
 phonemes 15 %, vowel length 20 %, syllables 10 % (each widened by the learner's allowance on
 the words, see the table above: speech recognition is 2–5 times less accurate on children's
 voices), emphasis, pitch contour and timing 60 %, phrasing 50 %. Change them in the
-"Tolerance" row under the recording options (Self Evaluation and
+Settings page (Self Evaluation and
 Teach share the setting, which is remembered); "Defaults" puts them back. Verdicts on screen
 follow a change at once. In the list of reports each row says "Within tolerance" or which
 categories are outside it. A quiz always judges on the default tolerances for the chosen
@@ -455,6 +455,14 @@ updated as more slokas are ticked or pronunciation scores arrive).
 
 The choices (mode, period, date, folder, grouping) are remembered.
 
+### Settings
+Three cards, all remembered in the browser: **Weights** (what the overall score is made of,
+see "What is scored"; "Defaults" restores the recommended 30/25/15/10/10/5/5), **Tolerance**
+(the acceptable variation per category for Self Evaluation and Teach; a quiz always uses the
+defaults for the chosen learner), and **Speech recognition** (the language the words are
+heard in, the model, and whether transcripts are made automatically — the same controls
+that sit beside every transcript panel).
+
 ### Library
 Play, rename, move, delete, or jump straight into evaluating yourself against a sloka. The WAV files live in
 `library/` and its subfolders with a small `index.json`; feel free to copy or back them up.
@@ -571,7 +579,7 @@ itself, and compared phoneme by phoneme with the features above. The word catego
 therefore as good as the transcript: Whisper hears a chant approximately, so a slip it
 reports may be its own; correcting the sloka's text in its details removes one side of that
 uncertainty. The weights are the defaults recommended for Gītā recitation and can be changed
-in the "Weights" row of Self Evaluation; the weights in force are saved with every attempt
+on the Settings page; the weights in force are saved with every attempt
 and session. The thresholds behind pitch, timing and the aligner's content detector are
 scaled by the preset for the learner (`presetsFor` in `js/meta.js`): adults keep the
 calibrated defaults, children get the wider bands listed under "Who's reciting".

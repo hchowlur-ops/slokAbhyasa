@@ -183,6 +183,15 @@ canvas { display: block; }
 .quiz-table tr.group-head td { text-align: left; font-weight: 700; background: var(--surface-2); }
 .quiz-table th.sortable { cursor: pointer; }
 
+/* settings */
+.settings-card { margin-bottom: 18px; }
+.settings-card h2 { margin: 0 0 6px; font-size: 1.1rem; }
+.settings-card > p.muted { margin: 0 0 12px; }
+.settings-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+.settings-row.tol-row { margin-top: 0; padding-top: 0; border-top: 0; }
+.settings-row .stt-controls { display: flex; flex-wrap: wrap; gap: 10px 14px; }
+#practice-settings-note a { color: var(--accent-strong); }
+
 /* people dialog */
 .dialog-wide { width: min(560px, 94vw); }
 .people-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 240px; overflow: auto; }
