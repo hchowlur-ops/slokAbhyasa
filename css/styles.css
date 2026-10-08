@@ -302,9 +302,25 @@ canvas { display: block; }
 .progress-stop { flex: none; }
 
 /* ---------- results ---------- */
-.scores { display: grid; grid-template-columns: auto repeat(5, minmax(0, 1fr)); gap: 12px; align-items: stretch; margin-bottom: 12px; }
+.scores { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 12px; align-items: start; margin-bottom: 12px; }
+.scores > .score-main { width: 160px; }
 .score { text-align: center; padding: 12px 8px; border-radius: 14px; background: var(--surface-2); }
 .score-main { background: transparent; }
+/* the grade an overall earns */
+.score-grade { display: inline-block; margin-top: 8px; padding: 3px 12px; border-radius: 999px; font-size: 0.85rem; font-weight: 700; letter-spacing: .02em; }
+.score-grade:empty { display: none; }
+.score-grade.excellent { background: var(--accent-soft); color: var(--accent-strong); }
+.score-grade.good { background: color-mix(in srgb, var(--pitch) 18%, transparent); color: color-mix(in srgb, var(--pitch) 70%, var(--text)); }
+.score-grade.fair { background: color-mix(in srgb, var(--timing) 20%, transparent); color: color-mix(in srgb, var(--timing) 70%, var(--text)); }
+.score-grade.practice { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
+/* categories that could not be judged: collapsed, at the bottom of the report */
+.unjudged { margin-top: 24px; padding: 10px 14px; border-radius: 12px; border: 1px dashed var(--border); }
+.unjudged summary { cursor: pointer; font-weight: 600; color: var(--muted); font-size: 0.9rem; }
+.unjudged .scores { margin: 12px 0 6px; grid-auto-flow: row; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+.unjudged .scores:empty { display: none; }
+.unjudged .score { padding: 8px; opacity: .8; }
+.unjudged .score-val { font-size: 1.2rem; }
+.unjudged p { margin: 0; }
 .score-val { font-size: 1.8rem; font-weight: 700; line-height: 1.1; }
 .score-label { font-weight: 600; color: var(--muted); font-size: 0.85rem; text-transform: uppercase; letter-spacing: .06em; margin-top: 4px; }
 .score-sub { margin-top: 2px; min-height: 1.2em; }
@@ -356,7 +372,10 @@ canvas { display: block; }
 .dev-actions { display: flex; gap: 6px; flex: none; }
 
 /* ---------- transcripts ---------- */
-.transcript { margin-top: 24px; padding-top: 18px; border-top: 1px dashed var(--border); }
+.transcript { margin: 6px 0 20px; padding: 14px 16px 12px; border-radius: 14px; background: var(--surface-2); }
+.transcript .dev-head-row { margin-top: 0; }
+.transcript .stt-text { background: var(--surface); }
+.transcript > p.muted:last-child { margin-bottom: 0; }
 .stt-controls { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
 .field.inline { flex-direction: row; align-items: center; gap: 8px; }
 .field.inline select { padding: 6px 10px; }
@@ -446,7 +465,7 @@ canvas { display: block; }
 .reports-head h3 { margin: 0; }
 .report-map { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
 .report-row {
-  display: grid; grid-template-columns: minmax(110px, 190px) minmax(120px, 1fr) 40px minmax(130px, 230px); gap: 12px; align-items: center;
+  display: grid; grid-template-columns: minmax(110px, 190px) minmax(120px, 1fr) minmax(56px, auto) minmax(130px, 230px); gap: 12px; align-items: center;
   width: 100%; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface);
   cursor: pointer; font: inherit; color: inherit; text-align: left;
 }
@@ -465,7 +484,12 @@ canvas { display: block; }
 .rr-mark.type-content { background: var(--content); }
 .rr-mark.type-missing, .rr-mark.type-extra { background: var(--missing); }
 .rr-mark.type-dynamics { background: var(--dynamics); }
-.rr-score { font-weight: 700; text-align: right; }
+.rr-score { font-weight: 700; text-align: right; display: flex; flex-direction: column; align-items: flex-end; line-height: 1.15; }
+.rr-grade { font-size: 0.72rem; font-weight: 700; letter-spacing: .02em; }
+.rr-grade.excellent { color: var(--accent-strong); }
+.rr-grade.good { color: color-mix(in srgb, var(--pitch) 70%, var(--text)); }
+.rr-grade.fair { color: color-mix(in srgb, var(--timing) 70%, var(--text)); }
+.rr-grade.practice { color: var(--danger); }
 .rr-info { font-size: 0.82rem; color: var(--muted); display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .rr-flag { font-weight: 600; }
 .rr-flag.bad { color: var(--danger); }
@@ -525,6 +549,8 @@ canvas { display: block; }
 .quiz-score-main { display: flex; gap: 22px; align-items: flex-start; flex-wrap: wrap; margin-bottom: 12px; }
 .quiz-pct { display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 130px; padding: 12px 16px; border-radius: 14px; background: var(--surface); }
 .quiz-pct .mono { font-size: 2.6rem; font-weight: 700; line-height: 1.1; color: var(--accent-strong); }
+.quiz-pct.secondary .mono { font-size: 1.9rem; color: var(--text); }
+.quiz-pct .score-grade { margin: 4px 0 2px; }
 .quiz-pct-label { font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
 .quiz-cats { flex: 1; min-width: 240px; display: flex; flex-direction: column; gap: 6px; }
 .quiz-cats .chip .val { margin-left: 6px; opacity: .8; font-weight: 500; }
@@ -544,6 +570,7 @@ canvas { display: block; }
 .trend-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 0.82rem; color: var(--muted); margin: 6px 0 8px; }
 .trend-legend .sw { width: 14px; height: 4px; border-radius: 2px; display: inline-block; margin-right: 6px; vertical-align: middle; }
 .trend-legend .sw.overall { background: var(--accent); height: 6px; }
+.trend-legend .sw.weighted { background: var(--text); height: 5px; }
 .trend-legend .sw.content { background: var(--content); }
 .trend-legend .sw.pronunciation { background: var(--heard); }
 .trend-legend .sw.timing { background: var(--timing); }

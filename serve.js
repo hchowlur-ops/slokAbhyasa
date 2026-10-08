@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { trimSilence } from './js/dsp/trim.js';
 import { decodeWav, encodeWavBytes } from './js/wav.js';
 import { cleanFolder, parseBaselineFilename, nameFromSlug, parseWavHeader, RESERVED_FOLDERS } from './js/libutil.js';
-import { normalizeCategories, normalizeTolerance, correctness } from './js/quizscore.js';
+import { normalizeCategories, normalizeTolerance, correctness, attemptOverall, gradeOf } from './js/quizscore.js';
 import { resolveDataDir } from './datadir.js';
 import { readMeta, writeMeta, removeMeta, moveMeta, ensureMeta, sanitizeMeta, audioInfo, withBext, bextDescription, readProfiles, writeProfiles, sanitizeProfile } from './meta-store.js';
 
@@ -311,13 +311,19 @@ async function listQuizzes() {
 function quizSummary(q) {
   const attempts = Array.isArray(q.attempts) ? q.attempts : [];
   const last = attempts[attempts.length - 1] || null;
-  // correctness on the quiz's current categories and the tolerance the attempt was judged with
-  const scoreOf = (a) => (Array.isArray(a.items) && a.items.length ? correctness(a.items, q.categories, a.tolerance ? normalizeTolerance(a.tolerance) : undefined).pct : a.score == null ? null : a.score);
+  // correctness on the quiz's current categories and the tolerance the attempt was judged with;
+  // the weighted overall (and its grade) likewise on the current categories
+  const hasItems = (a) => Array.isArray(a.items) && a.items.length;
+  const scoreOf = (a) => (hasItems(a) ? correctness(a.items, q.categories, a.tolerance ? normalizeTolerance(a.tolerance) : undefined).pct : a.score == null ? null : a.score);
+  const overallOf = (a) => (hasItems(a) ? attemptOverall(a.items, q.categories) : a.overall == null ? null : a.overall);
+  const lastOverall = last ? overallOf(last) : null;
+  const lastGrade = gradeOf(lastOverall);
   return {
     id: q.id, name: q.name, createdAt: q.createdAt, folders: q.folders, mode: q.mode, maxFiles: q.maxFiles,
     items: q.items, categories: q.categories, attempts: attempts.length,
-    last: last ? { at: last.at, score: scoreOf(last), byCategory: last.byCategory } : null,
+    last: last ? { at: last.at, score: scoreOf(last), byCategory: last.byCategory, overall: lastOverall, grade: lastGrade ? lastGrade.id : null } : null,
     best: attempts.reduce((m, a) => { const s = scoreOf(a); return s != null && (m == null || s > m) ? s : m; }, null),
+    bestOverall: attempts.reduce((m, a) => { const s = overallOf(a); return s != null && (m == null || s > m) ? s : m; }, null),
   };
 }
 const cleanItems = (items) => (Array.isArray(items) ? items : [])
@@ -365,6 +371,7 @@ async function handleQuizzes(req, res, parts) {
       takeDuration: Number(a.takeDuration) || 0,
       categories: normalizeCategories(a.categories),
       score: a.score == null ? null : Number(a.score),
+      overall: a.overall == null ? null : Number(a.overall),
       byCategory: a.byCategory,
       counted: Number(a.counted) || 0,
       recited: Number(a.recited) || 0,

@@ -9,7 +9,7 @@ import { Analyzer } from './analyzer.js';
 import { drawWaveform, drawLiveWave, ComparisonChart } from './visualizer.js';
 import { serializeFeatures, deserializeFeatures, isValidFeatures } from './dsp/features.js';
 import { MISMATCH_CONTRAST } from './dsp/compare.js';
-import { QUIZ_CATEGORIES, DEFAULT_QUIZ_CATEGORIES, DEFAULT_TOLERANCE, itemScores, attemptSummary, scoreFor, normalizeCategories, normalizeTolerance, withinTolerance, itemVerdict, correctness, pickBaselines } from './quizscore.js';
+import { QUIZ_CATEGORIES, DEFAULT_QUIZ_CATEGORIES, DEFAULT_TOLERANCE, CATEGORY_WEIGHTS, itemScores, attemptSummary, scoreFor, normalizeCategories, normalizeTolerance, withinTolerance, itemVerdict, correctness, pickBaselines, overallScore, attemptOverall, gradeOf } from './quizscore.js';
 import { mixToMono } from './dsp/resample.js';
 import { trimSilence } from './dsp/trim.js';
 import { Transcriber, STT_LANGUAGES, STT_TIERS, sttLanguageLabel, sttLanguageTag, sttTierLabel, isStopped } from './stt.js';
@@ -1707,8 +1707,12 @@ function renderReportBrowser() {
         m.style.width = pct(d.tHeard[1] - d.tHeard[0]);
         track.appendChild(m);
       }
-      $('.rr-score', row).textContent = String(r.scores.overall);
-      $('.rr-score', row).title = 'Overall score';
+      const { overall, grade } = reportOverall(id);
+      const sEl = $('.rr-score', row);
+      sEl.innerHTML = '<span></span><span class="rr-grade"></span>';
+      sEl.firstChild.textContent = overall == null ? '–' : String(overall);
+      if (grade) { sEl.lastChild.textContent = grade.label; sEl.lastChild.classList.add(grade.id); }
+      sEl.title = 'Overall score, weighted over the categories judged so far';
       $('.rr-count', row).textContent = shown.length ? `${shown.length} conflict${shown.length === 1 ? '' : 's'}` : 'No conflicts';
       const v = reportVerdict(id);
       if (v.ok !== null) {
@@ -1909,7 +1913,7 @@ async function scoreQuizAttempt() {
     // saved with every category, so the chosen categories can change afterwards, and with
     // the tolerance and learner it was judged with
     const saved = await api.addQuizAttempt(quiz.id, {
-      at: attempt.at, takeDuration: take.duration, categories: quiz.categories, score: attempt.score,
+      at: attempt.at, takeDuration: take.duration, categories: quiz.categories, score: attempt.score, overall: attempt.overall,
       byCategory: attempt.byCategory, counted: attempt.counted, recited: attempt.recited, items: attempt.items, correct: attempt.correct,
       tolerance: attempt.tolerance, learner: attempt.learner,
     });
@@ -1939,7 +1943,10 @@ function renderQuizScore() {
   const corr = a.saved || a.error ? correctness(a.items, quiz.categories, tol) : null;
   const pct = corr ? corr.pct : null;
   $('#quiz-pct').textContent = pct == null ? '–' : `${pct}%`;
-  $('.quiz-pct-label').textContent = corr && corr.counted ? `correct · ${corr.correct} of ${corr.counted}` : 'correct';
+  $('#quiz-pct').parentElement.querySelector('.quiz-pct-label').textContent = corr && corr.counted ? `correct · ${corr.correct} of ${corr.counted}` : 'correct';
+  const overall = corr ? attemptOverall(a.items, quiz.categories) : null;
+  $('#quiz-overall').textContent = overall == null ? '–' : String(overall);
+  setGrade($('#quiz-grade'), gradeOf(overall));
   // category chips with each category's share within tolerance
   const chips = $('#quiz-cats');
   chips.innerHTML = '';
@@ -1970,8 +1977,9 @@ function renderQuizScore() {
   table.innerHTML = '';
   const cats = QUIZ_CATEGORIES;
   const head = document.createElement('tr');
-  head.innerHTML = '<th>Sloka</th><th>Recited</th>' + cats.map((c) => `<th title="tolerance ${tol[c.id]} %">${c.label}</th>`).join('') + '<th>Correct</th>';
+  head.innerHTML = '<th>Sloka</th><th>Recited</th>' + cats.map((c) => `<th title="tolerance ${tol[c.id]} % · weight ${CATEGORY_WEIGHTS[c.id]}">${c.label}</th>`).join('') + '<th title="Weighted over the chosen categories">Overall</th><th>Correct</th>';
   table.appendChild(head);
+  const gradeCell = (o) => { const g = gradeOf(o); return o == null ? '–' : `${o} <span class="rr-grade ${g.id}">${g.label}</span>`; };
   for (const it of a.items) {
     const tr = document.createElement('tr');
     tr.className = it.missing ? 'missing' : it.matched ? '' : 'unmatched';
@@ -1983,6 +1991,7 @@ function renderQuizScore() {
       const mark = v == null ? '' : `<span class="mark ${w ? 'ok' : 'bad'}" title="${w ? 'within' : 'outside'} ${tol[c.id]} %">${w ? '✓' : '✗'}</span>`;
       cells.push(`<td class="${on ? 'on' : 'off'}">${v == null ? '–' : v}${on ? mark : ''}</td>`);
     }
+    cells.push(`<td class="on">${it.missing ? '–' : gradeCell(overallScore(it, quiz.categories))}</td>`);
     const v = itemVerdict(it, quiz.categories, tol);
     cells.push(`<td class="on">${v.ok === null ? '–' : v.ok ? 'yes' : 'no'}</td>`);
     tr.innerHTML = cells.join('');
@@ -1993,11 +2002,11 @@ function renderQuizScore() {
   if (a.saved || a.error) {
     const tr = document.createElement('tr');
     tr.className = 'total';
-    tr.innerHTML = `<td>Within tolerance</td><td>${a.recited} of ${a.counted}</td>` + cats.map((c) => { const pr = corr.passRate[c.id]; return `<td class="${quiz.categories.includes(c.id) ? 'on' : 'off'}">${pr ? `${pr.ok}/${pr.n}` : '–'}</td>`; }).join('') + `<td class="on">${pct == null ? '–' : `${corr.correct} of ${corr.counted} · ${pct}%`}</td>`;
+    tr.innerHTML = `<td>Within tolerance</td><td>${a.recited} of ${a.counted}</td>` + cats.map((c) => { const pr = corr.passRate[c.id]; return `<td class="${quiz.categories.includes(c.id) ? 'on' : 'off'}">${pr ? `${pr.ok}/${pr.n}` : '–'}</td>`; }).join('') + `<td class="on">${gradeCell(overall)}</td><td class="on">${pct == null ? '–' : `${corr.correct} of ${corr.counted} · ${pct}%`}</td>`;
     table.appendChild(tr);
     const avg = document.createElement('tr');
     avg.className = 'total';
-    avg.innerHTML = `<td>Average score</td><td></td>` + cats.map((c) => `<td class="${quiz.categories.includes(c.id) ? 'on' : 'off'}">${a.byCategory[c.id] == null ? '–' : a.byCategory[c.id]}</td>`).join('') + '<td></td>';
+    avg.innerHTML = `<td>Average score</td><td></td>` + cats.map((c) => `<td class="${quiz.categories.includes(c.id) ? 'on' : 'off'}">${a.byCategory[c.id] == null ? '–' : a.byCategory[c.id]}</td>`).join('') + '<td></td><td></td>';
     table.appendChild(avg);
   }
   const trend = $('#quiz-trend');
@@ -2008,6 +2017,7 @@ function renderQuizScore() {
 // Score per category over the attempts of a quiz: an SVG line chart and a table.
 const TREND_SERIES = [
   { id: 'overall', label: 'Correct', color: 'var(--accent)', width: 3 },
+  { id: 'weighted', label: 'Overall score', color: 'var(--text)', width: 2.2 },
   { id: 'content', label: 'Content', color: 'var(--content)', width: 1.6 },
   { id: 'pronunciation', label: 'Pronunciation', color: 'var(--heard)', width: 1.6 },
   { id: 'timing', label: 'Timing', color: 'var(--timing)', width: 1.6 },
@@ -2018,8 +2028,10 @@ function renderTrend(host, quiz) {
   const attempts = (quiz.attempts || []).slice().sort((x, y) => String(x.at).localeCompare(String(y.at)));
   host.innerHTML = '';
   if (!attempts.length) return;
-  const attemptScore = (a) => (Array.isArray(a.items) && a.items.length ? correctness(a.items, quiz.categories, attemptTolerance(a)).pct : a.score == null ? null : a.score);
-  const valueOf = (a, id) => (id === 'overall' ? attemptScore(a) : a.byCategory ? a.byCategory[id] : null);
+  const hasItems = (a) => Array.isArray(a.items) && a.items.length;
+  const attemptScore = (a) => (hasItems(a) ? correctness(a.items, quiz.categories, attemptTolerance(a)).pct : a.score == null ? null : a.score);
+  const weightedOf = (a) => (hasItems(a) ? attemptOverall(a.items, quiz.categories) : a.overall == null ? null : a.overall);
+  const valueOf = (a, id) => (id === 'overall' ? attemptScore(a) : id === 'weighted' ? weightedOf(a) : a.byCategory ? a.byCategory[id] : null);
   const h4 = document.createElement('h4');
   h4.textContent = attempts.length > 1 ? `Trend over ${attempts.length} attempts` : 'Trend';
   host.appendChild(h4);
@@ -2058,17 +2070,19 @@ function renderTrend(host, quiz) {
   host.appendChild(wrap.firstChild);
   const legend = document.createElement('div');
   legend.className = 'trend-legend';
-  legend.innerHTML = TREND_SERIES.map((sr) => `<span><i class="sw ${sr.id}"></i>${sr.label}${sr.id === 'overall' ? ' (% of slokas within tolerance in the chosen categories)' : ' (average score)'}</span>`).join('');
+  legend.innerHTML = TREND_SERIES.map((sr) => `<span><i class="sw ${sr.id}"></i>${sr.label}${sr.id === 'overall' ? ' (% of slokas within tolerance in the chosen categories)' : sr.id === 'weighted' ? ' (weighted over the chosen categories)' : ' (average score)'}</span>`).join('');
   host.appendChild(legend);
   const wrapT = document.createElement('div');
   wrapT.className = 'quiz-table-wrap';
   const table = document.createElement('table');
   table.className = 'quiz-table';
-  table.innerHTML = '<tr><th>#</th><th>When</th><th>Recited</th>' + QUIZ_CATEGORIES.map((c) => `<th>${c.label}</th>`).join('') + '<th>Correct</th></tr>';
+  table.innerHTML = '<tr><th>#</th><th>When</th><th>Recited</th>' + QUIZ_CATEGORIES.map((c) => `<th>${c.label}</th>`).join('') + '<th>Overall</th><th>Correct</th></tr>';
   attempts.forEach((a, i) => {
     const tr = document.createElement('tr');
     const sc = valueOf(a, 'overall');
-    tr.innerHTML = `<td>${i + 1}</td><td></td><td>${a.recited ?? '–'} of ${a.counted ?? '–'}</td>` + QUIZ_CATEGORIES.map((c) => `<td class="${quiz.categories.includes(c.id) ? 'on' : 'off'}">${a.byCategory && a.byCategory[c.id] != null ? a.byCategory[c.id] : '–'}</td>`).join('') + `<td class="on">${sc == null ? '–' : `${sc}%`}</td>`;
+    const wt = valueOf(a, 'weighted');
+    const g = gradeOf(wt);
+    tr.innerHTML = `<td>${i + 1}</td><td></td><td>${a.recited ?? '–'} of ${a.counted ?? '–'}</td>` + QUIZ_CATEGORIES.map((c) => `<td class="${quiz.categories.includes(c.id) ? 'on' : 'off'}">${a.byCategory && a.byCategory[c.id] != null ? a.byCategory[c.id] : '–'}</td>`).join('') + `<td class="on">${wt == null ? '–' : `${wt} <span class="rr-grade ${g.id}">${g.label}</span>`}</td><td class="on">${sc == null ? '–' : `${sc}%`}</td>`;
     tr.children[1].textContent = fmtDate(a.at);
     table.appendChild(tr);
   });
@@ -2240,15 +2254,22 @@ function renderQuizList() {
       <div class="quiz-item-meta"></div>
       <div class="quiz-item-details" hidden></div>`;
     $('.quiz-item-name', li).textContent = q.name;
-    $('.quiz-item-score', li).textContent = lastScore == null ? (q.attempts ? '–' : 'not taken') : `${lastScore}%`;
-    $('.quiz-item-score', li).title = 'Latest attempt: share of slokas within tolerance in the chosen categories';
+    const lastGrade = q.last && q.last.overall != null ? gradeOf(q.last.overall) : null;
+    $('.quiz-item-score', li).textContent = lastScore == null ? (q.attempts ? '–' : 'not taken') : `${lastScore}% correct`;
+    if (lastGrade) {
+      const g = document.createElement('span');
+      g.className = `rr-grade ${lastGrade.id}`;
+      g.textContent = ` · ${q.last.overall} ${lastGrade.label}`;
+      $('.quiz-item-score', li).appendChild(g);
+    }
+    $('.quiz-item-score', li).title = 'Latest attempt: share of slokas within tolerance in the chosen categories, then the weighted overall score and its grade';
     const meta = $('.quiz-item-meta', li);
     const parts = [
       `${q.items.length} sloka${q.items.length === 1 ? '' : 's'} from ${q.folders.map(folderLabel).join(', ') || 'the library'}`,
       `${q.attempts} attempt${q.attempts === 1 ? '' : 's'}`,
     ];
     if (q.last) parts.push(`last ${fmtDate(q.last.at)}`);
-    if (q.attempts > 1 && q.best != null) parts.push(`best ${q.best}%`);
+    if (q.attempts > 1 && q.best != null) parts.push(`best ${q.best}% correct${q.bestOverall != null ? ` · ${q.bestOverall} ${(gradeOf(q.bestOverall) || {}).label || ''}` : ''}`);
     parts.push(`scored on ${q.categories.map((c) => (QUIZ_CATEGORIES.find((x) => x.id === c) || {}).label || c).join(' + ')}`);
     for (const t of parts) { const sp = document.createElement('span'); sp.textContent = t; meta.appendChild(sp); }
     $('[data-act="retake"]', li).addEventListener('click', async () => {
@@ -2366,13 +2387,6 @@ function renderResult(res) {
   practice.result = res;
   practice.selected = null;
   setHidden($('#practice-results'), false);
-  const s = res.scores;
-  const w = s.weights || {};
-  $('#score-ring').style.setProperty('--pct', String(s.overall));
-  $('#score-overall').textContent = String(s.overall);
-  const parts = [['content', w.content], ['timing', w.timing], ['pitch', w.pitch]].filter(([, v]) => v > 0);
-  const wsum = parts.reduce((a, [, v]) => a + v, 0) || 1;
-  $('#score-overall-sub').textContent = parts.map(([k, v]) => `${k} ${Math.round((100 * v) / wsum)} %`).join(' · ');
   renderTiles(res, practice.activeId);
   const notes = $('#result-notes');
   notes.innerHTML = '';
@@ -2382,11 +2396,28 @@ function renderResult(res) {
   resetTranscriptUI();
 }
 
-// The five category tiles of the open report, each judged against the tolerance.
+// The weighted overall of a report over the categories that could be judged, and its grade.
+function reportOverall(id) {
+  const sc = reportScores(id);
+  const overall = sc ? overallScore(sc) : null;
+  return { overall, grade: gradeOf(overall) };
+}
+// Puts a grade badge in an element (empty when there is no grade).
+function setGrade(el, grade) {
+  el.textContent = grade ? grade.label : '';
+  el.className = `${el.className.split(' ')[0]}${grade ? ` ${grade.id}` : ''}`;
+}
+
+// The category tiles of the open report, each judged against the tolerance, and the ring
+// with the weighted overall and its grade. Tiles of categories that could not be judged
+// (no transcript yet, pitch shown for interest only, dynamics not measured) are collapsed
+// at the bottom of the report; the judged ones stay by the ring.
 function renderTiles(res, id) {
   const s = res.scores;
   const sc = reportScores(id) || {};
   const tol = activeTolerance();
+  const judged = [];
+  const unjudged = [];
   const put = (cat, value, sub) => {
     $(`#score-${cat}`).textContent = value == null ? '–' : String(value);
     $(`#score-${cat}-sub`).textContent = sub;
@@ -2395,14 +2426,30 @@ function renderTiles(res, id) {
     tile.classList.toggle('ok', w === true);
     tile.classList.toggle('bad', w === false);
     $(`#score-${cat}-tol`).textContent = w === null ? '' : w ? `within ${tol[cat]} %` : `outside ${tol[cat]} %`;
+    (sc[cat] == null ? unjudged : judged).push(tile);
   };
   put('content', s.content, s.contentCoveredPct ? `${s.contentCoveredPct}% of the piece flagged` : 'matches throughout');
   const sim = practice.wordSims.has(id) ? practice.wordSims.get(id) : null;
-  put('pronunciation', sim == null ? null : Math.round(100 * sim), sim == null ? (practice.heardTranscripts.size || sttSettings.auto || practice.quiz ? 'from the transcript, below' : 'transcribe to judge') : 'of the words heard');
+  put('pronunciation', sim == null ? null : Math.round(100 * sim), sim == null ? (practice.heardTranscripts.size || sttSettings.auto || practice.quiz ? 'waiting for the transcript' : 'transcribe to judge') : 'of the words heard');
   put('timing', s.timing, s.timingCoveredPct ? `${s.timingCoveredPct}% of the piece flagged` : 'steady throughout');
   const pitchStyle = s.weights && s.weights.pitch === 0 && s.pitch != null; // recited text: pitch is shown, not judged
   put('pitch', s.pitch, s.pitch == null ? 'not enough steady pitch' : `in tune ${s.pitchInTunePct}% · avg ${s.pitchMeanCents} cents off${pitchStyle ? ' · for interest, not judged' : ''}`);
   put('dynamics', s.dynamics, s.dynamics == null ? 'not measured' : s.dynamicsCoveredPct ? `${s.dynamicsCoveredPct}% of the piece flagged` : 'even throughout');
+  // judged tiles by the ring, in weight order; the rest collapsed at the bottom
+  const grid = $('#scores');
+  for (const t of judged) grid.appendChild(t);
+  const fold = $('#scores-unjudged');
+  const foldTiles = $('#scores-unjudged-tiles');
+  for (const t of unjudged) foldTiles.appendChild(t);
+  setHidden(fold, !unjudged.length);
+  $('#scores-unjudged-title').textContent = `Not judged: ${unjudged.map((t) => catLabel(t.dataset.cat).toLowerCase()).join(', ')}`;
+  // the overall: weighted over what was judged
+  const { overall, grade } = reportOverall(id);
+  $('#score-ring').style.setProperty('--pct', String(overall == null ? 0 : overall));
+  $('#score-overall').textContent = overall == null ? '–' : String(overall);
+  setGrade($('#score-grade'), grade);
+  $('#score-overall-sub').textContent = judged.length ? `weighted: ${judged.map((t) => `${catLabel(t.dataset.cat).toLowerCase()} ${CATEGORY_WEIGHTS[t.dataset.cat]}`).join(', ')}` : 'nothing could be judged';
+  $('#score-overall-sub').title = 'The overall is the weighted mean of the categories that could be judged';
   const v = reportVerdict(id);
   const vEl = $('#score-verdict');
   vEl.textContent = v.ok === null ? '' : v.ok ? 'Within tolerance' : `Outside tolerance: ${v.failed.map((c) => catLabel(c).toLowerCase()).join(', ')}`;

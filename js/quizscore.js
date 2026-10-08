@@ -15,6 +15,54 @@ const CAT_IDS = QUIZ_CATEGORIES.map((c) => c.id);
 // category. Self Evaluation and Teach let the user change these; a quiz always uses the defaults.
 export const DEFAULT_TOLERANCE = { content: 10, pronunciation: 10, timing: 60, pitch: 60, dynamics: 60 };
 
+// The weight of each category in the overall score: the words matter most, how they are
+// pronounced next, the manner (timing, pitch, loudness) least. Relative weights; the overall
+// is their weighted mean over the categories that could be judged.
+export const CATEGORY_WEIGHTS = { content: 80, pronunciation: 70, timing: 40, pitch: 40, dynamics: 40 };
+
+// The grade an overall score earns.
+export const GRADES = [
+  { id: 'excellent', label: 'Excellent', min: 90 },
+  { id: 'good', label: 'Good', min: 80 },
+  { id: 'fair', label: 'Fair', min: 65 },
+  { id: 'practice', label: 'Needs practice', min: 0 },
+];
+export function gradeOf(score) {
+  if (score == null || !Number.isFinite(score)) return null;
+  return GRADES.find((g) => score >= g.min) || GRADES[GRADES.length - 1];
+}
+
+// Weighted overall of one set of category scores (an item, or a report's scores), over the
+// given categories; a category that could not be judged (null) is left out. null when none
+// could be judged.
+export function overallScore(scores, categories = CAT_IDS) {
+  let sum = 0;
+  let wsum = 0;
+  for (const c of categories || []) {
+    const v = scores ? scores[c] : null;
+    if (v == null) continue;
+    const w = CATEGORY_WEIGHTS[c] || 0;
+    sum += w * v;
+    wsum += w;
+  }
+  return wsum ? Math.round(sum / wsum) : null;
+}
+
+// Overall of an attempt: the mean of its items' overalls (a sloka not recited scores 0;
+// one that could not be compared is left out). null when nothing could be judged.
+export function attemptOverall(items, categories = CAT_IDS) {
+  let sum = 0;
+  let n = 0;
+  for (const it of items || []) {
+    if (!it || it.missing) continue;
+    const o = overallScore(it, categories);
+    if (o == null) continue;
+    sum += o;
+    n++;
+  }
+  return n ? Math.round(sum / n) : null;
+}
+
 export function normalizeTolerance(t) {
   const out = {};
   for (const c of CAT_IDS) {
@@ -122,15 +170,17 @@ export function scoreFor(byCategory, categories) {
   return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null;
 }
 
-// Everything worth saving about one attempt: per-category averages and the percentage for
-// the categories chosen at the time.
+// Everything worth saving about one attempt: per-category averages, the percentage for
+// the categories chosen at the time, and the weighted overall with its grade.
 export function attemptSummary(items, categories = DEFAULT_QUIZ_CATEGORIES, tolerance = DEFAULT_TOLERANCE) {
   const byCategory = {};
   for (const c of CAT_IDS) byCategory[c] = categoryMean(items, c);
   const counted = items.filter((it) => !it.missing).length;
   const recited = items.filter((it) => it.matched).length;
   const corr = correctness(items, categories, tolerance);
-  return { byCategory, average: scoreFor(byCategory, categories), score: corr.pct, correct: corr.correct, passRate: corr.passRate, counted, recited };
+  const overall = attemptOverall(items, categories);
+  const grade = gradeOf(overall);
+  return { byCategory, average: scoreFor(byCategory, categories), score: corr.pct, correct: corr.correct, passRate: corr.passRate, counted, recited, overall, grade: grade ? grade.id : null };
 }
 
 // Keeps a stored category choice sane: known ids only, in canonical order, never empty.

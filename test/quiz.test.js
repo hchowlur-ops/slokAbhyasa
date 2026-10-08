@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { cleanFolder, parseBaselineFilename, nameFromSlug, parseWavHeader } from '../js/libutil.js';
 import { encodeWavBytes } from '../js/wav.js';
-import { itemScores, attemptSummary, scoreFor, normalizeCategories, pickBaselines, shuffle, DEFAULT_QUIZ_CATEGORIES, DEFAULT_TOLERANCE, normalizeTolerance, withinTolerance, itemVerdict, correctness } from '../js/quizscore.js';
+import { itemScores, attemptSummary, scoreFor, normalizeCategories, pickBaselines, shuffle, DEFAULT_QUIZ_CATEGORIES, DEFAULT_TOLERANCE, normalizeTolerance, withinTolerance, itemVerdict, correctness, overallScore, attemptOverall, gradeOf, CATEGORY_WEIGHTS } from '../js/quizscore.js';
 
 test('cleanFolder: usable names pass, traversal and reserved names do not', () => {
   assert.equal(cleanFolder('Chapter 12'), 'Chapter 12');
@@ -73,11 +73,39 @@ test('attemptSummary and scoreFor: category averages, then the chosen categories
   assert.equal(attemptSummary(items, ['content']).score, 50, 'on content alone the first item passes (90 is within 10 %)');
   assert.equal(sum.counted, 2);
   assert.equal(sum.recited, 1);
+  // weighted overall over the chosen categories: item 1 = (80·90 + 70·80) / 150 = 85.3, item 2 = 0 → mean 43
+  assert.equal(sum.overall, 43);
+  assert.equal(sum.grade, 'practice');
   assert.equal(scoreFor(sum.byCategory, ['content', 'timing', 'pitch']), 40);
   assert.equal(scoreFor({ content: 50, pronunciation: null }, ['content', 'pronunciation']), 50, 'a category that could not be judged is left out');
   assert.equal(scoreFor({ content: null }, ['content']), null);
   assert.deepEqual(normalizeCategories(['bogus', 'timing', 'content']), ['content', 'timing']);
   assert.deepEqual(normalizeCategories([]), DEFAULT_QUIZ_CATEGORIES);
+});
+
+test('overallScore: content weighs 80, pronunciation 70, the rest 40; unjudged categories are left out', () => {
+  assert.deepEqual(CATEGORY_WEIGHTS, { content: 80, pronunciation: 70, timing: 40, pitch: 40, dynamics: 40 });
+  const all = { content: 90, pronunciation: 80, timing: 80, pitch: 70, dynamics: 95 };
+  // (80·90 + 70·80 + 40·80 + 40·70 + 40·95) / 270 = 22600 / 270 = 83.7
+  assert.equal(overallScore(all), 84);
+  assert.equal(overallScore({ ...all, pronunciation: null, pitch: null }), Math.round((80 * 90 + 40 * 80 + 40 * 95) / 160));
+  assert.equal(overallScore(all, ['content', 'pronunciation']), 85);
+  assert.equal(overallScore({ content: null, pronunciation: null, timing: null, pitch: null, dynamics: null }), null);
+  assert.equal(overallScore(null), null);
+  assert.equal(attemptOverall([{ ...all, missing: false }, { missing: true }, { content: 0, pronunciation: 0, timing: 0, pitch: 0, dynamics: 0 }]), 42);
+  assert.equal(attemptOverall([{ missing: true }]), null);
+});
+
+test('gradeOf: Excellent from 90, Good 80–89, Fair 65–79, Needs practice below', () => {
+  assert.equal(gradeOf(100).id, 'excellent');
+  assert.equal(gradeOf(90).label, 'Excellent');
+  assert.equal(gradeOf(89).label, 'Good');
+  assert.equal(gradeOf(80).id, 'good');
+  assert.equal(gradeOf(79).id, 'fair');
+  assert.equal(gradeOf(65).id, 'fair');
+  assert.equal(gradeOf(64).label, 'Needs practice');
+  assert.equal(gradeOf(0).id, 'practice');
+  assert.equal(gradeOf(null), null);
 });
 
 test('pickBaselines: at most N, no repeats, spread across folders', () => {

@@ -144,9 +144,17 @@ slokas you had ticked there.
    while you record. The one recording is compared with every ticked sloka.
 3. Read the results (one report per sloka, see "Several slokas at once" below):
    * **Scores** for content, pronunciation (once the transcript is there), timing, pitch and
-     dynamics, plus an overall score (weighted for chanting and recitation: content 45 %,
-     timing 35 %, pitch 20 %). Each tile says whether it is **within tolerance** (see below),
-     and the ring carries the verdict for the whole report.
+     dynamics, and an **overall score**: their weighted mean, content weighing 80,
+     pronunciation 70, and timing, pitch and dynamics 40 each (`CATEGORY_WEIGHTS` in
+     `js/quizscore.js`). The overall earns a **grade**: Excellent from 90, Good from 80, Fair
+     from 65, Needs practice below. Only the categories that could be judged count: the
+     overall is recomputed when the pronunciation score arrives with the transcript, and a
+     category that cannot be judged for this report (no transcript yet, pitch shown for
+     interest only for recited text, dynamics not measured) is collapsed under "Not judged"
+     at the bottom of the report. Each tile says whether it is **within tolerance** (see
+     below), and the ring carries the verdict for the whole report.
+   * The **transcript** of the sloka and of your attempt, directly under the scores, with the
+     words that differ highlighted (see "Transcripts" below).
    * A **chart** with the sloka pitch contour and yours stretched onto the same timeline,
      a loudness lane, and shaded bands where something differed. Click a band to select it.
    * A **list of deviations**, each with a "Sloka" and a "Yours" button that plays just that
@@ -249,9 +257,10 @@ judged with, so changing the learner later never rewrites old scores.
   as `<name>.transcript.json`. You need not wait for it before saving.
 * **Self Evaluation** – as soon as you choose a sloka its text appears at the top of the page
   (transcribed on the spot if it has none yet). After each attempt your words are transcribed
-  and compared: sloka words that were not heard are highlighted in red at the top and in the
-  results; extra or different words in your attempt are highlighted in amber. Click any phrase
-  to hear it. "Transcribe again" reruns with another language or model.
+  and compared, in the Transcript block directly under the scores: sloka words that were not
+  heard are highlighted in red there and at the top; extra or different words in your attempt
+  are highlighted in amber. Click any phrase to hear it. "Transcribe again" reruns with
+  another language or model.
 * **Library** – "Transcript" shows, creates or corrects the transcript of a sloka.
 
 Every transcript panel has a language and model choice and an "Automatic" switch (shared
@@ -330,26 +339,30 @@ A memory test drawn from your library.
    you recite everything in one recording, in any order. Then the reports open exactly as in
    Self Evaluation, with the quiz score card on top.
 
-**The score** is a percentage of correctness: the share of the picked slokas that are
-correct. Each sloka is scored in five categories: **content** (the acoustic comparison's
-content score, with skipped material counting against it), **pronunciation** (the share of
-the sloka's words that speech recognition heard in your recording), **timing**, **pitch** and
-**dynamics**; a sloka that was not found in your recording scores 0 everywhere. A sloka is
-*correct* when every chosen category is within the quiz tolerance (fixed: content 10 %,
-pronunciation 10 %, others 60 %). The chosen categories are **content and pronunciation** by
-default; click the chips on the card to require timing, pitch or dynamics too (or drop one).
-The choice is saved with the quiz and applies to every attempt, past and future, because every
-category is measured and stored whatever you choose. The card shows each category's share
-within tolerance, a per-sloka table with ✓ / ✗ marks, and the average scores. Pronunciation
-needs the speech model; if it cannot run, that category is left out of the verdict and the
-card says so.
+**The scores.** Each sloka is scored in five categories: **content** (the acoustic
+comparison's content score, with skipped material counting against it), **pronunciation**
+(the share of the sloka's words that speech recognition heard in your recording), **timing**,
+**pitch** and **dynamics**; a sloka that was not found in your recording scores 0 everywhere.
+The card leads with the **overall score**: each sloka's weighted mean over the chosen
+categories (content 80, pronunciation 70, the others 40), averaged over the slokas, with its
+**grade** — Excellent from 90, Good from 80, Fair from 65, Needs practice below. Beside it is
+the **correctness**: the share of the picked slokas that are *correct*, a sloka being correct
+when every chosen category is within the quiz tolerance (fixed: content 10 %, pronunciation
+10 %, others 60 %). The chosen categories are **content and pronunciation** by default; click
+the chips on the card to require timing, pitch or dynamics too (or drop one). The choice is
+saved with the quiz and applies to every attempt, past and future, because every category is
+measured and stored whatever you choose. The table under the card gives, per sloka, every
+category with ✓ / ✗ marks, the overall with its grade, and whether it was correct, then the
+shares within tolerance and the average scores. Pronunciation needs the speech model; if it
+cannot run, that category is left out of the verdict and of the overall, and the card says so.
 
 **Attempts and trends.** Every attempt is saved automatically (per-category averages and the
 per-sloka detail). "Record again" is a new attempt of the same quiz. The **Saved quizzes**
-list shows each quiz's latest score, number of attempts and best score; **Retake** opens the
-same picked slokas again, **Details** shows the picks and a trend chart: a thick line for the share of slokas
-within tolerance in the chosen categories, and a thin line per category with its average
-score, plus a table of all attempts; and
+list shows each quiz's latest correctness, overall score and grade, number of attempts and best
+scores; **Retake** opens the same picked slokas again, **Details** shows the picks and a trend
+chart: a thick line for the share of slokas within tolerance in the chosen categories, a dark
+line for the weighted overall, and a thin line per category with its average score, plus a
+table of all attempts; and
 **Delete** removes the quiz with its attempts. The same trend is shown on the score card after
 each attempt.
 
@@ -443,13 +456,16 @@ acoustic similarity, not words. A very different microphone or room lowers conte
 SlokAbhyasa tells you when that seems to be the case.
 
 Scoring: each aspect's score is the share of the sloka that was *not* flagged for that
-aspect (pitch uses the mean in-tune credit instead). The overall score is a weighted blend of
-the three: content 45 %, timing 35 %, pitch 20 % for chanting (the default, and for Vedic
-material), content 60 %, timing 40 % for recited text, where pitch is shown for interest only
-(see `MODES` in `js/dsp/compare.js`; the sloka's "How it is judged" picks the mode). The
-thresholds behind "pitch", "timing" and "content" are scaled by the preset for the learner
-(`presetsFor` in `js/meta.js`): adults keep the calibrated defaults, children get the wider
-bands listed under "Who's reciting".
+aspect (pitch uses the mean in-tune credit instead). The comparison's own `scores.overall`
+(content 45 %, timing 35 %, pitch 20 % for chanting; content 60 %, timing 40 % for recited
+text, where pitch is shown for interest only — see `MODES` in `js/dsp/compare.js`; the
+sloka's "How it is judged" picks the mode) is kept for the tests and the API, but what the
+app shows and grades is the weighted mean of all the judged categories, pronunciation
+included: content 80, pronunciation 70, timing, pitch and dynamics 40 each (`overallScore`
+and `gradeOf` in `js/quizscore.js`). In recitation mode pitch is not judged, so it drops out
+of that mean. The thresholds behind "pitch", "timing" and "content" are scaled by the preset
+for the learner (`presetsFor` in `js/meta.js`): adults keep the calibrated defaults,
+children get the wider bands listed under "Who's reciting".
 
 ## Tests
 

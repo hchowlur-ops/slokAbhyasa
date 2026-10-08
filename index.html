@@ -341,14 +341,19 @@
               <span class="muted small" id="quiz-score-status"></span>
             </div>
             <div class="quiz-score-main">
-              <div class="quiz-pct" title="Correctness over the chosen categories">
+              <div class="quiz-pct" title="Weighted overall score over the chosen categories (content 80, pronunciation 70, others 40)">
+                <span class="mono" id="quiz-overall">–</span>
+                <span class="score-grade" id="quiz-grade"></span>
+                <span class="quiz-pct-label">overall</span>
+              </div>
+              <div class="quiz-pct secondary" title="Correctness over the chosen categories">
                 <span class="mono" id="quiz-pct">–</span>
                 <span class="quiz-pct-label">correct</span>
               </div>
               <div class="quiz-cats">
                 <span class="muted small">Score on</span>
                 <div class="chips" id="quiz-cats" aria-label="Categories the score counts"></div>
-                <p class="muted small">A sloka is correct when every chosen category is within the quiz tolerance (content 10 %, pronunciation 10 %, others 60 %). Content and pronunciation by default; add timing, pitch or dynamics to require them too. Every category is measured and saved whatever you choose.</p>
+                <p class="muted small">The overall score weighs content 80, pronunciation 70 and timing, pitch and dynamics 40 each, over the chosen categories, and earns a grade: Excellent from 90, Good from 80, Fair from 65, Needs practice below. A sloka is correct when every chosen category is within the quiz tolerance (content 10 %, pronunciation 10 %, others 60 %). Every category is measured and saved whatever you choose.</p>
               </div>
             </div>
             <div class="quiz-table-wrap"><table class="quiz-table" id="quiz-table"></table></div>
@@ -371,9 +376,10 @@
           </div>
           <p class="report-error" id="report-error" hidden></p>
           <div id="report-body">
-          <div class="scores">
+          <div class="scores" id="scores">
             <div class="score score-main">
               <div class="ring" id="score-ring" style="--pct: 0"><span class="mono ring-val" id="score-overall">–</span></div>
+              <div class="score-grade" id="score-grade"></div>
               <div class="score-label">Overall</div>
               <div class="score-sub muted small" id="score-overall-sub"></div>
               <div class="score-verdict" id="score-verdict"></div>
@@ -409,6 +415,27 @@
               <div class="score-tol" id="score-dynamics-tol"></div>
             </div>
           </div>
+
+          <div class="transcript" id="transcript">
+            <div class="dev-head-row">
+              <h3>Transcript</h3>
+              <div class="stt-controls" id="stt-controls"></div>
+              <button class="btn btn-sm btn-primary" id="stt-run" type="button">Transcribe again</button>
+            </div>
+            <div class="progress" id="stt-progress" hidden>
+              <div class="progress-bar"><div class="progress-fill" id="stt-progress-fill"></div></div>
+              <span class="muted small" id="stt-progress-label">Starting…</span>
+              <button class="btn btn-sm btn-ghost progress-stop" id="stt-progress-stop" type="button" hidden>Stop</button>
+            </div>
+            <div id="stt-out" hidden>
+              <div class="stt-row"><div class="stt-label base">Sloka</div><div class="stt-text" id="stt-base"></div></div>
+              <div class="stt-row"><div class="stt-label heard">Yours</div><div class="stt-text" id="stt-heard"></div></div>
+              <p class="stt-summary" id="stt-summary"></p>
+              <p class="muted small">Click any phrase to hear it. <span class="w-del">Highlighted</span> sloka words were not heard in your attempt; <span class="w-ins">highlighted</span> words in yours are extra or different. <span class="w-dim">Greyed</span> words lie outside the part that was compared.</p>
+            </div>
+            <p class="muted small">Your attempt is transcribed automatically after each take (switch "Automatic" off in any transcript panel to stop that). Words of the sloka text that were not heard are highlighted here and at the top of this page. Speech is turned into text on this computer with Whisper; the first use downloads the model from Hugging Face and keeps it cached. Chanted or sung words are recognised approximately, so treat the text as a guide.</p>
+          </div>
+
           <ul class="notes" id="result-notes"></ul>
 
           <div class="chart-wrap">
@@ -461,25 +488,11 @@
           <ol class="dev-list" id="dev-list"></ol>
           <p class="muted small" id="dev-empty" hidden>No noticeable deviations. Beautifully done.</p>
 
-          <div class="transcript" id="transcript">
-            <div class="dev-head-row">
-              <h3>Transcript</h3>
-              <div class="stt-controls" id="stt-controls"></div>
-              <button class="btn btn-sm btn-primary" id="stt-run" type="button">Transcribe again</button>
-            </div>
-            <p class="muted small">Your attempt is transcribed automatically after each take (switch "Automatic" off in any transcript panel to stop that). Words of the sloka text that were not heard are highlighted here and at the top of this page. Speech is turned into text on this computer with Whisper; the first use downloads the model from Hugging Face and keeps it cached. Chanted or sung words are recognised approximately, so treat the text as a guide.</p>
-            <div class="progress" id="stt-progress" hidden>
-              <div class="progress-bar"><div class="progress-fill" id="stt-progress-fill"></div></div>
-              <span class="muted small" id="stt-progress-label">Starting…</span>
-              <button class="btn btn-sm btn-ghost progress-stop" id="stt-progress-stop" type="button" hidden>Stop</button>
-            </div>
-            <div id="stt-out" hidden>
-              <div class="stt-row"><div class="stt-label base">Sloka</div><div class="stt-text" id="stt-base"></div></div>
-              <div class="stt-row"><div class="stt-label heard">Yours</div><div class="stt-text" id="stt-heard"></div></div>
-              <p class="stt-summary" id="stt-summary"></p>
-              <p class="muted small">Click any phrase to hear it. <span class="w-del">Highlighted</span> sloka words were not heard in your attempt; <span class="w-ins">highlighted</span> words in yours are extra or different. <span class="w-dim">Greyed</span> words lie outside the part that was compared.</p>
-            </div>
-          </div>
+          <details class="unjudged" id="scores-unjudged" hidden>
+            <summary id="scores-unjudged-title">Not judged</summary>
+            <div class="scores collapsed" id="scores-unjudged-tiles"></div>
+            <p class="muted small">These categories could not be judged for this report, so they do not count in the overall score.</p>
+          </details>
           </div>
         </div>
       </div>
