@@ -370,11 +370,8 @@
                 <div class="stt-text" id="stt-heard" data-empty="what SlokAbhyasa heard, once transcribed"></div>
               </div>
             </div>
-            <div id="stt-out" hidden>
-              <p class="stt-summary" id="stt-summary"></p>
-              <div class="phon-report" id="stt-phon" hidden></div>
-              <p class="muted small">Click any phrase to hear it. <span class="w-del">Highlighted</span> sloka words were not heard in your attempt; <span class="w-ins">highlighted</span> words in yours are extra or different. <span class="w-dim">Greyed</span> words lie outside the part that was compared.</p>
-            </div>
+            <!-- the summary sentence (empty, so hidden, until the words are in), then both together -->
+            <p class="stt-summary" id="stt-summary"></p>
             <div class="playback-row" id="res-playback">
               <button class="btn btn-both" id="res-play-both" type="button" title="The sloka in the left ear and your recording in the right, both from the start of the part that was compared, at the same speed">
                 <svg class="ico-play" viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
@@ -387,6 +384,10 @@
                 <input type="range" class="slider" id="res-speed" min="0.5" max="2" step="0.05" value="1" aria-label="Playback speed" />
                 <span class="mono speed-val" id="res-speed-val">1.00×</span>
               </div>
+            </div>
+            <div id="stt-out" hidden>
+              <details class="phon-report" id="stt-phon" hidden></details>
+              <p class="muted small">Click any phrase to hear it. <span class="w-del">Highlighted</span> sloka words were not heard in your attempt; <span class="w-ins">highlighted</span> words in yours are extra or different. <span class="w-dim">Greyed</span> words lie outside the part that was compared.</p>
             </div>
             <p class="muted small">Your attempt is transcribed automatically after each take (switch "Automatic" off in any transcript panel to stop that). Words of the sloka text that were not heard are highlighted here and at the top of this page. Speech is turned into text on this computer with Whisper; the first use downloads the model from Hugging Face and keeps it cached. Chanted or sung words are recognised approximately, so treat the text as a guide.</p>
           </div>

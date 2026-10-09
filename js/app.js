@@ -3521,18 +3521,24 @@ function windowedDiff(res, baseT, heardT, baseDuration, takeDuration) {
 }
 
 // The akṣara-and-phoneme breakdown under the word diff: what kind of slips, with examples.
+// A folded <details>: the scores in its summary line, the slips inside. Its open state is
+// kept while the report lives (a re-render after a transcript edit does not fold it again).
 function renderPhonologyReport(host, ph) {
+  const wasOpen = host.open;
   host.innerHTML = '';
-  if (!ph) { setHidden(host, true); return; }
+  if (!ph) { setHidden(host, true); host.open = false; return; }
   setHidden(host, false);
-  const h4 = document.createElement('h4');
-  h4.textContent = `Sounds and syllables · phonemes ${ph.phonemes ?? '–'} · vowel length ${ph.vowels ?? '–'} · syllables ${ph.syllables}`;
-  host.appendChild(h4);
+  const sum = document.createElement('summary');
+  sum.innerHTML = '<svg class="step-caret" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7.4 8.6 12 13.2l4.6-4.6L18 10l-6 6-6-6z"/></svg><h4></h4>';
+  $('h4', sum).textContent = `Sounds and syllables · phonemes ${ph.phonemes ?? '–'} · vowel length ${ph.vowels ?? '–'} · syllables ${ph.syllables}`;
+  host.appendChild(sum);
+  const body = document.createElement('div');
+  body.className = 'phon-body';
   const p = document.createElement('div');
   p.className = 'muted small';
   const parts = Object.entries(ph.errors).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${n} × ${ERROR_LABEL[k]}`);
   p.textContent = `${ph.counts.ref} akṣaras in the text, ${ph.counts.heard} heard · ${ph.counts.missing} missing, ${ph.counts.added} added, ${ph.counts.replaced} replaced · ${parts.length ? parts.join(' · ') : 'no slips in the sounds'}`;
-  host.appendChild(p);
+  body.appendChild(p);
   if (ph.examples.length) {
     const ul = document.createElement('ul');
     for (const e of ph.examples) {
@@ -3543,8 +3549,10 @@ function renderPhonologyReport(host, ph) {
       li.children[2].textContent = `— ${ERROR_LABEL[e.kind]}: ${e.detail}`;
       ul.appendChild(li);
     }
-    host.appendChild(ul);
+    body.appendChild(ul);
   }
+  host.appendChild(body);
+  host.open = wasOpen;
 }
 
 function renderTranscriptDiff() {

@@ -546,8 +546,14 @@ canvas { display: block; }
 .score-label { font-size: 0.72rem; }
 .score-sub { font-size: 0.78rem; }
 /* the phonology breakdown under the transcript diff */
-.phon-report { margin: 10px 0 0; padding: 10px 12px; border-radius: 10px; background: var(--surface); font-size: 0.9rem; }
-.phon-report h4 { margin: 0 0 6px; font-size: 0.85rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.phon-report { margin: 10px 0 0; border-radius: 10px; background: var(--surface); font-size: 0.9rem; }
+.phon-report > summary { display: flex; align-items: center; gap: 8px; padding: 9px 12px; cursor: pointer; list-style: none; user-select: none; border-radius: 10px; }
+.phon-report > summary::-webkit-details-marker { display: none; }
+.phon-report > summary:hover { background: var(--surface-2); }
+.phon-report > summary .step-caret { width: 18px; height: 18px; transform: rotate(-90deg); }
+.phon-report[open] > summary .step-caret { transform: none; }
+.phon-report h4 { margin: 0; font-size: 0.85rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.phon-body { padding: 2px 12px 10px 38px; }
 .phon-report ul { margin: 4px 0 0; padding-left: 18px; }
 .phon-report li { margin: 2px 0; }
 .phon-report .ak { font-weight: 650; }
@@ -642,7 +648,8 @@ canvas { display: block; }
 #transcript .stt-label .btn-play svg { width: 18px; height: 18px; }
 .btn-play.play-heard { background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--heard) 70%, #fff), var(--heard) 45%, color-mix(in srgb, var(--heard) 80%, #000)); box-shadow: 0 10px 24px -8px color-mix(in srgb, var(--heard) 80%, transparent), inset 0 1px 0 rgba(255, 255, 255, .25); }
 #transcript .stt-text:empty::before { content: attr(data-empty); color: var(--muted); font-size: 0.9rem; font-style: italic; }
-#res-playback { margin: 14px 0 6px; padding-top: 12px; border-top: 1px dashed var(--border); }
+#res-playback { margin: 10px 0 10px; padding-top: 10px; border-top: 1px dashed var(--border); }
+.stt-summary + #res-playback { margin-top: 6px; }
 .btn-both { gap: 8px; }
 .btn-both .muted { font-weight: 500; }
 .btn-both.playing { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-strong); }
