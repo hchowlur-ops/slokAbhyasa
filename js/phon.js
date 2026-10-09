@@ -54,6 +54,13 @@ export function syllabify(text) {
         close();
         let vowel = { v: 'a', long: false };
         if (VOWEL_SIGN[n2]) { vowel = { v: VOWEL_SIGN[n2][0], long: !!VOWEL_SIGN[n2][1] }; i++; }
+        // सङ्ग and संग are one pronunciation: a nasal opening a cluster before a stop of its
+        // own place is the anusvāra of the akṣara before (Whisper writes the anusvāra form)
+        const prev = out.length && out[out.length - 1].word === wi ? out[out.length - 1] : null;
+        if (prev && onset.length && onset[0].kind === 'nasal' && c.kind === 'stop' && onset[0].place === c.place && onset.length === 1) {
+          if (!prev.marks.includes('ṃ')) prev.marks.push('ṃ');
+          onset = [];
+        }
         cur = { onset: [...onset, c], vowel, marks: [], coda: [], word: wi, text: '' };
         onset = [];
         continue;
@@ -150,6 +157,46 @@ function alignAksharas(R, H) {
   return pairs.reverse();
 }
 
+// Whisper writes a recited visarga as the breath it hears: "रताः" comes back as "रताहा",
+// "मैत्रः" as "मैत्रह", "रताः" even as "रतहः". So where one side's akṣara carries ḥ and the
+// other side has the same akṣara followed by a stray ha / hā (an echo syllable in the same
+// word, or standing alone), the echo is read as that akṣara's visarga. The side with the
+// ḥ guides the fold, so a genuine final -ha (iha, deha, saha) is never folded away, and a
+// visarga that was really dropped ("रता", nothing after it) is still a slip.
+//   pairs → the pairs with folded echoes removed; R / H are updated in place;
+//   returns how many echoes were folded on each side (they no longer count as akṣaras).
+const isEcho = (a) => a.onset.length === 1 && a.onset[0].ph === 'h' && !a.coda.length && (!a.vowel || a.vowel.v === 'a') && !a.marks.includes('ṃ');
+const echoBelongs = (X, i, host) => X[i].word === host.word || ((i === 0 || X[i - 1].word !== X[i].word) && (i === X.length - 1 || X[i + 1].word !== X[i].word));
+const withVisarga = (a) => { const b = { ...a, marks: a.marks.includes('ḥ') ? a.marks : [...a.marks, 'ḥ'] }; b.text = aksharaText(b); return b; };
+function foldVisargaEchoes(R, H, pairs) {
+  const out = [];
+  const folded = { ref: 0, heard: 0 };
+  // The alignment puts the echo either after the akṣara (pair, then the echo inserted) or in
+  // its place (the akṣara inserted, then the echo paired with the ḥ-bearing one, since the
+  // two share the vowel and the mark). Both shapes fold to one pair.
+  const tryFold = (X, Y, xOf, yOf, k) => {
+    // X: the side with the ḥ, Y: the side that spelt it out; xOf/yOf read a pair's index on each side
+    const a = pairs[k]; const b = pairs[k + 1];
+    if (!b) return null;
+    let hostPair = null; let host = -1; let echo = -1;
+    if (xOf(a) >= 0 && yOf(a) >= 0 && xOf(b) < 0 && yOf(b) === yOf(a) + 1) { hostPair = a; host = yOf(a); echo = yOf(b); }
+    else if (xOf(a) < 0 && xOf(b) >= 0 && yOf(b) === yOf(a) + 1) { hostPair = b; host = yOf(a); echo = yOf(b); }
+    if (!hostPair) return null;
+    const x = X[xOf(hostPair)];
+    if (!x.marks.includes('ḥ') || Y[host].marks.includes('ḥ') || !isEcho(Y[echo]) || !echoBelongs(Y, echo, Y[host])) return null;
+    Y[host] = withVisarga(Y[host]);
+    return { x: xOf(hostPair), y: host };
+  };
+  for (let k = 0; k < pairs.length; k++) {
+    let f = tryFold(R, H, (p) => p.r, (p) => p.h, k);
+    if (f) { folded.heard++; out.push({ r: f.x, h: f.y }); k++; continue; }
+    f = tryFold(H, R, (p) => p.h, (p) => p.r, k);
+    if (f) { folded.ref++; out.push({ r: f.y, h: f.x }); k++; continue; }
+    out.push(pairs[k]);
+  }
+  return { pairs: out, folded };
+}
+
 export const ERROR_LABEL = {
   aspiration: 'aspiration (k/kh, g/gh…)', voicing: 'voicing (k/g, t/d…)', place: 'place of articulation (t/ṭ, s/ś/ṣ…)', nasality: 'nasal (anusvāra, n/ṇ/ṅ)',
   visarga: 'visarga (ḥ)', length: 'double consonant', vowel: 'vowel', vowelLength: 'vowel length (a/ā, i/ī, u/ū)', missing: 'sound missing', added: 'sound added', other: 'other sound',
@@ -164,7 +211,9 @@ export function comparePhonology(refText, heardText) {
   const R = syllabify(refText);
   const H = syllabify(heardText);
   if (!R.length) return null;
-  const pairs = alignAksharas(R, H);
+  const { pairs, folded } = foldVisargaEchoes(R, H, alignAksharas(R, H));
+  const refCount = R.length - folded.ref;
+  const heardCount = H.length - folded.heard;
   let missing = 0; let added = 0; let unrelated = 0;
   let credit = 0; let n = 0;
   let vowelsCompared = 0; let vowelSlips = 0;
@@ -187,10 +236,10 @@ export function comparePhonology(refText, heardText) {
   }
   const pct = (v) => Math.round(100 * Math.max(0, Math.min(1, v)));
   return {
-    syllables: pct(1 - (missing + added + unrelated) / R.length),
+    syllables: pct(1 - (missing + added + unrelated) / refCount),
     phonemes: n ? pct(credit / n) : null,
     vowels: vowelsCompared ? pct(1 - vowelSlips / vowelsCompared) : null,
-    counts: { ref: R.length, heard: H.length, missing, added, replaced: unrelated, phonemesCompared: n, vowelsCompared, vowelSlips },
+    counts: { ref: refCount, heard: heardCount, missing, added, replaced: unrelated, phonemesCompared: n, vowelsCompared, vowelSlips, visargaEchoes: folded.heard + folded.ref },
     errors,
     examples,
     aligned,

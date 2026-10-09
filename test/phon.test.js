@@ -81,6 +81,48 @@ test('comparePhonology: a perfect recitation, then slips of each kind', () => {
   assert.equal(comparePhonology('', 'x'), null);
 });
 
+test('a recited visarga that Whisper spelt out as ha / hā is read as the visarga', () => {
+  // the spellings Whisper actually produced for the library's slokas
+  for (const [ref, heard] of [['योगवित्तमाः', 'वित्तमाहा'], ['परयोपेताः', 'पेताहा'], ['मैत्रः करुण', 'मैत्रह करुण'], ['निरहङ्कारः', 'निरहंकारह'], ['प्रियाः', 'प्रियाहाः'], ['समबुद्धयः', 'बुद्धयः']]) {
+    const c = comparePhonology(ref, heard);
+    assert.equal(c.errors.visarga, undefined, `${ref} / ${heard}: ${JSON.stringify(c.errors)}`);
+    assert.equal(c.counts.added, 0, `${ref} / ${heard}: nothing added`);
+    assert.equal(c.phonemes, 100, `${ref} / ${heard}: phonemes ${c.phonemes}`);
+  }
+  const whole = comparePhonology('ते प्राप्नुवन्ति मामेव सर्वभूतहिते रताः', 'तेव्प्राप्नोवन्तिममेव सर्वभुतहितेरतहः');
+  assert.equal(whole.errors.visarga, undefined, JSON.stringify(whole.errors));
+  assert.equal(whole.counts.visargaEchoes, 1);
+  assert.equal(whole.counts.heard, whole.counts.ref, 'the echo no longer counts as an akṣara: 16 each');
+  assert.equal(whole.counts.ref, 16);
+  // the echo standing as a word of its own folds too
+  assert.equal(comparePhonology('रताः', 'रता हा').errors.visarga, undefined);
+  // the reference may be a transcript that spelt it out, the hearing may carry the mark
+  const rev = comparePhonology('युक्ततमामताहा', 'युक्ततमा मताः');
+  assert.equal(rev.errors.visarga, undefined, JSON.stringify(rev.errors));
+  assert.equal(rev.counts.missing, 0);
+  assert.equal(rev.counts.ref, 6);
+  // what is not folded: a visarga really dropped, a genuine final -ha, an extra that is no echo
+  assert.equal(comparePhonology('रताः', 'रता').errors.visarga, 1);
+  assert.deepEqual([comparePhonology('सह', 'सह').phonemes, comparePhonology('इह देहः', 'इह देहः').phonemes], [100, 100]);
+  assert.equal(comparePhonology('देहः', 'देह').errors.visarga, 1, 'ḥ on the ha itself, dropped');
+  const noEcho = comparePhonology('रताः', 'रताका');
+  assert.equal(noEcho.errors.visarga, 1);
+  assert.equal(noEcho.counts.added, 1);
+  // an echo with a nasal or a coda is a syllable in its own right
+  assert.equal(comparePhonology('रताः', 'रताहं').counts.added, 1);
+});
+
+test('a nasal before a stop of its own place is the anusvāra: सङ्ग and संग are one word', () => {
+  assert.deepEqual(syllabify('सङ्ग').map(aksharaText), syllabify('संग').map(aksharaText));
+  assert.deepEqual(syllabify('निरहङ्कारः').map(aksharaText), syllabify('निरहंकारः').map(aksharaText));
+  assert.deepEqual(syllabify('वन्ति').map(aksharaText), ['vaṃ', 'ti']);
+  // not before another kind of sound, and not at the start of a word
+  assert.deepEqual(syllabify('न्यास').map(aksharaText), ['nyā', 'sa']);
+  assert.deepEqual(syllabify('अन्य').map(aksharaText), ['a', 'nya']);
+  const c = comparePhonology('निरहङ्कारः', 'निरहंकारह');
+  assert.deepEqual([c.phonemes, c.syllables], [100, 100], JSON.stringify(c.errors));
+});
+
 test('comparePhonology reads romanised and Kannada hearings against Devanagari text', () => {
   const ref = 'अर्जुन उवाच एवं सततयुक्ता ये भक्तास्त्वां पर्युपासते';
   const kn = comparePhonology(ref, 'ಅರ್ಜುನ ಉವಾಚ ಏವಂ ಸತತಯುಕ್ತಾ ಯೇ ಭಕ್ತಾಸ್ತ್ವಾಂ ಪರ್ಯುಪಾಸತೇ');

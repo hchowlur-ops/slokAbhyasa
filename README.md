@@ -362,7 +362,18 @@ that, and it is what confirms a sloka whose recording merely sounds different fr
 Then, strictly, for the scores (see "What is scored"): both texts are split into akṣaras and
 phonemes, aligned akṣara by akṣara, and every slip is named — a dental for a retroflex, a
 missing aspiration, a short vowel for a long one, a dropped visarga, a syllable left out.
-That breakdown is shown under the transcripts. A take longer than 30 s is transcribed
+That breakdown is shown under the transcripts.
+
+Two Sanskrit spellings are read as the sounds they are before the strict comparison.
+Whisper has seen very little Sanskrit and writes Devanagari the Hindi way, so a recited
+visarga — a breath with an echo of the vowel, *rataḥ* said as "ratāha" — comes back as
+रताहा, रतह or रतहः rather than रताः; where the text's akṣara carries ः and the hearing
+has that akṣara followed by a stray ह / हा in the same word, the stray syllable is read as
+the visarga (full credit, nothing "added"). The fold is guided by the side that has the
+ः, so a genuine final -ह (इह, देह, सह) is never folded away and a visarga you really
+dropped is still a slip; the breakdown line says how many were read this way. Likewise a
+nasal before a stop of its own place is the anusvāra (सङ्ग and संग are one word), which
+Whisper always writes as ं. A take longer than 30 s is transcribed
 stretch by stretch, each stretch being where a sloka was found in it: Whisper loses its way
 in a long chant, but transcribes a single sloka's worth well.
 

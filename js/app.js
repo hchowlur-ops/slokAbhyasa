@@ -3537,7 +3537,8 @@ function renderPhonologyReport(host, ph) {
   const p = document.createElement('div');
   p.className = 'muted small';
   const parts = Object.entries(ph.errors).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${n} × ${ERROR_LABEL[k]}`);
-  p.textContent = `${ph.counts.ref} akṣaras in the text, ${ph.counts.heard} heard · ${ph.counts.missing} missing, ${ph.counts.added} added, ${ph.counts.replaced} replaced · ${parts.length ? parts.join(' · ') : 'no slips in the sounds'}`;
+  const echoes = ph.counts.visargaEchoes ? ` · ${ph.counts.visargaEchoes} visarga${ph.counts.visargaEchoes === 1 ? '' : 's'} Whisper wrote out as "ha", read as ḥ` : '';
+  p.textContent = `${ph.counts.ref} akṣaras in the text, ${ph.counts.heard} heard · ${ph.counts.missing} missing, ${ph.counts.added} added, ${ph.counts.replaced} replaced · ${parts.length ? parts.join(' · ') : 'no slips in the sounds'}${echoes}`;
   body.appendChild(p);
   if (ph.examples.length) {
     const ul = document.createElement('ul');
