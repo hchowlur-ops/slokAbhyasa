@@ -344,7 +344,9 @@ canvas { display: block; }
 .settings-card { margin-bottom: 18px; }
 /* the note under both columns: how the words are heard */
 .settings-note { border-top: 4px solid var(--gold); margin-top: 2px; }
-.settings-note p { margin: 0; font-size: 0.95rem; line-height: 1.6; max-width: 90ch; }
+/* the text flows into two columns across the whole panel */
+.settings-note p { margin: 0; font-size: 0.95rem; line-height: 1.6; column-count: 2; column-gap: 36px; column-rule: 1px dashed var(--border); text-align: justify; hyphens: auto; }
+@media (max-width: 900px) { .settings-note p { column-count: 1; text-align: left; } }
 .settings-note a { color: var(--accent-strong); }
 .settings-main > .settings-card:last-child { margin-bottom: 18px; }
 .settings-card h2 { margin: 0 0 6px; font-size: 1.1rem; }
