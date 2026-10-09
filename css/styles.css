@@ -712,6 +712,9 @@ canvas { display: block; }
 .analysis-body .scores { margin-bottom: 16px; }
 .stt-text { font-size: 1.15rem; line-height: 1.9; padding: 8px 12px; border-radius: 10px; background: var(--surface-2); min-height: 2.6em; overflow-wrap: anywhere; }
 .stt-chunk { cursor: pointer; border-radius: 6px; padding: 1px 2px; transition: background .12s; }
+/* the daṇḍas a displayed śloka gets at its line ends */
+.danda { margin-left: 6px; color: var(--gold-deep); font-weight: 600; }
+:root[data-theme="dark"] .danda { color: var(--gold); }
 .stt-chunk:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
 .w-del { background: color-mix(in srgb, var(--content) 22%, transparent); text-decoration: underline wavy var(--content); text-underline-offset: 3px; border-radius: 4px; padding: 0 2px; }
 .w-ins { background: color-mix(in srgb, var(--heard) 28%, transparent); border-radius: 4px; padding: 0 2px; }
@@ -934,7 +937,7 @@ canvas { display: block; }
 .quiz-texts-strip:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 2px; border-radius: 10px; }
 .quiz-text { flex: 0 0 100%; scroll-snap-align: start; min-width: 0; }
 .quiz-text-name { font-weight: 700; margin-bottom: 6px; }
-.quiz-text-body { font-size: 1.3rem; line-height: 2; max-height: 13.5rem; overflow-y: auto; background: var(--surface); }
+.quiz-text-body { font-size: 1.3rem; line-height: 2; max-height: 13.5rem; overflow-y: auto; background: var(--surface); white-space: pre-line; }
 .quiz-text-body.muted { font-size: 0.95rem; line-height: 1.5; }
 .quiz-trend { margin-top: 14px; }
 .quiz-trend h4 { margin: 0 0 6px; font-size: 0.95rem; }

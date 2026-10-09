@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { cleanFolder, parseBaselineFilename, nameFromSlug, parseWavHeader } from '../js/libutil.js';
 import { encodeWavBytes } from '../js/wav.js';
-import { itemScores, attemptSummary, scoreFor, normalizeCategories, pickBaselines, shuffle, DEFAULT_QUIZ_CATEGORIES, DEFAULT_TOLERANCE, normalizeTolerance, recordTolerance, withinTolerance, itemVerdict, correctness, overallScore, attemptOverall, gradeOf, CATEGORY_WEIGHTS, QUIZ_CATEGORIES, normalizeWeights } from '../js/quizscore.js';
+import { itemScores, attemptSummary, scoreFor, normalizeCategories, modernCategories, pickBaselines, shuffle, DEFAULT_QUIZ_CATEGORIES, DEFAULT_TOLERANCE, normalizeTolerance, recordTolerance, withinTolerance, itemVerdict, correctness, overallScore, attemptOverall, gradeOf, CATEGORY_WEIGHTS, QUIZ_CATEGORIES, normalizeWeights } from '../js/quizscore.js';
 
 test('cleanFolder: usable names pass, traversal and reserved names do not', () => {
   assert.equal(cleanFolder('Chapter 12'), 'Chapter 12');
@@ -196,4 +196,27 @@ test('tolerances switched off (null): nothing is judged, scores and grades remai
   assert.deepEqual(recordTolerance({ tolerance: { phoneme: 25 } }), { ...DEFAULT_TOLERANCE, phoneme: 25 });
   assert.equal(recordTolerance({ tolerance: null, noTolerance: true }), null, 'judged with tolerances off');
   assert.equal(recordTolerance({ tolerance: { phoneme: 25 }, noTolerance: true }), null, 'the flag wins');
+});
+
+test('an old quiz\'s category choice adds up on new-style items, and a new choice on old ones', () => {
+  assert.deepEqual(modernCategories(['content', 'pronunciation']), ['phoneme', 'vowel', 'syllable']);
+  assert.deepEqual(modernCategories(['content', 'dynamics', 'timing']), ['phoneme', 'vowel', 'syllable', 'emphasis', 'timing']);
+  assert.deepEqual(modernCategories(['phoneme', 'timing']), ['phoneme', 'timing'], 'a new choice is kept');
+  assert.deepEqual(modernCategories([]), DEFAULT_QUIZ_CATEGORIES);
+  // the attempt that had no overall: new-style scores on a quiz that chose content + pronunciation
+  const item = { matched: true, missing: false, phoneme: 92, vowel: 83, syllable: 90, emphasis: 74, pitch: 40, phrasing: 73, timing: 83 };
+  const expected = Math.round((30 * 92 + 25 * 83 + 15 * 90) / 70);
+  assert.equal(overallScore(item, ['content', 'pronunciation']), expected);
+  assert.equal(attemptOverall([item], ['content', 'pronunciation']), expected);
+  assert.equal(overallScore(item, ['phoneme', 'vowel', 'syllable']), expected, 'the same as the modern choice');
+  const c = correctness([item], ['content', 'pronunciation']);
+  assert.equal(c.counted, 1);
+  assert.equal(c.correct, 1, 'phonemes 92, vowel length 83 and syllables 90 are all within their tolerances (15, 20, 10 %)');
+  assert.deepEqual(itemVerdict(item, ['content', 'pronunciation']).judged, ['phoneme', 'vowel', 'syllable']);
+  // an old-style item under a quiz whose choice has been modernised: content + pronunciation, as chosen then
+  const old = { matched: true, missing: false, content: 90, pronunciation: 80, timing: 60, pitch: 50, dynamics: 70 };
+  assert.equal(overallScore(old, ['phoneme', 'vowel', 'syllable']), Math.round((80 * 90 + 70 * 80) / 150));
+  assert.equal(overallScore(old, ['content', 'pronunciation']), Math.round((80 * 90 + 70 * 80) / 150));
+  assert.deepEqual(itemVerdict(old, ['phoneme', 'vowel', 'syllable']).judged, ['content', 'pronunciation']);
+  assert.equal(overallScore(old, ['emphasis', 'timing']), Math.round((40 * 60 + 40 * 70) / 80), 'emphasis stood for dynamics');
 });

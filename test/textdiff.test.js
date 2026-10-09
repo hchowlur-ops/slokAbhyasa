@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { tokenize, diffWords, diffSummary, compareWords, phoneticKey, tokenizeTranscript, windowedTokens } from '../js/textdiff.js';
+import { tokenize, diffWords, diffSummary, compareWords, phoneticKey, tokenizeTranscript, windowedTokens, dandaMarks, withDandas } from '../js/textdiff.js';
 
 test('phoneticKey: Devanagari, Kannada and Latin spellings of one sound share a key', () => {
   assert.equal(phoneticKey('नमः'), 'namah');
@@ -97,4 +97,19 @@ test('diffWords handles empty inputs and a substituted word', () => {
   assert.equal(diffWords(['a', 'b'], []).length, 2);
   const ops = diffWords(['a', 'b', 'c'], ['a', 'x', 'c']);
   assert.deepEqual(ops.map((o) => o.op), ['equal', 'delete', 'insert', 'equal']);
+});
+
+test('a displayed śloka gets its daṇḍas: ॥ at the end, । after the first of two or the second of four lines', () => {
+  const two = 'सर्वधर्मान्परित्यज्य मामेकं शरणं व्रज\nअहं त्वा सर्वपापेभ्यः मोक्षयिष्यामि मा शुचः';
+  assert.equal(withDandas(two), 'सर्वधर्मान्परित्यज्य मामेकं शरणं व्रज ।\nअहं त्वा सर्वपापेभ्यः मोक्षयिष्यामि मा शुचः ॥');
+  const four = 'ये तु धर्म्यामृतमिदं\nयथोक्तं पर्युपासते\nश्रद्दधाना मत्परमा\nभक्तास्तेऽतीव मे प्रियाः';
+  const m4 = dandaMarks(four);
+  assert.deepEqual([...m4.marks.entries()], [[3, '॥'], [1, '।']]);
+  assert.equal(withDandas(four).split('\n')[1], 'यथोक्तं पर्युपासते ।');
+  // daṇḍas already there are not doubled; a single line gets only the final one; romanised text uses bars
+  assert.equal(withDandas('मामेकं शरणं व्रज ।\nमा शुचः ॥'), 'मामेकं शरणं व्रज ।\nमा शुचः ॥');
+  assert.equal(withDandas('एवं सततयुक्ता ये भक्तास्त्वां पर्युपासते'), 'एवं सततयुक्ता ये भक्तास्त्वां पर्युपासते ॥');
+  assert.equal(withDandas('sarvadharmān parityajya\nmām ekaṃ śaraṇaṃ vraja'), 'sarvadharmān parityajya |\nmām ekaṃ śaraṇaṃ vraja ||');
+  assert.equal(withDandas('क\nख\nग'), 'क\nख\nग ॥', 'three lines: only the final mark');
+  assert.equal(withDandas(''), '');
 });

@@ -174,3 +174,25 @@ export function windowedTokens(t, win, fullDuration) {
   });
   return { toks, inside };
 }
+
+// Sanskrit ślokas are written in two or four lines, and the display gives them their daṇḍas:
+// ॥ after the last line, । after the first of two or the second of four (| and || for
+// romanised text). Returns the non-empty lines (their own trailing daṇḍas dropped) and the
+// mark each gets, by line index.
+export function dandaMarks(text) {
+  const src = String(text || '');
+  const lines = src.split(/\r?\n/).map((l) => l.trim().replace(/[\s।॥|]+$/u, '')).filter(Boolean);
+  const latin = !/[\u0900-\u0DFF]/.test(src);
+  const marks = new Map();
+  if (!lines.length) return { lines, marks };
+  marks.set(lines.length - 1, latin ? '||' : '॥');
+  if (lines.length === 2) marks.set(0, latin ? '|' : '।');
+  else if (lines.length === 4) marks.set(1, latin ? '|' : '।');
+  return { lines, marks };
+}
+
+// The text itself with its daṇḍas, line by line.
+export function withDandas(text) {
+  const { lines, marks } = dandaMarks(text);
+  return lines.map((l, i) => (marks.has(i) ? `${l} ${marks.get(i)}` : l)).join('\n');
+}

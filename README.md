@@ -368,6 +368,13 @@ phonemes, aligned akṣara by akṣara, and every slip is named — a dental for
 missing aspiration, a short vowel for a long one, a dropped visarga, a syllable left out.
 That breakdown is shown under the transcripts.
 
+Wherever a śloka's text is shown — the preview in Teach and Self Evaluation, a quiz's text
+panel, the "Sloka" row of the results, the Library — it is set line by line with its
+daṇḍas: ॥ after the last line, । after the first of two lines or the second of four (| and
+|| for romanised text). Type the text in its two or four lines under Details for this; a
+transcript, which has no lines, gets only the final ॥, and daṇḍas already in the text are
+not doubled.
+
 Two Sanskrit spellings are read as the sounds they are before the strict comparison.
 Whisper has seen very little Sanskrit and writes Devanagari the Hindi way, so a recited
 visarga — a breath with an echo of the vowel, *rataḥ* said as "ratāha" — comes back as
@@ -456,7 +463,11 @@ category tiles mark the categories the quiz does not score, and a sloka's overal
 same number in the table and in its tiles. The word categories need the speech model; if it
 cannot run, they are left out of the verdict and of the overall, and the block says so.
 Attempts made before this scoring keep their old categories (content, pronunciation,
-dynamics) and old weights, so their scores do not change.
+dynamics) and old weights, so their scores do not change. A quiz made before it chose among
+those old categories; opened today, its choice becomes the categories that replaced them
+(content or pronunciation → phonemes, vowel length and syllables; dynamics → emphasis), so a
+new attempt on an old quiz has an overall, while its old attempts still add up on what they
+were scored on then.
 
 **Attempts and trends.** Every attempt is saved automatically (per-category averages and the
 per-sloka detail). "Record again" is a new attempt of the same quiz. The **Saved quizzes**

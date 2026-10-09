@@ -65,17 +65,35 @@ export function gradeOf(score) {
 // its own categories.
 const LEGACY_WEIGHTS = { content: 80, pronunciation: 70, timing: 40, pitch: 40, dynamics: 40 };
 const isLegacy = (scores) => !!scores && !['phoneme', 'vowel', 'syllable'].some((c) => scores[c] != null) && ['content', 'pronunciation', 'dynamics'].some((c) => scores[c] != null);
+
+// A quiz from before this scoring chose among content, pronunciation and dynamics; a quiz
+// made since chooses among the seven. Each attempt adds up on what its items carry: for a
+// new-style item an old choice means the categories that replaced it, for an old-style item
+// a new choice means the old ones it stood for. (An old quiz retaken today would otherwise
+// have no category in common with its own new attempt, and no overall.)
+const TO_NEW = { content: ['phoneme', 'vowel', 'syllable'], pronunciation: ['phoneme', 'vowel', 'syllable'], dynamics: ['emphasis'], timing: ['timing'], pitch: ['pitch'] };
+const TO_OLD = { phoneme: ['content', 'pronunciation'], vowel: ['content', 'pronunciation'], syllable: ['content', 'pronunciation'], emphasis: ['dynamics'], timing: ['timing'], pitch: ['pitch'], phrasing: [] };
+const LEGACY_ONLY = ['content', 'pronunciation', 'dynamics']; // timing and pitch exist on both sides
+const isOldChoice = (cats) => cats.some((c) => LEGACY_ONLY.includes(c));
+export function modernCategories(categories) {
+  const list = Array.isArray(categories) ? categories : [];
+  if (!isOldChoice(list)) return normalizeCategories(list);
+  return normalizeCategories([...new Set(list.flatMap((c) => TO_NEW[c] || []))]);
+}
+function categoriesFor(scores, categories) {
+  const cats = Array.isArray(categories) && categories.length ? categories : CAT_IDS;
+  if (isLegacy(scores)) {
+    if (isOldChoice(cats)) return cats.filter((c) => c in LEGACY_WEIGHTS); // as chosen then
+    const set = new Set(cats.flatMap((c) => TO_OLD[c] || []));
+    return set.size ? Object.keys(LEGACY_WEIGHTS).filter((c) => set.has(c)) : Object.keys(LEGACY_WEIGHTS);
+  }
+  return isOldChoice(cats) ? modernCategories(cats) : cats;
+}
 export function overallScore(scores, categories = CAT_IDS, weights = CATEGORY_WEIGHTS) {
   let sum = 0;
   let wsum = 0;
-  let cats = categories || [];
-  let w = weights;
-  if (isLegacy(scores)) {
-    // the categories it was scored on at the time (a quiz's choice), else all of the old ones
-    const chosenThen = cats.some((c) => ['content', 'pronunciation', 'dynamics'].includes(c));
-    cats = chosenThen ? cats.filter((c) => c in LEGACY_WEIGHTS) : Object.keys(LEGACY_WEIGHTS);
-    w = LEGACY_WEIGHTS;
-  }
+  const cats = categoriesFor(scores, categories);
+  const w = isLegacy(scores) ? LEGACY_WEIGHTS : weights;
   for (const c of cats) {
     const v = scores ? scores[c] : null;
     if (v == null) continue;
@@ -133,7 +151,7 @@ export function itemVerdict(item, categories, tolerance = DEFAULT_TOLERANCE) {
   const failed = [];
   const judged = [];
   if (!item || item.missing || !tolerance) return { ok: null, failed, judged };
-  for (const c of categories || []) {
+  for (const c of categoriesFor(item, categories)) {
     const w = withinTolerance(item[c], tolerance[c]);
     if (w === null) continue;
     judged.push(c);

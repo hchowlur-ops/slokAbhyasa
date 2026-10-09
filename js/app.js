@@ -9,7 +9,7 @@ import { Analyzer } from './analyzer.js';
 import { drawWaveform, drawLiveWave, ComparisonChart } from './visualizer.js';
 import { serializeFeatures, deserializeFeatures, isValidFeatures } from './dsp/features.js';
 import { MISMATCH_CONTRAST, confirmByWords } from './dsp/compare.js';
-import { QUIZ_CATEGORIES, LEGACY_CATEGORIES, DEFAULT_QUIZ_CATEGORIES, DEFAULT_TOLERANCE, CATEGORY_WEIGHTS, categoryLabel, normalizeWeights, itemScores, attemptSummary, scoreFor, normalizeCategories, normalizeTolerance, recordTolerance, withinTolerance, itemVerdict, correctness, pickBaselines, overallScore, attemptOverall, gradeOf } from './quizscore.js';
+import { QUIZ_CATEGORIES, LEGACY_CATEGORIES, DEFAULT_QUIZ_CATEGORIES, DEFAULT_TOLERANCE, CATEGORY_WEIGHTS, categoryLabel, normalizeWeights, itemScores, attemptSummary, scoreFor, normalizeCategories, normalizeTolerance, recordTolerance, withinTolerance, itemVerdict, correctness, pickBaselines, overallScore, attemptOverall, gradeOf, modernCategories } from './quizscore.js';
 import { comparePhonology, ERROR_LABEL } from './phon.js';
 import { mixToMono } from './dsp/resample.js';
 import { trimSilence } from './dsp/trim.js';
@@ -17,7 +17,7 @@ import { Transcriber, STT_LANGUAGES, STT_LANGUAGE_CODES, STT_TIERS, sttLanguageL
 import { normalizeStore, putInStore, pickTranscript, availableLanguages } from './transcripts.js';
 import { transliterateTranscript } from './translit.js';
 import { periodRange, shiftPeriod, inRange, isoDate, slokaRows, summarize, KIND_LABEL } from './reports.js';
-import { diffWords, diffSummary, compareWords, tokenizeTranscript, windowedTokens } from './textdiff.js';
+import { diffWords, diffSummary, compareWords, tokenizeTranscript, windowedTokens, tokenize, dandaMarks, withDandas } from './textdiff.js';
 import { AGE_GROUPS, VOICE_TYPES, STYLE_MODES, DEFAULT_STYLE_MODE, presetsFor, ADULT_PRESET, compareModeFor, speakerLabel, ageGroupLabel, styleMode, voiceStats, deriveText } from './meta.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -490,11 +490,26 @@ function shiftTranscript(t, delta, duration) {
 }
 
 // Renders a transcript as clickable phrases; `flagged` token indices get `cls`.
-function renderTranscriptText(host, t, toks, flagged, cls, play, dimmed = null) {
+function renderTranscriptText(host, t, toks, flagged, cls, play, dimmed = null, dandas = false) {
   host.innerHTML = '';
   host.lang = sttLanguageTag(t.language);
   if (!toks.length) { host.textContent = t.text || 'Nothing was recognised.'; host.classList.add('muted'); return; }
   host.classList.remove('muted');
+  // a śloka's lines end in daṇḍas: after the token that ends each marked line, and a line
+  // break between lines. When the tokens do not come from the text line by line (a timed
+  // transcript's chunks), only the final ॥ is placed.
+  const lineEnd = new Map(); // token index → { mark, last }
+  if (dandas) {
+    const { lines, marks } = dandaMarks(t.text);
+    const counts = lines.map((l) => tokenize(l).length);
+    const total = counts.reduce((x, y) => x + y, 0);
+    if (lines.length && total === toks.length) {
+      let acc = 0;
+      lines.forEach((l, li) => { acc += counts[li]; lineEnd.set(acc - 1, { mark: marks.get(li) || '', last: li === lines.length - 1 }); });
+    } else if (lines.length) {
+      lineEnd.set(toks.length - 1, { mark: marks.get(lines.length - 1), last: true });
+    }
+  }
   let ci = null;
   let span = null;
   toks.forEach((tok, i) => {
@@ -513,6 +528,11 @@ function renderTranscriptText(host, t, toks, flagged, cls, play, dimmed = null) 
     w.className = `w${flagged.has(i) ? ` ${cls}` : ''}${dimmed && dimmed.has(i) ? ' w-dim' : ''}`;
     w.textContent = tok.word;
     span.appendChild(w);
+    const le = lineEnd.get(i);
+    if (le) {
+      if (le.mark) { const d = document.createElement('span'); d.className = 'danda'; d.textContent = le.mark; span.appendChild(d); }
+      if (!le.last) { host.appendChild(document.createElement('br')); span = null; }
+    }
     span.appendChild(document.createTextNode(' '));
   });
 }
@@ -573,7 +593,7 @@ function createTranscriptPanel(host, { editable = false, play = null, onChange =
     runBtn.textContent = transcript ? 'Transcribe again' : 'Transcribe';
     const alsoIn = others.length ? ` · also in ${others.map((c) => sttLanguageLabel(c).split(' · ')[0]).join(', ')}` : '';
     if (!transcript) { statusEl.textContent = `No transcript in ${sttLanguageLabel(sttSettings.language).split(' · ')[0]} yet.${alsoIn}`; return; }
-    renderTranscriptText(textEl, transcript, tokenizeTranscript(transcript), flagged, flagClass, play, dimmed);
+    renderTranscriptText(textEl, transcript, tokenizeTranscript(transcript), flagged, flagClass, play, dimmed, true);
     const how = transcript.edited ? (transcript.editedIn === 'file' ? 'edited in the text file' : 'corrected by you') : sttTierLabel(transcript.tier);
     const lang = transcript.language && transcript.language !== 'unknown' ? sttLanguageLabel(transcript.language) : 'Text';
     statusEl.textContent = `${lang} · ${how}${transcript.createdAt ? ' · ' + fmtDate(transcript.createdAt) : ''}${alsoIn}`;
@@ -2225,7 +2245,7 @@ async function renderQuizTexts() {
     if (token !== quizTextsToken) return;
     const el = $(`.quiz-text[data-id="${it.id}"] .quiz-text-body`, strip);
     if (!el) return;
-    el.textContent = text || 'No text yet: transcribe this sloka, or type its text under Details in the Library.';
+    el.textContent = text ? withDandas(text) : 'No text yet: transcribe this sloka, or type its text under Details in the Library.';
     el.classList.toggle('muted', !text);
   }));
 }
@@ -2245,6 +2265,10 @@ sttLanguageListeners.add(() => { if (practice.quiz) renderQuizTexts(); }); // th
 // Opens a quiz: its slokas become the selection, the checklist gives way to the quiz box.
 async function enterQuiz(quiz) {
   if (!practice.quiz) practice.selectionBeforeQuiz = practice.selection.slice();
+  // a quiz from the old scoring chose content / pronunciation: that choice now means the
+  // categories that replaced them, and is saved so the list and the reports agree
+  const modern = modernCategories(quiz.categories);
+  if (modern.join() !== (quiz.categories || []).join()) { quiz.categories = modern; api.patchQuiz(quiz.id, { categories: modern }).catch(() => {}); }
   practice.quiz = quiz;
   practice.quizAttempt = null;
   hideResults();
@@ -2946,7 +2970,7 @@ function renderQuizList() {
     ];
     if (q.last) parts.push(`last ${fmtDate(q.last.at)}`);
     if (q.attempts > 1 && q.best != null) parts.push(`best ${q.best}% correct${q.bestOverall != null ? ` · ${q.bestOverall} ${(gradeOf(q.bestOverall) || {}).label || ''}` : ''}`);
-    parts.push(`scored on ${q.categories.map((c) => (QUIZ_CATEGORIES.find((x) => x.id === c) || {}).label || c).join(' + ')}`);
+    parts.push(`scored on ${modernCategories(q.categories).map((c) => (QUIZ_CATEGORIES.find((x) => x.id === c) || {}).label || c).join(' + ')}`);
     for (const t of parts) { const sp = document.createElement('span'); sp.textContent = t; meta.appendChild(sp); }
     $('[data-act="retake"]', li).addEventListener('click', async () => {
       try { await enterQuiz(await api.getQuiz(q.id)); } catch (err) { toast(err.message, 'error'); }
@@ -3664,7 +3688,7 @@ function renderTranscriptDiff() {
   }
   renderPhonologyReport($('#stt-phon'), phonology);
   refreshVerdicts();
-  renderTranscriptText($('#stt-base'), sttPractice.base, A.toks, delA, 'w-del', (s, e) => { heardPlayer.pause(); basePlayer.playRange(s, e); }, dimA);
+  renderTranscriptText($('#stt-base'), sttPractice.base, A.toks, delA, 'w-del', (s, e) => { heardPlayer.pause(); basePlayer.playRange(s, e); }, dimA, true);
   renderTranscriptText($('#stt-heard'), sttPractice.heard, B.toks, insB, 'w-ins', (s, e) => { basePlayer.pause(); heardPlayer.playRange(s, e); }, dimB);
   practicePanel.highlight(delA, 'w-del', dimA);
   $('#stt-summary').textContent = ai.length
