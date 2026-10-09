@@ -1,6 +1,6 @@
 // Records one session of the demo in headless Chrome (see README.md in this folder).
 //   node record.mjs prewarm   make Best-model transcripts for the slokas the demo shows
-//   node record.mjs 1         library, player, learn, teach, self evaluation
+//   node record.mjs 1         library, learn, teach, self evaluation
 //   node record.mjs 2         quiz and outro
 // Output: out/<session>/frames/*.jpg and out/<session>/timeline.json
 import { spawn } from 'node:child_process';
@@ -37,9 +37,6 @@ const byName = (n) => { const r = lib.find((x) => x.name.toLowerCase() === n.toL
 const S = { c1: byName('CH12-01'), c2: byName('CH12-02'), c3: byName('CH12-03'), c4: byName('CH12-04'), c5: byName('CH12-05') };
 const LIBDIR = path.join(resolveDataDir(path.resolve(here, '..', '..')), 'library');
 const wavOf = (r) => path.join(LIBDIR, ...r.file.split('/'));
-// a friendly file name for what the viewer sees in the Player
-const PLAYER_FILE = path.join(AUDIO, 'Gita 12-01.wav');
-if (!fs.existsSync(PLAYER_FILE)) fs.copyFileSync(wavOf(S.c1), PLAYER_FILE);
 
 // ---------- chrome ----------
 const QUIZ_TAKE = process.env.QUIZ_TAKE || 'quiz-take.wav';
@@ -242,13 +239,6 @@ async function prewarm() {
     const text = await evaluate(`document.querySelector('#practice-transcript [data-role="text"]').textContent.slice(0, 90)`);
     log(`${rec.name}: ${text}`);
   }
-  // does playback advance in headless Chrome? (the Player scene depends on it)
-  await openApp('player');
-  await setFile('#player-file', PLAYER_FILE);
-  await until(visible('#player-loaded'), 'the player');
-  await evaluate(`document.querySelector('#player-play').click()`);
-  await sleep(2500);
-  log('player position after 2.5 s:', await evaluate(`document.querySelector('#player-cur').textContent`));
 }
 
 async function session1() {
@@ -282,23 +272,7 @@ async function session1() {
   await pg(`await __demo.scrollTo('#library-list li[data-id="${S.c2.id}"]', 'center')`);
   await waitUntil(end + 0.6);
 
-  // player
-  await clickNav('player');
-  await sleep(300);
-  await setFile('#player-file', PLAYER_FILE);
-  await until(visible('#player-loaded'), 'the player');
-  await sleep(600);
-  end = say('player');
-  await pg(`await __demo.click('#player-speed-chips .chip[data-speed="0.75"]')`);
-  await pg(`await __demo.click('#player-play')`);
-  const playAt = mix('ch12-01-x075.wav', { gain: 0.8, dur: 11.5, fade: 0.6 });
-  await pg('__demo.hideCursor()');
-  await waitUntil(Math.max(end + 0.3, playAt + 11.5));
-  await pg(`await __demo.click('#player-play')`);
-  await sleep(500);
-
-  // learn from a file (the file goes in before the tab shows: the Player's file would be
-  // sitting there otherwise, since the two views share it)
+  // learn from a file
   await clickNav('learn');
   await sleep(300);
   await setFile('#learn-file-input', path.join(AUDIO, 'Gita 18-66 (teacher).wav'));

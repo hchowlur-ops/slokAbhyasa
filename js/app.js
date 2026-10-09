@@ -262,7 +262,7 @@ function progressUI(target) {
 
 // ---------- routing ----------
 
-const VIEWS = ['home', 'player', 'learn', 'teach', 'evaluate', 'quiz', 'reports', 'library', 'settings'];
+const VIEWS = ['home', 'learn', 'teach', 'evaluate', 'quiz', 'reports', 'library', 'settings'];
 function showView(name) {
   if (!VIEWS.includes(name)) name = 'home';
   const section = name === 'teach' ? 'evaluate' : name; // Teach is Self Evaluation for one sloka at a time
@@ -911,64 +911,6 @@ function buildMetaFields(host, { compact = false } = {}) {
 }
 
 // ======================================================================
-// PLAYER
-// ======================================================================
-
-const player = new Player();
-let loaded = null; // { name, blob, samples, sampleRate, duration }
-
-const drawPlayerWave = bindWave($('#player-wave'), player, () => loaded && loaded.samples, $('#player-cur'), $('#player-dur'));
-const syncPlayerBtn = bindPlayButton($('#player-play'), player);
-bindSpeed({ slider: $('#player-speed'), valueEl: $('#player-speed-val'), chips: $('#player-speed-chips'), onChange: (r) => { player.rate = r; } });
-$('#player-loop').addEventListener('change', (e) => { player.loop = e.target.checked; });
-$('#player-pitch').addEventListener('change', (e) => { player.preservesPitch = e.target.checked; });
-$('#player-back').addEventListener('click', () => player.seek(0));
-$('#player-browse').addEventListener('click', () => $('#player-file').click());
-$('#player-change').addEventListener('click', () => $('#player-file').click());
-$('#player-file').addEventListener('change', (e) => { const f = e.target.files && e.target.files[0]; if (f) loadFile(f); e.target.value = ''; });
-$('#player-to-learn').addEventListener('click', () => {
-  if (!loaded) return;
-  setLearnFile(loaded);
-  showView('learn');
-  activateTab('learn-file');
-  if (sttSettings.auto) learnFilePanel.transcribe();
-});
-
-const drop = $('#player-drop');
-['dragenter', 'dragover'].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('drag'); }));
-['dragleave', 'drop'].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove('drag'); }));
-drop.addEventListener('drop', (e) => { const f = e.dataTransfer.files && e.dataTransfer.files[0]; if (f) loadFile(f); });
-
-async function loadFile(file) {
-  try {
-    getCtx();
-    toast(`Loading ${file.name}…`, 'info', 1500);
-    const dec = await decodeBlob(file);
-    loaded = { name: file.name, blob: file, samples: dec.samples, sampleRate: dec.sampleRate, duration: dec.duration };
-    await player.load(file);
-    $('#player-name').textContent = file.name;
-    $('#player-meta').textContent = `${fmtTime(dec.duration)} · ${(file.size / 1048576).toFixed(1)} MB`;
-    setHidden($('#player-empty'), true);
-    setHidden($('#player-loaded'), false);
-    $('#player-wave')._peaks = null;
-    drawPlayerWave();
-    syncPlayerBtn();
-    setLearnFile(loaded);
-  } catch (err) {
-    toast(err.message || 'Could not load this file.', 'error', 5000);
-  }
-}
-
-document.addEventListener('keydown', (e) => {
-  if (!$('#view-player').classList.contains('active') || !player.loaded) return;
-  const t = e.target;
-  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
-  if (e.code === 'Space') { e.preventDefault(); getCtx(); player.toggle(); }
-  else if (e.code === 'ArrowLeft') { e.preventDefault(); player.seek(player.currentTime - 5); }
-  else if (e.code === 'ArrowRight') { e.preventDefault(); player.seek(player.currentTime + 5); }
-});
-
-// ======================================================================
 // LEARN
 // ======================================================================
 
@@ -1187,6 +1129,16 @@ function setLearnFile(l) {
 }
 $('#learn-file-browse').addEventListener('click', () => $('#learn-file-input').click());
 $('#learn-file-change').addEventListener('click', () => $('#learn-file-input').click());
+async function loadFile(file) {
+  try {
+    getCtx();
+    toast(`Loading ${file.name}…`, 'info', 1500);
+    const dec = await decodeBlob(file);
+    setLearnFile({ name: file.name, blob: file, samples: dec.samples, sampleRate: dec.sampleRate, duration: dec.duration });
+  } catch (err) {
+    toast(err.message || 'Could not load this file.', 'error', 5000);
+  }
+}
 $('#learn-file-input').addEventListener('change', async (e) => {
   const f = e.target.files && e.target.files[0];
   e.target.value = '';

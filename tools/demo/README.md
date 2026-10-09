@@ -15,7 +15,7 @@ library containing CH12-01 … CH12-05 and CH18-66 (the narrative is written aro
 node tools/demo/prep-audio.mjs          # takes and slowed playback, from the library
 node tools/demo/tts.mjs                 # narration clips → tools/demo/narration
 node tools/demo/record.mjs prewarm      # Best-model transcripts for the slokas shown
-node tools/demo/record.mjs 1            # library, player, learn, teach, self evaluation
+node tools/demo/record.mjs 1            # library, learn, teach, self evaluation
 set QUIZ_TAKE=quiz-take-single.wav
 set QUIZ_TAKE_SECONDS=16.4
 node tools/demo/record.mjs 2            # quiz and outro

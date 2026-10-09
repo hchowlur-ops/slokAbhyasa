@@ -13,9 +13,6 @@ export const BEATS = {
   transcript: {
     say: 'Each recording can keep its words beside it, as a text file. The text is written on this computer by the Whisper speech model, and you can correct it by hand.',
   },
-  player: {
-    say: 'The Player plays any recording at any speed, with the pitch preserved. Slow a sloka down to three quarters, or half, and catch every syllable.',
-  },
   learn: {
     say: 'To teach the app a new sloka, record it, or pick a file. Here is a recording of chapter eighteen, sloka sixty six, the famous closing sloka. The app trims the silence and writes down the words it hears.',
   },

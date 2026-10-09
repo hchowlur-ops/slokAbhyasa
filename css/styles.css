@@ -366,12 +366,7 @@ canvas { display: block; }
 .speed.inline .slider { margin: 0; }
 .speed.inline .speed-val { min-width: 52px; text-align: right; }
 
-/* ---------- player ---------- */
-.dropzone { position: relative; transition: border-color .15s, background .15s; }
-.dropzone.drag { border-color: var(--accent); background: var(--accent-soft); }
-.dropzone-empty { text-align: center; padding: 38px 10px 26px; }
-.dz-icon { color: var(--accent); margin-bottom: 10px; }
-.dz-text { font-size: 1.05rem; }
+/* ---------- loaded track (Learn › file) ---------- */
 .track-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 .track-title { display: flex; flex-direction: column; min-width: 0; }
 .track-name { font-weight: 650; font-size: 1.05rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

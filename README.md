@@ -3,8 +3,8 @@
 # SlokAbhyasa
 
 A local web app for learning and memorising audio by ear: chants, verses, songs, phrases.
-Play a recording at any speed, let SlokAbhyasa *learn* a sloka, then *evaluate yourself* against it
-and see exactly where your attempt deviates, with the sloka and your own recording one click away.
+Let SlokAbhyasa *learn* a sloka, play it at any speed, then *evaluate yourself* against it and
+see exactly where your attempt deviates, with the sloka and your own recording one click away.
 
 SlokAbhyasa calls every recording it has learnt a *sloka* (a verse); the word is used for any short
 piece, chanted, sung or spoken.
@@ -85,16 +85,11 @@ localhost is, so do not open `index.html` directly from the file system.
 
 ## Workflows
 
-### Player
-Drop or browse for an audio file. Play, pause, loop, seek by clicking the waveform, and change
-the speed from 0.5× to 2× with the pitch preserved (or not, if you untick that option).
-Space plays or pauses, the arrow keys skip 5 seconds.
-
 ### Learn
 * **Listen with the microphone** – tap the red button, play or perform the material, tap again.
   Review what SlokAbhyasa heard, name it, save.
-* **Use an audio file** – pick a file (or use the one already loaded in the Player) and save it
-  directly as a sloka. Files are converted to mono 16-bit WAV.
+* **Use an audio file** – pick a file and save it directly as a sloka. Files are converted to
+  mono 16-bit WAV.
 
 The save row has a **Folder** choice: any existing folder of the library, or "New folder…"
 to make one. Every sloka lives in a folder; there is no saving at the top level of the

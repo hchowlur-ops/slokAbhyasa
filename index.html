@@ -19,9 +19,6 @@
       <button class="nav-btn active" data-view="home" type="button">
         <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 3 2 12h3v8h5v-6h4v6h5v-8h3z"/></svg><span>Home</span>
       </button>
-      <button class="nav-btn" data-view="player" type="button">
-        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M8 5v14l11-7z"/></svg><span>Player</span>
-      </button>
       <button class="nav-btn" data-view="learn" type="button">
         <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11z"/></svg><span>Learn</span>
       </button>
@@ -79,68 +76,6 @@
           <footer>Bhagavad Gītā 18.66</footer>
         </blockquote>
       </div>
-    </section>
-
-    <!-- ================= PLAYER ================= -->
-    <section class="view" id="view-player" aria-labelledby="player-title">
-      <header class="view-header">
-        <h1 id="player-title">Player</h1>
-        <p class="subtitle">Load a recording and listen to it at any speed.</p>
-      </header>
-
-      <div class="card dropzone" id="player-drop">
-        <input type="file" id="player-file" accept="audio/*" hidden />
-        <div class="dropzone-empty" id="player-empty">
-          <div class="dz-icon">
-            <svg viewBox="0 0 24 24" width="40" height="40"><path fill="currentColor" d="M12 3a9 9 0 0 0-9 9v5a3 3 0 0 0 3 3h2v-8H5v-.5A7 7 0 0 1 19 12v.5h-3v8h2a3 3 0 0 0 3-3v-5a9 9 0 0 0-9-9z"/></svg>
-          </div>
-          <p class="dz-text"><strong>Drop an audio file here</strong> or <button class="link" id="player-browse" type="button">browse your files</button></p>
-          <p class="muted small">MP3, WAV, M4A, OGG, FLAC and anything else your browser can play</p>
-        </div>
-
-        <div class="player-loaded" id="player-loaded" hidden>
-          <div class="track-head">
-            <div class="track-title">
-              <span class="track-name" id="player-name">—</span>
-              <span class="muted small" id="player-meta"></span>
-            </div>
-            <div class="track-actions">
-              <button class="btn btn-ghost btn-sm" id="player-to-learn" type="button">Save as sloka</button>
-              <button class="btn btn-ghost btn-sm" id="player-change" type="button">Change file</button>
-            </div>
-          </div>
-
-          <canvas class="wave wave-clickable" id="player-wave" height="150" aria-label="Waveform, click to seek"></canvas>
-
-          <div class="transport">
-            <button class="btn-icon" id="player-back" type="button" title="Back to start" aria-label="Back to start">
-              <svg viewBox="0 0 24 24"><path fill="currentColor" d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
-            </button>
-            <button class="btn-play" id="player-play" type="button" aria-label="Play">
-              <svg class="ico-play" viewBox="0 0 24 24"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
-              <svg class="ico-pause" viewBox="0 0 24 24"><path fill="currentColor" d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>
-            </button>
-            <div class="time mono"><span id="player-cur">0:00.0</span><span class="muted"> / </span><span id="player-dur">0:00.0</span></div>
-            <label class="toggle"><input type="checkbox" id="player-loop" /><span>Loop</span></label>
-          </div>
-
-          <div class="speed">
-            <div class="speed-head"><span>Playback speed</span><span class="mono speed-val" id="player-speed-val">1.00×</span></div>
-            <input type="range" class="slider" id="player-speed" min="0.5" max="2" step="0.05" value="1" aria-label="Playback speed" />
-            <div class="chips" id="player-speed-chips">
-              <button class="chip" type="button" data-speed="0.5">0.5×</button>
-              <button class="chip" type="button" data-speed="0.75">0.75×</button>
-              <button class="chip active" type="button" data-speed="1">1×</button>
-              <button class="chip" type="button" data-speed="1.25">1.25×</button>
-              <button class="chip" type="button" data-speed="1.5">1.5×</button>
-              <button class="chip" type="button" data-speed="2">2×</button>
-            </div>
-            <label class="toggle"><input type="checkbox" id="player-pitch" checked /><span>Keep the pitch when changing speed</span></label>
-          </div>
-        </div>
-      </div>
-
-      <p class="hint muted small">Tip: press <kbd>Space</kbd> to play or pause, <kbd>←</kbd> / <kbd>→</kbd> to skip 5 seconds.</p>
     </section>
 
     <!-- ================= LEARN ================= -->
