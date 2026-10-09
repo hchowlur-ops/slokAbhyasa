@@ -426,28 +426,37 @@ A memory test drawn from your library.
    rule is met.
 3. **Start quiz…** – give it a friendly name; the date and time are appended so every quiz is
    unique (for example "CH-12 · 2026-09-23 14:05"). The quiz is saved at once.
-4. You land in Self Evaluation in *quiz mode*: the picked names are listed, the slokas
-   themselves stay hidden (it is from memory), "play the sloka while I record" is off, and
-   you recite everything in one recording, in any order. Then the reports open exactly as in
-   Self Evaluation, with the quiz score card on top.
+4. You land in Self Evaluation in *quiz mode*: the picked names are listed, the slokas'
+   recordings stay hidden, "play the sloka while I record" is off, and you recite everything
+   in one recording, in any order. By default the step is titled **"Recite with the text
+   shown"** and each sloka's text (the text typed in its details, else its transcript in the
+   chosen language) is shown in a panel above the record button, one sloka at a time —
+   Previous / Next, or scroll sideways. Switch "Show the slokas' text while reciting a quiz"
+   off in Settings and the step becomes **"Recite from memory"** with nothing shown. Then the
+   results open laid out as in Self Evaluation, with the quiz's own block on top.
 
 **The scores.** Each sloka is scored in the seven categories of "What is scored" (phonemes,
 vowel length, syllables, emphasis, pitch contour, phrasing, timing); a sloka that was not
-found in your recording scores 0 everywhere. The card leads with the **overall score**: each
-sloka's weighted mean over the chosen categories, with the weights in force when the attempt
-was made, averaged over the slokas, with its **grade** — Excellent from 90, Good from 80,
-Fair from 65, Needs practice below. Beside it is the **correctness**: the share of the picked
-slokas that are *correct*, a sloka being correct when every chosen category is within the
-quiz tolerance (fixed: the defaults for the learner). The chosen categories are **phonemes,
-vowel length and syllables** by default; click the chips on the card to require emphasis,
-pitch contour, phrasing or timing too (or drop one). The choice is saved with the quiz and
-applies to every attempt, past and future, because every category is measured and stored
-whatever you choose. The table under the card gives, per sloka, every category with ✓ / ✗
-marks, the overall with its grade, and whether it was correct, then the shares within
-tolerance and the average scores. The word categories need the speech model; if it cannot
-run, they are left out of the verdict and of the overall, and the card says so. Attempts
-made before this scoring keep their old categories (content, pronunciation, dynamics) and
-old weights, so their scores do not change.
+found in your recording scores 0 everywhere. The results lead with the quiz's **overall
+score** in the ring: each sloka's weighted mean over the chosen categories, with the weights
+in force when the attempt was made, averaged over the slokas, with its **grade** — Excellent
+from 90, Good from 80, Fair from 65, Needs practice below — and, under it, the
+**correctness**: the share of the picked slokas that are *correct*, a sloka being correct
+when every chosen category is within the quiz tolerance (fixed: the defaults for the
+learner). The chosen categories are **phonemes, vowel length and syllables** by default; click
+the "Scored on" chips to require emphasis, pitch contour, phrasing or timing too (or drop
+one). The choice is saved with the quiz and applies to every attempt, past and future,
+because every category is measured and stored whatever you choose. The **table** under the
+ring gives, per sloka, every category with ✓ / ✗ marks, the overall with its grade, and
+whether it was correct, then the shares within tolerance and the average scores; the open
+sloka's row is highlighted, and clicking another row opens that sloka's words and analysis.
+The **Trend** over the attempts folds away beneath the table. Below all that come the
+transcript and the Analysis fold exactly as in Self Evaluation, for the open sloka; its
+category tiles mark the categories the quiz does not score, and a sloka's overall is the
+same number in the table and in its tiles. The word categories need the speech model; if it
+cannot run, they are left out of the verdict and of the overall, and the block says so.
+Attempts made before this scoring keep their old categories (content, pronunciation,
+dynamics) and old weights, so their scores do not change.
 
 **Attempts and trends.** Every attempt is saved automatically (per-category averages and the
 per-sloka detail). "Record again" is a new attempt of the same quiz. The **Saved quizzes**
@@ -506,13 +515,14 @@ updated as more slokas are ticked or pronunciation scores arrive).
 The choices (mode, period, date, folder, grouping) are remembered.
 
 ### Settings
-Three cards, all remembered in the browser: **Weights** (what the overall score is made of,
+Four cards, all remembered in the browser: **Weights** (what the overall score is made of,
 see "What is scored"; "Defaults" restores the recommended 30/25/15/10/10/5/5), **Tolerance**
 (the acceptable variation per category for Self Evaluation and Teach; a quiz always uses the
 defaults for the chosen learner; and the "Ignore tolerances" switch that turns every
-within/outside verdict off, leaving scores and grades), and **Speech recognition** (the language the words are
+within/outside verdict off, leaving scores and grades), **Speech recognition** (the language the words are
 heard in, the model, and whether transcripts are made automatically — the same controls
-that sit beside every transcript panel). Beside them, "Why these defaults" explains how the
+that sit beside every transcript panel), and **Quiz** (whether the slokas' text is shown, one
+at a time, while reciting a quiz; on by default). Beside them, "Why these defaults" explains how the
 weights and tolerances are tuned for Sanskrit śloka recitation and lists the references
 (reproduced under "References" below). Under both columns a short note, "Whisper · how the
 words are heard", says that the model is downloaded once and runs on this computer, that

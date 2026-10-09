@@ -1671,7 +1671,7 @@ function renderModeChrome() {
   $('#practice-base-role').textContent = teach ? 'Learning' : practice.quiz ? 'Quiz' : 'Previewing';
   setHidden($('#teach-hint'), !teach || !(libraryCache || []).length);
   setHidden($('#practice-list-hint'), teach || !!practice.quiz || !(libraryCache || []).length);
-  $('#practice-step2-title').textContent = teach ? 'Play it, then recite it back' : practice.quiz ? 'Recite from memory' : 'Perform it';
+  $('#practice-step2-title').textContent = teach ? 'Play it, then recite it back' : practice.quiz ? (quizTextOn ? 'Recite with the text shown' : 'Recite from memory') : 'Perform it';
 }
 
 // The picker shows the same selection the app holds: ticks, chips, the previewed sloka.
@@ -2166,6 +2166,72 @@ function showActiveReport() {
 let quizScoring = false;
 const quizHidesBase = () => !!practice.quiz && !practice.take;
 
+// ---------- the slokas' text during a quiz ----------
+// On by default: each chosen sloka's text (typed in its details, else its transcript in the
+// chosen language) is shown one at a time above the record button, and the step is "Recite
+// with the text shown". Off: "Recite from memory", nothing shown. The recordings stay hidden
+// either way until the take is in.
+const QUIZ_TEXT_KEY = 'tutor-quiz-text';
+let quizTextOn = (() => { try { return localStorage.getItem(QUIZ_TEXT_KEY) !== '0'; } catch { return true; } })();
+{
+  const cb = $('#settings-quiz-text');
+  cb.checked = quizTextOn;
+  cb.addEventListener('change', () => {
+    quizTextOn = cb.checked;
+    try { if (quizTextOn) localStorage.removeItem(QUIZ_TEXT_KEY); else localStorage.setItem(QUIZ_TEXT_KEY, '0'); } catch { /* ignore */ }
+    renderModeChrome();
+    if (practice.quiz) renderQuizBox();
+  });
+}
+const slokaTextOf = (base) => {
+  const meta = base.record && base.record.meta;
+  if (meta && meta.text && meta.text.body && meta.text.origin !== 'transcript') return meta.text.body;
+  return base.transcript && base.transcript.text ? base.transcript.text : '';
+};
+let quizTextsToken = 0;
+async function renderQuizTexts() {
+  const host = $('#quiz-texts');
+  const show = !!practice.quiz && quizTextOn && !practice.take;
+  setHidden(host, !show);
+  if (!show) return;
+  const token = ++quizTextsToken;
+  const lib = new Set((libraryCache || []).map((r) => r.id));
+  const items = practice.quiz.items.filter((it) => lib.has(it.id));
+  const strip = $('#quiz-texts-strip');
+  strip.innerHTML = '';
+  for (const it of items) {
+    const slide = document.createElement('div');
+    slide.className = 'quiz-text';
+    slide.dataset.id = it.id;
+    slide.innerHTML = '<div class="quiz-text-name"></div><div class="stt-text quiz-text-body muted">Loading…</div>';
+    $('.quiz-text-name', slide).textContent = it.folder ? `${it.name} · ${it.folder}` : it.name;
+    strip.appendChild(slide);
+  }
+  strip.scrollLeft = 0;
+  updateQuizTextsPos();
+  await Promise.all(items.map(async (it) => {
+    let text = '';
+    try { text = slokaTextOf(await ensureBase(it.id)); } catch { text = ''; }
+    if (token !== quizTextsToken) return;
+    const el = $(`.quiz-text[data-id="${it.id}"] .quiz-text-body`, strip);
+    if (!el) return;
+    el.textContent = text || 'No text yet: transcribe this sloka, or type its text under Details in the Library.';
+    el.classList.toggle('muted', !text);
+  }));
+}
+function updateQuizTextsPos() {
+  const strip = $('#quiz-texts-strip');
+  const n = strip.children.length;
+  const i = n ? Math.round(strip.scrollLeft / Math.max(1, strip.clientWidth)) : 0;
+  $('#quiz-texts-pos').textContent = n ? `${Math.min(n, i + 1)} of ${n}` : '';
+  $('#quiz-texts-prev').disabled = i <= 0;
+  $('#quiz-texts-next').disabled = i >= n - 1;
+}
+$('#quiz-texts-strip').addEventListener('scroll', updateQuizTextsPos, { passive: true });
+$('#quiz-texts-prev').addEventListener('click', () => { const st = $('#quiz-texts-strip'); st.scrollBy({ left: -st.clientWidth, behavior: 'smooth' }); });
+$('#quiz-texts-next').addEventListener('click', () => { const st = $('#quiz-texts-strip'); st.scrollBy({ left: st.clientWidth, behavior: 'smooth' }); });
+sttLanguageListeners.add(() => { if (practice.quiz) renderQuizTexts(); }); // the text follows the language
+
 // Opens a quiz: its slokas become the selection, the checklist gives way to the quiz box.
 async function enterQuiz(quiz) {
   if (!practice.quiz) practice.selectionBeforeQuiz = practice.selection.slice();
@@ -2205,6 +2271,9 @@ function renderQuizBox() {
   renderModeChrome();
   if (!q) return;
   $('#quiz-box-name').textContent = q.name;
+  $('#quiz-box-hint').textContent = quizTextOn
+    ? 'Recite these in one recording, in any order, with the text shown below. The recordings stay hidden until you have recorded; then every report opens as usual.'
+    : 'Recite these from memory, in one recording and in any order. The slokas stay hidden until you have recorded; then every report opens as usual.';
   const ol = $('#quiz-box-items');
   ol.innerHTML = '';
   const lib = new Set((libraryCache || []).map((r) => r.id));
@@ -2215,6 +2284,7 @@ function renderQuizBox() {
     if (!lib.has(it.id)) { li.classList.add('gone'); li.title = 'No longer in the library'; }
     ol.appendChild(li);
   }
+  renderQuizTexts();
 }
 
 // Share of a sloka's words heard in the take, over the parts that were compared.
@@ -2357,12 +2427,15 @@ function renderQuizScore() {
   const corr = a.saved || a.error ? correctness(a.items, quiz.categories, tol) : null;
   const pct = corr ? corr.pct : null;
   const tolText = (c) => (tol ? `tolerance ${tol[c]} %` : 'no tolerance');
-  $('#quiz-pct').textContent = pct == null ? '–' : `${pct}%`;
-  $('#quiz-pct').parentElement.querySelector('.quiz-pct-label').textContent = !tol ? 'correct · judged without a tolerance' : corr && corr.counted ? `correct · ${corr.correct} of ${corr.counted}` : 'correct';
-  $('#quiz-pct').parentElement.classList.toggle('off', !tol);
   const overall = corr ? attemptOverall(a.items, quiz.categories, weightsOf(a)) : null;
+  $('#quiz-ring').style.setProperty('--pct', String(overall == null ? 0 : overall));
   $('#quiz-overall').textContent = overall == null ? '–' : String(overall);
   setGrade($('#quiz-grade'), gradeOf(overall));
+  const n = a.items.length;
+  $('#quiz-overall-sub').textContent = !corr ? 'Scoring…' : `${n} sloka${n === 1 ? '' : 's'} · ${a.recited ?? 0} recited · weighted on ${quiz.categories.map((c) => catLabel(c).toLowerCase()).join(', ')}`;
+  const vEl = $('#quiz-verdict');
+  vEl.textContent = !corr ? '' : !tol ? 'Judged without a tolerance' : pct == null ? '' : `${corr.correct} of ${corr.counted} correct · ${pct}%`;
+  vEl.className = `score-verdict${corr && tol && pct != null ? (pct === 100 ? ' ok' : pct === 0 ? ' bad' : '') : ''}`;
   // category chips with each category's share within tolerance
   const chips = $('#quiz-cats');
   chips.innerHTML = '';
@@ -2400,7 +2473,9 @@ function renderQuizScore() {
   const gradeCell = (o) => { const g = gradeOf(o); return o == null ? '–' : `${o} <span class="rr-grade ${g.id}">${g.label}</span>`; };
   for (const it of a.items) {
     const tr = document.createElement('tr');
-    tr.className = it.missing ? 'missing' : it.matched ? '' : 'unmatched';
+    const openable = practice.results.has(it.id) && isReport(practice.results.get(it.id));
+    tr.className = `${it.missing ? 'missing' : it.matched ? '' : 'unmatched'}${it.id === practice.activeId ? ' active' : ''}${openable ? ' openable' : ''}`;
+    if (openable) { tr.title = 'Open this sloka\'s words and analysis'; tr.addEventListener('click', () => { if (it.id !== practice.activeId) setActiveBase(it.id); }); }
     const d = it.diag || {};
     const recited = it.missing ? 'not compared' : it.matched ? 'yes' : `not found${d.contrast != null ? ` <span class="muted small" title="How alike the material was: the match cost against the sloka divided by the cost against it played backwards; below 0.87 counts as the same material">· contrast ${d.contrast.toFixed(2)}</span>` : ''}`;
     const cells = [`<td></td>`, `<td>${recited}</td>`];
@@ -2433,9 +2508,10 @@ function renderQuizScore() {
     avg.innerHTML = `<td>Average score</td><td>${tol ? '' : `${a.recited} of ${a.counted}`}</td>` + cats.map((c) => `<td class="${quiz.categories.includes(c.id) ? 'on' : 'off'}">${a.byCategory[c.id] == null ? '–' : a.byCategory[c.id]}</td>`).join('') + `<td class="on">${tol ? '' : gradeCell(overall)}</td>${tol ? '<td></td>' : ''}`;
     table.appendChild(avg);
   }
-  const trend = $('#quiz-trend');
-  setHidden(trend, !(quiz.attempts && quiz.attempts.length));
-  if (quiz.attempts && quiz.attempts.length) renderTrend(trend, quiz);
+  const nAtt = quiz.attempts ? quiz.attempts.length : 0;
+  setHidden($('#quiz-trend-fold'), !nAtt);
+  $('#quiz-trend-sub').textContent = nAtt > 1 ? `${nAtt} attempts, per category` : 'retake the quiz and every attempt is drawn here';
+  if (nAtt) renderTrend($('#quiz-trend'), quiz);
 }
 
 // Score per category over the attempts of a quiz: an SVG line chart and a table.
@@ -2934,6 +3010,7 @@ function focusResults() {
   const take = practice.take;
   $('#practice-step2-summary').textContent = take ? `Recorded ${fmtTime(take.duration)} · open to record again` : '';
   for (const sel of FOLDING_STEPS) setStepFolded(sel, true);
+  renderQuizTexts(); // the take exists now: the text panel gives way to the sloka itself
 }
 function unfoldSteps() {
   $('#practice-step2-summary').textContent = '';
@@ -2955,7 +3032,7 @@ function hideResults() {
   practice.quizAttempt = null;
   practice.session = null;
   setHidden($('#quiz-score'), true);
-  if (practice.quiz) { practice.take = null; setHidden($('#practice-base'), true); } // the next attempt is from memory again
+  if (practice.quiz) { practice.take = null; setHidden($('#practice-base'), true); renderQuizTexts(); } // the next attempt is from memory again
   setHidden($('#practice-results'), true);
   heardPlayer.pause();
   resetTranscriptUI();
@@ -3009,6 +3086,7 @@ function renderResult(res) {
   practice.result = res;
   practice.selected = null;
   setHidden($('#practice-results'), false);
+  setHidden($('#report-overall'), !!practice.quiz); // the quiz block carries the overall instead
   renderTiles(res, practice.activeId);
   const notes = $('#result-notes');
   notes.innerHTML = '';
@@ -3029,7 +3107,7 @@ const weightsOf = (a) => (a && a.weights ? normalizeWeights(a.weights) : CATEGOR
 // The weighted overall of a report over the categories that could be judged, and its grade.
 function reportOverall(id) {
   const sc = reportScores(id);
-  const overall = sc ? overallScore(sc, undefined, activeWeights()) : null;
+  const overall = sc ? overallScore(sc, verdictCategories(), activeWeights()) : null;
   return { overall, grade: gradeOf(overall) };
 }
 // Puts a grade badge in an element (empty when there is no grade).
@@ -3053,9 +3131,11 @@ function renderTiles(res, id) {
     $(`#score-${cat}-sub`).textContent = sub;
     const tile = $(`.score[data-cat="${cat}"]`);
     const w = tol ? withinTolerance(sc[cat], tol[cat]) : null;
-    tile.classList.toggle('ok', w === true);
-    tile.classList.toggle('bad', w === false);
-    $(`#score-${cat}-tol`).textContent = w === null ? '' : w ? `within ${tol[cat]} %` : `outside ${tol[cat]} %`;
+    const counted = !practice.quiz || practice.quiz.categories.includes(cat); // a quiz scores its chosen categories only
+    tile.classList.toggle('ok', counted && w === true);
+    tile.classList.toggle('bad', counted && w === false);
+    tile.classList.toggle('off', !counted);
+    $(`#score-${cat}-tol`).textContent = !counted ? 'not scored in this quiz' : w === null ? '' : w ? `within ${tol[cat]} %` : `outside ${tol[cat]} %`;
     (sc[cat] == null ? unjudged : judged).push(tile);
   };
   // the words: phonemes, vowel length, syllables — once the transcript is in

@@ -211,7 +211,7 @@
               <div class="grow"></div>
               <button class="btn btn-ghost btn-sm" id="quiz-leave" type="button">Leave quiz</button>
             </div>
-            <p class="muted small">Recite these from memory, in one recording and in any order. The slokas stay hidden until you have recorded; then every report opens as usual.</p>
+            <p class="muted small" id="quiz-box-hint">Recite these from memory, in one recording and in any order. The slokas stay hidden until you have recorded; then every report opens as usual.</p>
             <ol class="quiz-items" id="quiz-box-items"></ol>
           </div>
           <div class="picker" id="practice-picker"></div>
@@ -256,6 +256,16 @@
             </div>
           </div>
           <p class="muted small" id="practice-base-none">Choose a sloka above to preview it here.</p>
+          <div class="quiz-texts" id="quiz-texts" hidden>
+            <div class="quiz-texts-head">
+              <span class="tp-title">The text · one sloka at a time</span>
+              <div class="grow"></div>
+              <button class="btn btn-sm btn-ghost" id="quiz-texts-prev" type="button" aria-label="Previous sloka">‹ Previous</button>
+              <span class="mono muted small" id="quiz-texts-pos"></span>
+              <button class="btn btn-sm btn-ghost" id="quiz-texts-next" type="button" aria-label="Next sloka">Next ›</button>
+            </div>
+            <div class="quiz-texts-strip" id="quiz-texts-strip" tabindex="0" aria-label="The slokas' text; scroll sideways for the next"></div>
+          </div>
           <div class="rec-stage">
             <div class="rec-controls">
               <button class="btn-record" id="practice-rec" type="button" aria-label="Start recording" disabled>
@@ -294,6 +304,8 @@
           <button class="btn btn-ghost btn-sm" id="practice-again" type="button">Record again</button>
         </div>
         <div class="step-body">
+          <!-- a quiz: the quiz's own overall (the per-sloka ring below is hidden), then the
+               per-sloka table and the folded trend; the words and the analysis follow as usual -->
           <div class="quiz-score" id="quiz-score" hidden>
             <div class="quiz-score-head">
               <span class="quiz-tag">Quiz</span>
@@ -301,24 +313,24 @@
               <div class="grow"></div>
               <span class="muted small" id="quiz-score-status"></span>
             </div>
-            <div class="quiz-score-main">
-              <div class="quiz-pct" title="Weighted overall score over the chosen categories (content 80, pronunciation 70, others 40)">
-                <span class="mono" id="quiz-overall">–</span>
-                <span class="score-grade" id="quiz-grade"></span>
-                <span class="quiz-pct-label">overall</span>
-              </div>
-              <div class="quiz-pct secondary" title="Correctness over the chosen categories">
-                <span class="mono" id="quiz-pct">–</span>
-                <span class="quiz-pct-label">correct</span>
-              </div>
-              <div class="quiz-cats">
-                <span class="muted small">Score on</span>
-                <div class="chips" id="quiz-cats" aria-label="Categories the score counts"></div>
-                <p class="muted small">The overall score weighs content 80, pronunciation 70 and timing, pitch and dynamics 40 each, over the chosen categories, and earns a grade: Excellent from 90, Good from 80, Fair from 65, Needs practice below. A sloka is correct when every chosen category is within the quiz tolerance (content 10 %, pronunciation 10 %, others 60 %). Every category is measured and saved whatever you choose.</p>
+            <div class="result-overall">
+              <div class="score score-main">
+                <div class="ring" id="quiz-ring" style="--pct: 0"><span class="mono ring-val" id="quiz-overall">–</span></div>
+                <div class="score-grade" id="quiz-grade"></div>
+                <div class="score-label">Overall</div>
+                <div class="score-sub muted small" id="quiz-overall-sub"></div>
+                <div class="score-verdict" id="quiz-verdict"></div>
               </div>
             </div>
+            <div class="quiz-cats">
+              <span class="muted small">Scored on</span>
+              <div class="chips" id="quiz-cats" aria-label="Categories the score counts"></div>
+            </div>
             <div class="quiz-table-wrap"><table class="quiz-table" id="quiz-table"></table></div>
-            <div class="quiz-trend" id="quiz-trend" hidden></div>
+            <details class="quiz-trend-fold" id="quiz-trend-fold" hidden>
+              <summary><svg class="step-caret" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7.4 8.6 12 13.2l4.6-4.6L18 10l-6 6-6-6z"/></svg><span class="analysis-title">Trend</span><span class="muted small" id="quiz-trend-sub"></span></summary>
+              <div class="quiz-trend" id="quiz-trend"></div>
+            </details>
           </div>
           <div class="reports" id="reports" hidden>
             <div class="reports-head">
@@ -338,7 +350,7 @@
           <p class="report-error" id="report-error" hidden></p>
           <div id="report-body">
           <!-- the overall, in the middle; the words under it; everything else under Analysis -->
-          <div class="result-overall">
+          <div class="result-overall" id="report-overall">
             <div class="score score-main">
               <div class="ring" id="score-ring" style="--pct: 0"><span class="mono ring-val" id="score-overall">–</span></div>
               <div class="score-grade" id="score-grade"></div>
@@ -574,6 +586,12 @@
           <div class="stt-controls" id="settings-stt-controls"></div>
           <label class="toggle"><input type="checkbox" id="settings-stt-auto" /><span>Transcribe automatically (Learn, Self Evaluation, quizzes)</span></label>
         </div>
+      </div>
+
+      <div class="card settings-card">
+        <h2>Quiz</h2>
+        <label class="toggle"><input type="checkbox" id="settings-quiz-text" /><span>Show the slokas' text while reciting a quiz</span></label>
+        <p class="muted small" id="settings-quiz-text-note">The text of each chosen sloka (the text typed in its details, else its transcript in the chosen language) is shown one sloka at a time in a panel above the record button, and the step is titled "Recite with the text shown". Switched off, the step is "Recite from memory" and nothing is shown. The slokas' recordings stay hidden either way until you have recorded.</p>
       </div>
       </div>
 
