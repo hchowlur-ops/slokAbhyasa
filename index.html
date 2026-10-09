@@ -326,7 +326,8 @@
           </div>
           <p class="report-error" id="report-error" hidden></p>
           <div id="report-body">
-          <div class="scores" id="scores">
+          <!-- the overall, in the middle; the words under it; everything else under Analysis -->
+          <div class="result-overall">
             <div class="score score-main">
               <div class="ring" id="score-ring" style="--pct: 0"><span class="mono ring-val" id="score-overall">–</span></div>
               <div class="score-grade" id="score-grade"></div>
@@ -334,6 +335,70 @@
               <div class="score-sub muted small" id="score-overall-sub"></div>
               <div class="score-verdict" id="score-verdict"></div>
             </div>
+          </div>
+
+          <div class="transcript" id="transcript">
+            <div class="dev-head-row">
+              <h3>Transcript</h3>
+              <div class="stt-controls" id="stt-controls"></div>
+              <button class="btn btn-sm btn-primary" id="stt-run" type="button">Transcribe again</button>
+            </div>
+            <div class="progress" id="stt-progress" hidden>
+              <div class="progress-bar"><div class="progress-fill" id="stt-progress-fill"></div></div>
+              <span class="muted small" id="stt-progress-label">Starting…</span>
+              <button class="btn btn-sm btn-ghost progress-stop" id="stt-progress-stop" type="button" hidden>Stop</button>
+            </div>
+            <div id="stt-rows">
+              <div class="stt-row">
+                <div class="stt-label base">
+                  <button class="btn-play small play-base" id="res-play-base" type="button" aria-label="Play the sloka" title="Play the sloka">
+                    <svg class="ico-play" viewBox="0 0 24 24"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
+                    <svg class="ico-pause" viewBox="0 0 24 24"><path fill="currentColor" d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>
+                  </button>
+                  <span>Sloka</span>
+                </div>
+                <div class="stt-text" id="stt-base" data-empty="the sloka's words, once your recording has been transcribed"></div>
+              </div>
+              <div class="stt-row">
+                <div class="stt-label heard">
+                  <button class="btn-play small play-heard" id="res-play-heard" type="button" aria-label="Play your recording" title="Play what SlokAbhyasa heard">
+                    <svg class="ico-play" viewBox="0 0 24 24"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
+                    <svg class="ico-pause" viewBox="0 0 24 24"><path fill="currentColor" d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>
+                  </button>
+                  <span>Yours</span>
+                </div>
+                <div class="stt-text" id="stt-heard" data-empty="what SlokAbhyasa heard, once transcribed"></div>
+              </div>
+            </div>
+            <div id="stt-out" hidden>
+              <p class="stt-summary" id="stt-summary"></p>
+              <div class="phon-report" id="stt-phon" hidden></div>
+              <p class="muted small">Click any phrase to hear it. <span class="w-del">Highlighted</span> sloka words were not heard in your attempt; <span class="w-ins">highlighted</span> words in yours are extra or different. <span class="w-dim">Greyed</span> words lie outside the part that was compared.</p>
+            </div>
+            <div class="playback-row" id="res-playback">
+              <button class="btn btn-both" id="res-play-both" type="button" title="The sloka in the left ear and your recording in the right, both from the start of the part that was compared, at the same speed">
+                <svg class="ico-play" viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
+                <svg class="ico-pause" viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>
+                <span>Play both together</span>
+                <span class="muted small">sloka left · yours right</span>
+              </button>
+              <div class="speed inline">
+                <span class="muted small">Speed</span>
+                <input type="range" class="slider" id="res-speed" min="0.5" max="2" step="0.05" value="1" aria-label="Playback speed" />
+                <span class="mono speed-val" id="res-speed-val">1.00×</span>
+              </div>
+            </div>
+            <p class="muted small">Your attempt is transcribed automatically after each take (switch "Automatic" off in any transcript panel to stop that). Words of the sloka text that were not heard are highlighted here and at the top of this page. Speech is turned into text on this computer with Whisper; the first use downloads the model from Hugging Face and keeps it cached. Chanted or sung words are recognised approximately, so treat the text as a guide.</p>
+          </div>
+
+          <details class="analysis" id="analysis">
+            <summary>
+              <svg class="step-caret" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7.4 8.6 12 13.2l4.6-4.6L18 10l-6 6-6-6z"/></svg>
+              <span class="analysis-title">Analysis</span>
+              <span class="muted small" id="analysis-sub">category scores, the chart, every deviation</span>
+            </summary>
+            <div class="analysis-body">
+          <div class="scores" id="scores">
             <div class="score" data-cat="phoneme" title="The right sounds: place of articulation (t/ṭ, s/ś/ṣ), voicing (k/g), aspiration (k/kh), nasals and anusvāra, visarga, double consonants — from the words heard against the sloka's text">
               <div class="score-val mono" id="score-phoneme">–</div>
               <div class="score-label">Phonemes</div>
@@ -378,27 +443,6 @@
             </div>
           </div>
 
-          <div class="transcript" id="transcript">
-            <div class="dev-head-row">
-              <h3>Transcript</h3>
-              <div class="stt-controls" id="stt-controls"></div>
-              <button class="btn btn-sm btn-primary" id="stt-run" type="button">Transcribe again</button>
-            </div>
-            <div class="progress" id="stt-progress" hidden>
-              <div class="progress-bar"><div class="progress-fill" id="stt-progress-fill"></div></div>
-              <span class="muted small" id="stt-progress-label">Starting…</span>
-              <button class="btn btn-sm btn-ghost progress-stop" id="stt-progress-stop" type="button" hidden>Stop</button>
-            </div>
-            <div id="stt-out" hidden>
-              <div class="stt-row"><div class="stt-label base">Sloka</div><div class="stt-text" id="stt-base"></div></div>
-              <div class="stt-row"><div class="stt-label heard">Yours</div><div class="stt-text" id="stt-heard"></div></div>
-              <p class="stt-summary" id="stt-summary"></p>
-              <div class="phon-report" id="stt-phon" hidden></div>
-              <p class="muted small">Click any phrase to hear it. <span class="w-del">Highlighted</span> sloka words were not heard in your attempt; <span class="w-ins">highlighted</span> words in yours are extra or different. <span class="w-dim">Greyed</span> words lie outside the part that was compared.</p>
-            </div>
-            <p class="muted small">Your attempt is transcribed automatically after each take (switch "Automatic" off in any transcript panel to stop that). Words of the sloka text that were not heard are highlighted here and at the top of this page. Speech is turned into text on this computer with Whisper; the first use downloads the model from Hugging Face and keeps it cached. Chanted or sung words are recognised approximately, so treat the text as a guide.</p>
-          </div>
-
           <ul class="notes" id="result-notes"></ul>
 
           <div class="chart-wrap">
@@ -414,26 +458,6 @@
             </div>
             <canvas class="chart" id="compare-chart" height="300" aria-label="Comparison of the sloka and your attempt"></canvas>
             <p class="muted small">Your attempt is stretched onto the sloka's timeline so the two line up. Click a shaded band to jump to that deviation.</p>
-          </div>
-
-          <div class="playback-row">
-            <div class="pb">
-              <button class="btn btn-alt-base" id="res-play-base" type="button">
-                <svg class="ico-play" viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
-                <svg class="ico-pause" viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>
-                <span>Play the sloka</span>
-              </button>
-              <button class="btn btn-alt-heard" id="res-play-heard" type="button">
-                <svg class="ico-play" viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
-                <svg class="ico-pause" viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>
-                <span>Play what SlokAbhyasa heard</span>
-              </button>
-            </div>
-            <div class="speed inline">
-              <span class="muted small">Speed</span>
-              <input type="range" class="slider" id="res-speed" min="0.5" max="2" step="0.05" value="1" aria-label="Playback speed" />
-              <span class="mono speed-val" id="res-speed-val">1.00×</span>
-            </div>
           </div>
 
           <div class="dev-head-row">
@@ -455,6 +479,8 @@
             <summary id="scores-unjudged-title">Not judged</summary>
             <div class="scores collapsed" id="scores-unjudged-tiles"></div>
             <p class="muted small">These categories could not be judged for this report, so they do not count in the overall score.</p>
+          </details>
+            </div>
           </details>
           </div>
         </div>

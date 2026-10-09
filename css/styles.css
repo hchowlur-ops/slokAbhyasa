@@ -530,10 +530,16 @@ canvas { display: block; }
 
 /* ---------- results ---------- */
 /* the ring, then the seven category tiles, which wrap into a second row on narrower screens */
-.scores { display: grid; grid-template-columns: 160px repeat(auto-fit, minmax(118px, 1fr)); grid-auto-flow: row dense; gap: 12px; align-items: stretch; margin-bottom: 12px; }
-.scores > .score-main { width: 160px; grid-row: span 2; }
+.scores { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); grid-auto-flow: row dense; gap: 12px; align-items: stretch; margin-bottom: 12px; }
 .unjudged .scores { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
-.unjudged .scores > .score-main { display: none; }
+/* the overall, in the middle of the report, above the words */
+.result-overall { display: flex; justify-content: center; margin: 2px 0 18px; }
+.result-overall .score-main { width: min(100%, 480px); padding: 8px 12px 10px; }
+.result-overall .ring { width: 150px; height: 150px; }
+.result-overall .ring::before { inset: 13px; }
+.result-overall .ring-val { font-size: 2.6rem; }
+.result-overall .score-grade { margin-top: 12px; font-size: 0.95rem; padding: 4px 16px; }
+.result-overall .score-label { margin-top: 8px; }
 .score { text-align: center; padding: 12px 6px; border-radius: 14px; background: var(--surface-2); border-top: 4px solid var(--border); transition: transform .12s, box-shadow .12s; }
 .score:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
 .score-val { font-size: 1.6rem; }
@@ -629,6 +635,29 @@ canvas { display: block; }
 .stt-label { font-weight: 700; font-size: 0.78rem; text-transform: uppercase; letter-spacing: .06em; padding-top: 9px; }
 .stt-label.base { color: var(--base); }
 .stt-label.heard { color: var(--heard); }
+/* in the results the labels carry a play button: Sloka ▶, Yours ▶ */
+#transcript .stt-row { grid-template-columns: 112px minmax(0, 1fr); }
+#transcript .stt-label { display: flex; align-items: center; gap: 8px; padding-top: 4px; }
+#transcript .stt-label .btn-play { width: 36px; height: 36px; flex: none; }
+#transcript .stt-label .btn-play svg { width: 18px; height: 18px; }
+.btn-play.play-heard { background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--heard) 70%, #fff), var(--heard) 45%, color-mix(in srgb, var(--heard) 80%, #000)); box-shadow: 0 10px 24px -8px color-mix(in srgb, var(--heard) 80%, transparent), inset 0 1px 0 rgba(255, 255, 255, .25); }
+#transcript .stt-text:empty::before { content: attr(data-empty); color: var(--muted); font-size: 0.9rem; font-style: italic; }
+#res-playback { margin: 14px 0 6px; padding-top: 12px; border-top: 1px dashed var(--border); }
+.btn-both { gap: 8px; }
+.btn-both .muted { font-weight: 500; }
+.btn-both.playing { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-strong); }
+/* the Analysis fold under the words: scores, chart, deviations */
+.analysis { margin-top: 18px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
+.analysis > summary { display: flex; align-items: center; gap: 10px; padding: 12px 16px; cursor: pointer; list-style: none; user-select: none; border-radius: 14px; }
+.analysis > summary::-webkit-details-marker { display: none; }
+.analysis > summary:hover { background: var(--surface-2); }
+.analysis[open] > summary { border-radius: 14px 14px 0 0; border-bottom: 1px solid var(--border); background: linear-gradient(90deg, var(--gold-soft), var(--surface-2) 55%); }
+.analysis > summary .step-caret { transform: rotate(-90deg); }
+.analysis[open] > summary .step-caret { transform: none; }
+.analysis-title { font-family: var(--display); font-weight: 600; font-size: 1.15rem; color: var(--indigo); }
+:root[data-theme="dark"] .analysis-title { color: #f3e7c8; }
+.analysis-body { padding: 16px 16px 18px; }
+.analysis-body .scores { margin-bottom: 16px; }
 .stt-text { font-size: 1.15rem; line-height: 1.9; padding: 8px 12px; border-radius: 10px; background: var(--surface-2); min-height: 2.6em; overflow-wrap: anywhere; }
 .stt-chunk { cursor: pointer; border-radius: 6px; padding: 1px 2px; transition: background .12s; }
 .stt-chunk:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }

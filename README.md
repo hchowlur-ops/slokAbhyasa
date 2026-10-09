@@ -167,24 +167,30 @@ slokas you had ticked there.
    open to record again" — so the report is what you see; click a head to open that step
    again (to tick another sloka, say), and "Record again" opens both. The same happens in
    Teach and in a quiz.
-   * **Scores** in seven categories (see "What is scored" below) — phonemes, vowel length and
-     syllables from the words heard; emphasis, pitch contour, phrasing and timing from the
-     sound — and an **overall score**: their weighted mean (phonemes 30, vowel length 25,
-     syllables 15, emphasis 10, pitch contour 10, phrasing 5, timing 5 by default; the
-     **Settings** page changes them). The overall earns a **grade**:
-     Excellent from 90, Good from 80, Fair from 65, Needs practice below. Only the categories
-     that could be judged count: the overall is recomputed when the word scores arrive with
-     the transcript, and a category that cannot be judged for this report (no transcript yet,
-     pitch shown for interest only for recited text) is collapsed under "Not judged" at the
-     bottom of the report. Each tile says whether it is **within tolerance** (see below), and
-     the ring carries the verdict for the whole report.
-   * The **transcript** of the sloka and of your attempt, directly under the scores, with the
-     words that differ highlighted (see "Transcripts" below).
-   * A **chart** with the sloka pitch contour and yours stretched onto the same timeline,
-     a loudness lane, and shaded bands where something differed. Click a band to select it.
-   * A **list of deviations**, each with a "Sloka" and a "Yours" button that plays just that
-     moment (with a little padding) so you can hear the difference.
-   * "Play the sloka" and "Play what SlokAbhyasa heard" play the whole recordings, at any speed.
+   * The **overall score**, in the middle: a ring with the weighted mean of the seven
+     categories (see "What is scored" below — phonemes 30, vowel length 25, syllables 15,
+     emphasis 10, pitch contour 10, phrasing 5, timing 5 by default; the **Settings** page
+     changes them) and its **grade**: Excellent from 90, Good from 80, Fair from 65, Needs
+     practice below. Only the categories that could be judged count; the overall is
+     recomputed when the word scores arrive with the transcript. The ring also carries the
+     verdict for the whole report (**within tolerance** or not, see below).
+   * The **transcript** of the sloka and of your attempt, directly under the overall, with
+     the words that differ highlighted (see "Transcripts" below). Each row has a **play
+     button** by its label — "Sloka ▶" plays the sloka, "Yours ▶" plays your recording — and
+     under the rows **"Play both together"** plays the two at once, the sloka in the left
+     ear and yours in the right, from the start of the part that was compared and at the
+     same speed, so the difference is heard rather than read (headphones make the two
+     sides distinct). The speed slider beside it applies to all three.
+   * **Analysis**, folded under the transcript; open it for the detail:
+     - the seven **category tiles**, each with its score, what it rests on and whether it
+       is within tolerance; a category that cannot be judged for this report (no
+       transcript yet, pitch shown for interest only for recited text) is collapsed under
+       "Not judged" at the bottom;
+     - a **chart** with the sloka pitch contour and yours stretched onto the same
+       timeline, a loudness lane, and shaded bands where something differed (click a band
+       to select it);
+     - the **list of deviations**, each with a "Sloka" and a "Yours" button that plays just
+       that moment (with a little padding).
 
 **Several slokas at once.** With more than one sloka ticked, the results start with a
 list of reports. Each row shows the sloka's name, a bar that stands for your recording from

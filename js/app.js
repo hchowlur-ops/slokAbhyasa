@@ -1264,11 +1264,61 @@ $('#practice-headphones').addEventListener('change', (e) => {
 const chart = new ComparisonChart($('#compare-chart'), { onSelect: (id) => selectDeviation(id, true) });
 basePlayer.addEventListener('tick', () => { if (practice.result) chart.setPlayhead('base', basePlayer.playing ? basePlayer.currentTime : null); });
 heardPlayer.addEventListener('tick', () => { if (practice.result) chart.setPlayhead('heard', heardPlayer.playing ? heardPlayer.currentTime : null); });
-basePlayer.addEventListener('play', () => heardPlayer.pause());
-heardPlayer.addEventListener('play', () => basePlayer.pause());
+// One at a time, except when both are meant to play together (below).
+basePlayer.addEventListener('play', () => { if (!duet) heardPlayer.pause(); });
+heardPlayer.addEventListener('play', () => { if (!duet) basePlayer.pause(); });
 for (const p of [basePlayer, heardPlayer]) {
-  for (const ev of ['pause', 'ended', 'rangeend']) p.addEventListener(ev, () => { $$('.dev-actions .btn.playing').forEach((b) => b.classList.remove('playing')); });
+  for (const ev of ['pause', 'ended', 'rangeend']) p.addEventListener(ev, () => { $$('.dev-actions .btn.playing').forEach((b) => b.classList.remove('playing')); syncDuet(); });
 }
+
+// ---------- both together: the sloka in the left ear, the take in the right ----------
+// Each player's audio is routed through a stereo panner once, lazily (a media element can be
+// attached to the audio graph only once, and from then on plays only through it). Outside a
+// duet the panners sit in the middle, so ordinary playback is unchanged. Both start at the
+// beginning of the part that was compared, at the same speed, so the ear can follow them.
+let duet = false;
+const DUET_PAN = 0.85;
+const panners = new Map(); // player → StereoPannerNode
+function pannerOf(player) {
+  let node = panners.get(player);
+  if (node) return node;
+  const ctx = getCtx();
+  const src = ctx.createMediaElementSource(player.el);
+  node = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+  if (node) { src.connect(node); node.connect(ctx.destination); } else { src.connect(ctx.destination); }
+  panners.set(player, node || { pan: { value: 0 } });
+  return panners.get(player);
+}
+function setPans(base, heard) {
+  pannerOf(basePlayer).pan.value = base;
+  pannerOf(heardPlayer).pan.value = heard;
+}
+async function playBoth() {
+  const res = practice.result;
+  if (duet) { stopDuet(); return; }
+  if (!res || !practice.base || !heardPlayer.loaded) return;
+  try { setPans(-DUET_PAN, DUET_PAN); } catch (err) { toast(`Playing both together is not possible here: ${err.message}`, 'error'); return; }
+  duet = true;
+  $('#res-play-both').classList.add('playing');
+  const [b0, b1] = res.matched ? res.matched.base : [0, basePlayer.duration];
+  const [h0, h1] = res.matched ? res.matched.heard : [0, heardPlayer.duration];
+  await Promise.all([basePlayer.playRange(b0, b1), heardPlayer.playRange(h0, h1)]);
+}
+function stopDuet() {
+  if (!duet) return;
+  duet = false;
+  basePlayer.pause();
+  heardPlayer.pause();
+  try { setPans(0, 0); } catch { /* never routed */ }
+  $('#res-play-both').classList.remove('playing');
+}
+// A duet is over when neither side plays any more.
+function syncDuet() {
+  if (duet && !basePlayer.playing && !heardPlayer.playing) stopDuet();
+}
+$('#res-play-both').addEventListener('click', () => { getCtx(); playBoth(); });
+// the Analysis fold: the chart draws itself when it becomes visible, the rest follows
+$('#analysis').addEventListener('toggle', () => { if ($('#analysis').open) redrawAll(); });
 
 // ---------- tolerance: how much variation is acceptable per category ----------
 
@@ -2892,6 +2942,7 @@ function unfoldSteps() {
 
 function hideResults() {
   unfoldSteps();
+  stopDuet();
   practice.result = null;
   practice.selected = null;
   practice.results.clear();
