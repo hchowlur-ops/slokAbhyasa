@@ -616,32 +616,11 @@ follows the measured error rate of speech recognisers on children; the manner ca
 
 ### References
 
-* Witt & Young, *Phone-level pronunciation scoring and assessment for interactive language
-  learning*, Speech Communication 30 (2000) — <http://mi.eng.cam.ac.uk/~sjy/papers/wiyo00.pdf>.
-  Phone-by-phone scoring against the expected phones with a threshold per phone ("Goodness of
-  Pronunciation"), the idea the phoneme category follows.
-* *Automatic Pronunciation Assessment — A Review*, Findings of EMNLP 2023 —
-  <https://aclanthology.org/2023.findings-emnlp.557.pdf>. Phoneme-level assessment, and why
-  articulatory features make scores interpretable and robust to the speaker.
-* Wei et al., *Articulatory-Enhanced Mispronunciation Detection and Diagnosis*, SLaTE 2025 —
-  <https://www.isca-archive.org/slate_2025/wei25_slate.pdf>. Diagnosing slips by place,
-  manner, aspiration and voicing.
 * Śikṣā, the Vedāṅga of phonetics — <https://en.wikipedia.org/wiki/Shiksha>. The classical
   classification of Sanskrit sounds by *sthāna* and *prayatna*.
 * learnsanskrit.org, *Vowels* — <https://www.learnsanskrit.org/guide/sounds/vowels/>; *Sanskrit
   prosody* — <https://en.wikipedia.org/wiki/Sanskrit_prosody>. Vowel length in mātrās, laghu
   and guru syllables, the 32-syllable śloka.
-* *Intonation contour similarity: f0 representations and distance measures compared to human
-  perception in two languages*, JASA 154 (2023) —
-  <https://pubs.aip.org/asa/jasa/article-abstract/154/1/95/2901344/Intonation-contour-similarity-f0-representations>.
-  Pitch contours in semitones relative to the speaker's median, aligned by DTW, match how
-  listeners hear likeness.
-* Rilliard, Allauzen & Boula de Mareüil, *Using Dynamic Time Warping to Compute Prosodic
-  Similarity Measures*, Interspeech 2011 —
-  <https://www.isca-archive.org/interspeech_2011/rilliard11_interspeech.html>. Prosody compared
-  along a time alignment, as emphasis and phrasing are here.
-* Jain et al., *Kid-Whisper* (2023) — <https://arxiv.org/abs/2309.07927>. Whisper's word error
-  rate on children's speech is several times that on adults'.
 * *Automatic Speech Recognition for Sanskrit with Transfer Learning* (2025) —
   <https://arxiv.org/abs/2501.10024>; *Automatic Speech Recognition in Sanskrit: A New Speech
   Corpus and Modelling Insights* (2021) — <https://arxiv.org/abs/2106.05852>; *Vedavani: A
