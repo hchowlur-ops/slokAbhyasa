@@ -510,7 +510,9 @@ within/outside verdict off, leaving scores and grades), and **Speech recognition
 heard in, the model, and whether transcripts are made automatically — the same controls
 that sit beside every transcript panel). Beside them, "Why these defaults" explains how the
 weights and tolerances are tuned for Sanskrit śloka recitation and lists the references
-(reproduced under "References" below).
+(reproduced under "References" below). Under both columns a short note, "Whisper · how the
+words are heard", says that the model is downloaded once and runs on this computer, that
+its transcripts can carry errors of its own, and how it spells the visarga.
 
 ### Library
 Play, rename, move, delete, or jump straight into evaluating yourself against a sloka. The WAV files live in

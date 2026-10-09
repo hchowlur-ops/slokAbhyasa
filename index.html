@@ -591,6 +591,12 @@
         </div>
       </aside>
       </div>
+
+      <!-- below both columns: how the words are heard, and how far to trust them -->
+      <div class="card settings-card settings-note" id="settings-whisper">
+        <h2>Whisper · how the words are heard</h2>
+        <p>The words of a sloka and of your attempt are written down by <a href="https://github.com/openai/whisper" target="_blank" rel="noopener">OpenAI's Whisper</a>, a speech-recognition model that runs inside your browser. The first time you use a model tier (Fast, Better or Best) it is downloaded from Hugging Face, 75 MB to 750 MB, and kept in the browser's cache; after that transcription needs no internet connection, and no audio ever leaves this computer. Treat the text as a guide rather than a verdict: Whisper has seen very little Sanskrit and recognises chanted or sung words only approximately, so a transcript can carry errors that are its own, not yours. In particular it writes a recited visarga as the breath it hears, so रताः comes back as रतहः or रताहा, and it writes the anusvāra where the text has a nasal (संग for सङ्ग); the comparison reads both spellings as the sounds they are, but other slips in a transcript can still show up in the word scores. Typing a sloka's canonical text in its Details, or correcting its transcript, gives the comparison a reliable reference.</p>
+      </div>
     </section>
 
     <!-- ================= REPORTS ================= -->
