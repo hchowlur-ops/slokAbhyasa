@@ -380,6 +380,16 @@ canvas { display: block; }
   font-weight: 800; font-size: 0.85rem; box-shadow: 0 2px 6px -1px rgba(198, 122, 18, .5);
 }
 .step-body { padding: 20px 22px 22px; }
+/* steps that fold (Self Evaluation 1 and 2 once there are results): the head is the handle */
+.step.collapsible > .step-head { cursor: pointer; user-select: none; }
+.step.collapsible > .step-head:hover { background: linear-gradient(90deg, var(--gold-soft), var(--surface-2) 75%); }
+.step.collapsible > .step-head:focus-visible { outline: 2px solid color-mix(in srgb, var(--gold) 60%, transparent); outline-offset: -2px; }
+.step-caret { width: 20px; height: 20px; flex: none; color: var(--muted); transition: transform .18s; }
+.step.collapsed > .step-head { border-bottom: 0; }
+.step.collapsed > .step-head .step-caret { transform: rotate(-90deg); }
+.step.collapsed > .step-body { display: none; }
+.step.collapsed { box-shadow: none; }
+.step.collapsed .step-num { background: var(--surface); color: var(--muted); box-shadow: inset 0 0 0 1.5px var(--border); }
 
 /* ---------- buttons ---------- */
 .btn {
@@ -520,7 +530,7 @@ canvas { display: block; }
 
 /* ---------- results ---------- */
 /* the ring, then the seven category tiles, which wrap into a second row on narrower screens */
-.scores { display: grid; grid-template-columns: 160px repeat(auto-fit, minmax(118px, 1fr)); grid-auto-flow: row dense; gap: 12px; align-items: start; margin-bottom: 12px; }
+.scores { display: grid; grid-template-columns: 160px repeat(auto-fit, minmax(118px, 1fr)); grid-auto-flow: row dense; gap: 12px; align-items: stretch; margin-bottom: 12px; }
 .scores > .score-main { width: 160px; grid-row: span 2; }
 .unjudged .scores { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
 .unjudged .scores > .score-main { display: none; }

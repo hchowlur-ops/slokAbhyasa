@@ -162,7 +162,11 @@ slokas you had ticked there.
    Click a name or a chip to preview it and listen at any speed.
 2. Record your attempt once. If you wear headphones you can have the previewed sloka play
    while you record. The one recording is compared with every ticked sloka.
-3. Read the results (one report per sloka, see "Several slokas at once" below):
+3. Read the results (one report per sloka, see "Several slokas at once" below). As soon as
+   they appear, steps 1 and 2 fold up into their heads — "1 sloka ticked", "Recorded 0:21 ·
+   open to record again" — so the report is what you see; click a head to open that step
+   again (to tick another sloka, say), and "Record again" opens both. The same happens in
+   Teach and in a quiz.
    * **Scores** in seven categories (see "What is scored" below) — phonemes, vowel length and
      syllables from the words heard; emphasis, pitch contour, phrasing and timing from the
      sound — and an **overall score**: their weighted mean (phonemes 30, vowel length 25,

@@ -184,11 +184,13 @@
         <p class="subtitle">Pick one or more slokas, perform once, and browse a report for each: exactly where you drifted, and where recordings conflict.</p>
       </header>
 
-      <div class="card step">
+      <!-- Steps 1 and 2 fold once there are results, so the report is what you see; click a head to open it -->
+      <div class="card step collapsible" id="practice-step1">
         <div class="step-head">
           <span class="step-num">1</span><h2 id="practice-step1-title">Choose one or more slokas</h2>
           <div class="grow"></div>
           <span class="muted small" id="practice-pick-count"></span>
+          <svg class="step-caret" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7.4 8.6 12 13.2l4.6-4.6L18 10l-6 6-6-6z"/></svg>
         </div>
         <div class="step-body">
           <div class="quiz-box" id="practice-quiz-box" hidden>
@@ -209,8 +211,13 @@
       </div>
 
       <!-- The preview and the recording, the same block for Self Evaluation, Teach and a quiz -->
-      <div class="card step" id="practice-step2">
-        <div class="step-head"><span class="step-num">2</span><h2 id="practice-step2-title">Perform it</h2></div>
+      <div class="card step collapsible" id="practice-step2">
+        <div class="step-head">
+          <span class="step-num">2</span><h2 id="practice-step2-title">Perform it</h2>
+          <div class="grow"></div>
+          <span class="muted small" id="practice-step2-summary"></span>
+          <svg class="step-caret" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7.4 8.6 12 13.2l4.6-4.6L18 10l-6 6-6-6z"/></svg>
+        </div>
         <div class="step-body">
           <div id="practice-base" hidden>
             <div class="base-active"><span class="muted small" id="practice-base-role">Previewing</span><strong id="practice-base-name"></strong></div>

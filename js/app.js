@@ -1628,7 +1628,7 @@ function renderModeChrome() {
 function syncBaseList() {
   practicePicker.setSelection(practice.selection);
   const n = practice.selection.length;
-  $('#practice-pick-count').textContent = practice.quiz ? '' : practice.teach ? (n ? nameOf(practice.selection[0]) : '') : n ? `${n} sloka${n === 1 ? '' : 's'} ticked` : '';
+  $('#practice-pick-count').textContent = practice.quiz ? `${practice.quiz.name} · ${n} sloka${n === 1 ? '' : 's'}` : practice.teach ? (n ? nameOf(practice.selection[0]) : '') : n ? `${n} sloka${n === 1 ? '' : 's'} ticked` : '';
 }
 
 function updateRecLabel() {
@@ -1839,6 +1839,7 @@ async function analyseAttempt() {
     if (practice.base) setHidden($('#practice-base'), false); // a quiz keeps the sloka hidden only until now
     if (pool.includes(practice.activeId) && practice.base) showActiveReport();
     else await setActiveBase(pool[0]);
+    focusResults(); // steps 1 and 2 fold away; the report is what remains
     $('#practice-results').scrollIntoView({ behavior: 'smooth', block: 'start' });
     if (practice.quiz) scoreQuizAttempt();
     else saveSession(); // a Self Evaluation / Teach take is kept for the Reports dashboard
@@ -2861,7 +2862,36 @@ $('#practice-again').addEventListener('click', () => {
   $('#practice-step2').scrollIntoView({ behavior: 'smooth', block: 'start' });
 });
 
+// ---------- steps 1 and 2 fold once there are results, so the report is what you see ----------
+// A folded head keeps its summary (what is ticked, how long the take was); click it, or
+// press Enter on it, to open the step again. "Record again" and any new take unfold both.
+const FOLDING_STEPS = ['#practice-step1', '#practice-step2'];
+function setStepFolded(sel, folded) {
+  const card = $(sel);
+  card.classList.toggle('collapsed', folded);
+  $('.step-head', card).setAttribute('aria-expanded', folded ? 'false' : 'true');
+}
+for (const sel of FOLDING_STEPS) {
+  const head = $('.step-head', $(sel));
+  head.setAttribute('role', 'button');
+  head.tabIndex = 0;
+  head.setAttribute('aria-expanded', 'true');
+  const toggle = () => setStepFolded(sel, !$(sel).classList.contains('collapsed'));
+  head.addEventListener('click', (e) => { if (e.target.closest('button, input, select, a, label')) return; toggle(); });
+  head.addEventListener('keydown', (e) => { if (e.target === head && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggle(); } });
+}
+function focusResults() {
+  const take = practice.take;
+  $('#practice-step2-summary').textContent = take ? `Recorded ${fmtTime(take.duration)} · open to record again` : '';
+  for (const sel of FOLDING_STEPS) setStepFolded(sel, true);
+}
+function unfoldSteps() {
+  $('#practice-step2-summary').textContent = '';
+  for (const sel of FOLDING_STEPS) setStepFolded(sel, false);
+}
+
 function hideResults() {
+  unfoldSteps();
   practice.result = null;
   practice.selected = null;
   practice.results.clear();
