@@ -129,22 +129,42 @@ The last person and style used are remembered. Slokas saved before these fields 
 details file on the next start, with nothing guessed: open **Details** in the Library to fill
 them in; until a style is chosen such a sloka is judged as before (chanting, with pitch).
 
-### Teach
-Learning one sloka at a time. The list is the same as in Self Evaluation, grouped by folder,
-but you choose exactly one. Under it appear two buttons:
+### Choosing slokas (Teach, Self Evaluation, Quiz)
+The three pages share one **sloka picker**, built so that a library of many folders with
+dozens of slokas each stays manageable:
 
-* **Play** plays the sloka; the speed chips (or the slider) go from half speed ("½× slower")
-  to double speed ("2× faster") with the pitch kept. Play it as often as you like.
-* **Listen** starts recording; recite the sloka back and press Listen again (it reads
-  "Stop · SlokAbhyasa is listening" meanwhile). Then SlokAbhyasa compares what it heard with the sloka and
-  shows the same report as Self Evaluation: scores, chart, deviations, transcript.
+* The library is shown as **folders that fold** — closed at first, so you only see the folder
+  names and how many slokas each holds. Open the ones you need; which folders are open is
+  remembered per page.
+* A **search box** at the top filters the slokas by name across every folder and opens the
+  folders that match.
+* What you have chosen is always visible in the **summary strip** under the search box: a
+  count ("2 slokas ticked", "1 chosen", "3 of 10 ticked") and one **chip** per sloka. Click
+  a chip's name to preview that sloka; click its × to untick it. The folder heads also say
+  how many of their slokas are ticked, so a closed folder never hides a choice.
+* In Self Evaluation each folder head carries a checkbox that ticks or unticks the whole
+  folder at once (half-filled when only some are ticked); "Tick all" and "Clear" act on the
+  whole library. Teach is a single choice, so it shows radio buttons and no folder checkbox.
+* Clicking a ticked sloka's name previews it; clicking an unticked one ticks it.
+
+Under the picker the pages share the same **perform block**: the previewed sloka's name,
+its text, a waveform, a **Play** button, the speed chips (½× … 2×, pitch kept) and the
+slider, and then the record button. Only the title changes: "Play it, then recite it back"
+in Teach, "Perform it" in Self Evaluation, "Recite from memory" in a quiz.
+
+### Teach
+Learning one sloka at a time. Open a folder and choose one sloka; it appears in the perform
+block, where you can play it as often as you like at any speed. Then press **Listen**,
+recite the sloka back and press it again (it reads "Stop · SlokAbhyasa is listening"
+meanwhile). SlokAbhyasa compares what it heard with the sloka and shows the same report as
+Self Evaluation: scores, chart, deviations, transcript.
 
 Teach and Self Evaluation share their screen; switching back to Self Evaluation restores the
 slokas you had ticked there.
 
 ### Self Evaluation
-1. Tick one or more slokas; the list is grouped by folder. Click a name to preview it and
-   listen at any speed.
+1. Tick one or more slokas in the picker (a whole folder with its checkbox if you like).
+   Click a name or a chip to preview it and listen at any speed.
 2. Record your attempt once. If you wear headphones you can have the previewed sloka play
    while you record. The one recording is compared with every ticked sloka.
 3. Read the results (one report per sloka, see "Several slokas at once" below):
@@ -366,14 +386,15 @@ approximately; treat the words as a guide and rely on the acoustic comparison fo
 ### Quiz
 A memory test drawn from your library.
 
-1. **Folders to draw from** – tick one or more folders to narrow the list of slokas; with
-   none ticked, the whole library is listed, grouped by folder. **How many** – one sloka, or
-   several with a maximum (10 by default; at least 2).
-2. **Choose the slokas** – tick them in the list. With "One sloka" you pick exactly one; with
-   "Several" you pick at least two and at most the maximum, and the remaining boxes lock once
-   the maximum is reached (untick one to swap, or raise the maximum). "Pick at random" fills
-   the choice for you, spreading the picks across the ticked folders, and you can still adjust
-   it. "Start quiz…" becomes available as soon as the rule is met.
+1. **How many** – one sloka, or several with a maximum (10 by default; at least 2).
+2. **Choose the slokas** – tick them in the picker (see "Choosing slokas" above). With "One
+   sloka" you pick exactly one; with "Several" you pick at least two and at most the maximum,
+   and the remaining boxes lock once the maximum is reached (untick one to swap, or raise the
+   maximum). The summary strip says how far you are ("3 of 10 ticked"). **"Pick N at
+   random"** fills the choice for you from the folders you have open — open just CH-12 to be
+   quizzed on CH-12 — or, with no folder open, from the whole library spread across its
+   folders; you can still adjust the result. "Start quiz…" becomes available as soon as the
+   rule is met.
 3. **Start quiz…** – give it a friendly name; the date and time are appended so every quiz is
    unique (for example "CH-12 · 2026-09-23 14:05"). The quiz is saved at once.
 4. You land in Self Evaluation in *quiz mode*: the picked names are listed, the slokas

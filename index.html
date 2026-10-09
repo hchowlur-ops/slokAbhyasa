@@ -253,8 +253,7 @@
         <div class="step-head">
           <span class="step-num">1</span><h2 id="practice-step1-title">Choose one or more slokas</h2>
           <div class="grow"></div>
-          <button class="btn btn-ghost btn-sm" id="practice-select-all" type="button">Select all</button>
-          <button class="btn btn-ghost btn-sm" id="practice-select-none" type="button">Clear</button>
+          <span class="muted small" id="practice-pick-count"></span>
         </div>
         <div class="step-body">
           <div class="quiz-box" id="practice-quiz-box" hidden>
@@ -267,56 +266,43 @@
             <p class="muted small">Recite these from memory, in one recording and in any order. The slokas stay hidden until you have recorded; then every report opens as usual.</p>
             <ol class="quiz-items" id="quiz-box-items"></ol>
           </div>
-          <ul class="base-list" id="practice-list" aria-label="Slokas to be evaluated against"></ul>
-          <p id="practice-list-hint" class="muted small hint">Tick every sloka you want to be evaluated against. One recording is compared with all of them, and a sloka that is longer or shorter than your recording is matched to the part that fits. Click a name to preview it.</p>
-          <p id="teach-hint" class="muted small hint" hidden>Choose one sloka. Play it as often as you like, at any speed; then press Listen and recite it back.</p>
+          <div class="picker" id="practice-picker"></div>
+          <p id="practice-list-hint" class="muted small hint">Open a folder and tick the slokas to be evaluated against; one recording is compared with all of them, and a sloka longer or shorter than your recording is matched to the part that fits. The ticked slokas are listed above the folders — click one there to preview it, or its × to untick it.</p>
+          <p id="teach-hint" class="muted small hint" hidden>Open a folder and choose one sloka. Play it as often as you like, at any speed; then press Listen and recite it back.</p>
           <p id="practice-base-empty" class="muted small">No slokas yet. Record or import one in <a href="#learn">Learn</a>.</p>
+        </div>
+      </div>
+
+      <!-- The preview and the recording, the same block for Self Evaluation, Teach and a quiz -->
+      <div class="card step" id="practice-step2">
+        <div class="step-head"><span class="step-num">2</span><h2 id="practice-step2-title">Perform it</h2></div>
+        <div class="step-body">
           <div id="practice-base" hidden>
             <div class="base-active"><span class="muted small" id="practice-base-role">Previewing</span><strong id="practice-base-name"></strong></div>
-            <div class="teach-actions" id="teach-actions" hidden>
-              <button class="btn btn-lg btn-primary" id="teach-play" type="button">
-                <svg class="ico-play" viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
-                <svg class="ico-pause" viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>
-                <span>Play</span>
-              </button>
-              <button class="btn btn-lg btn-listen" id="teach-listen" type="button">
-                <svg class="ico-mic" viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11z"/></svg>
-                <svg class="ico-stop" viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M6 6h12v12H6z"/></svg>
-                <span class="teach-listen-text">Listen</span>
-              </button>
-              <div class="teach-speed">
-                <span class="muted small">Speed</span>
-                <div class="chips" id="teach-speed-chips" aria-label="Playback speed">
-                  <button class="chip" type="button" data-speed="0.5" title="Half speed">½× slower</button>
-                  <button class="chip" type="button" data-speed="0.75">¾×</button>
-                  <button class="chip active" type="button" data-speed="1">1×</button>
-                  <button class="chip" type="button" data-speed="1.25">1¼×</button>
-                  <button class="chip" type="button" data-speed="1.5">1½×</button>
-                  <button class="chip" type="button" data-speed="2" title="Double speed">2× faster</button>
-                </div>
-              </div>
-            </div>
             <div class="transcript-panel top" id="practice-transcript"></div>
             <canvas class="wave wave-clickable" id="practice-base-wave" height="90"></canvas>
-            <div class="transport compact">
-              <button class="btn-play small" id="practice-base-play" type="button" aria-label="Play sloka">
+            <div class="transport">
+              <button class="btn-play" id="practice-base-play" type="button" aria-label="Play sloka">
                 <svg class="ico-play" viewBox="0 0 24 24"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
                 <svg class="ico-pause" viewBox="0 0 24 24"><path fill="currentColor" d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>
               </button>
               <div class="time mono"><span id="practice-base-cur">0:00.0</span><span class="muted"> / </span><span id="practice-base-dur">0:00.0</span></div>
               <div class="speed inline">
                 <span class="muted small">Speed</span>
+                <div class="chips speed-chips" id="practice-speed-chips" aria-label="Playback speed">
+                  <button class="chip" type="button" data-speed="0.5" title="Half speed">½×</button>
+                  <button class="chip" type="button" data-speed="0.75">¾×</button>
+                  <button class="chip active" type="button" data-speed="1">1×</button>
+                  <button class="chip" type="button" data-speed="1.25">1¼×</button>
+                  <button class="chip" type="button" data-speed="1.5">1½×</button>
+                  <button class="chip" type="button" data-speed="2" title="Double speed">2×</button>
+                </div>
                 <input type="range" class="slider" id="practice-speed" min="0.5" max="2" step="0.05" value="1" aria-label="Playback speed" />
                 <span class="mono speed-val" id="practice-speed-val">1.00×</span>
               </div>
             </div>
           </div>
-        </div>
-      </div>
-
-      <div class="card step" id="practice-step2">
-        <div class="step-head"><span class="step-num">2</span><h2>Perform it</h2></div>
-        <div class="step-body">
+          <p class="muted small" id="practice-base-none">Choose a sloka above to preview it here.</p>
           <div class="rec-stage">
             <div class="rec-controls">
               <button class="btn-record" id="practice-rec" type="button" aria-label="Start recording" disabled>
@@ -545,29 +531,16 @@
         <div class="step-body">
           <p id="quiz-empty" class="muted small" hidden>No slokas yet. Record or import some in <a href="#learn">Learn</a>.</p>
           <div class="quiz-setup" id="quiz-setup">
-            <div class="quiz-setup-col">
-              <div class="field-label">Folders to draw from</div>
-              <ul class="folder-list" id="quiz-folders"></ul>
-              <p class="muted small">Tick folders to narrow the list below; with none ticked, the whole library is listed. Folders are subfolders of <code>library</code>; make them in Learn, in the Library view or with Explorer.</p>
-            </div>
-            <div class="quiz-setup-col">
-              <div class="field-label">How many slokas</div>
-              <label class="toggle"><input type="radio" name="quiz-mode" value="single" /><span>One sloka</span></label>
-              <label class="toggle"><input type="radio" name="quiz-mode" value="multiple" checked /><span>Several slokas, at most</span>
-                <input type="number" class="num" id="quiz-max" min="2" max="200" value="10" aria-label="Maximum number of slokas" /></label>
-              <p class="muted small">Choose them yourself in the list below, or let "Pick at random" choose for you.</p>
-            </div>
+            <div class="field-label">How many slokas</div>
+            <label class="toggle"><input type="radio" name="quiz-mode" value="single" /><span>One sloka</span></label>
+            <label class="toggle"><input type="radio" name="quiz-mode" value="multiple" checked /><span>Several slokas, at most</span>
+              <input type="number" class="num" id="quiz-max" min="2" max="200" value="10" aria-label="Maximum number of slokas" /></label>
+            <div class="grow"></div>
+            <button class="btn btn-sm" id="quiz-random" type="button" title="Picks from the folders that are open below (from the whole library when none is open), spread across them">Pick at random</button>
+            <button class="btn btn-sm btn-primary" id="quiz-start" type="button" disabled>Start quiz…</button>
           </div>
           <div class="quiz-choose" id="quiz-choose">
-            <div class="dev-head-row">
-              <h3 id="quiz-choose-title">Choose the slokas</h3>
-              <div class="chips">
-                <span class="muted small" id="quiz-choose-count"></span>
-                <button class="btn btn-sm" id="quiz-random" type="button">Pick at random</button>
-                <button class="btn btn-sm btn-primary" id="quiz-start" type="button" disabled>Start quiz…</button>
-              </div>
-            </div>
-            <ul class="base-list" id="quiz-slokas" aria-label="Slokas to choose from"></ul>
+            <div class="picker" id="quiz-picker"></div>
             <p class="muted small" id="quiz-choose-hint"></p>
           </div>
         </div>

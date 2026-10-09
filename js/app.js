@@ -1294,15 +1294,13 @@ const practicePanel = createTranscriptPanel($('#practice-transcript'), {
   },
 });
 
-const applyPracticeSpeed = bindSpeed({ slider: $('#practice-speed'), valueEl: $('#practice-speed-val'), onChange: (r) => setPracticeSpeed(r) });
+const applyPracticeSpeed = bindSpeed({ slider: $('#practice-speed'), valueEl: $('#practice-speed-val'), chips: $('#practice-speed-chips'), onChange: (r) => setPracticeSpeed(r) });
 const applyResSpeed = bindSpeed({ slider: $('#res-speed'), valueEl: $('#res-speed-val'), onChange: (r) => setPracticeSpeed(r) });
-const applyTeachSpeed = bindSpeed({ slider: $('#practice-speed'), valueEl: $('#practice-speed-val'), chips: $('#teach-speed-chips'), onChange: (r) => setPracticeSpeed(r) });
 function setPracticeSpeed(r) {
   basePlayer.rate = r;
   heardPlayer.rate = r;
   applyPracticeSpeed(r, true);
   applyResSpeed(r, true);
-  applyTeachSpeed(r, true);
 }
 
 $('#practice-headphones').addEventListener('change', (e) => {
@@ -1448,10 +1446,166 @@ const SELECTION_KEY = 'tutor-eval-selection';
 function savedSelection() {
   try { const v = JSON.parse(localStorage.getItem(SELECTION_KEY) || '[]'); return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []; } catch { return []; }
 }
+// ---------- the sloka picker: folders that open, a search box, the ticked slokas as chips ----------
+// One component for Self Evaluation, Teach and the Quiz: a library of many folders with
+// dozens of slokas each stays compact (folders are closed until opened), and what is ticked
+// is always in view above the folders, as chips with a count.
+//   mode     'multi' (checkboxes, a folder-level "all") or 'single' (one at a time)
+//   max      multi: no more than this many (further boxes lock)
+//   onChange(ids, activated)  the selection changed; `activated` is the sloka to preview
+//   onActivate(id)            a ticked sloka's chip or name was clicked: preview it
+//   openKey  localStorage key remembering which folders are open
+function createSlokaPicker(host, { mode = 'multi', max = null, onChange, onActivate = null, openKey = null, pickLabel = 'Tick', activeId = () => null } = {}) {
+  host.innerHTML = `
+    <div class="picker-toolbar">
+      <input type="search" class="picker-search" data-role="search" placeholder="Find a sloka…" aria-label="Find a sloka" />
+      <button class="btn btn-ghost btn-sm" type="button" data-act="all" title="Tick every sloka in the library">Tick all</button>
+      <button class="btn btn-ghost btn-sm" type="button" data-act="clear">Clear</button>
+    </div>
+    <div class="picker-summary" data-role="summary"></div>
+    <div class="picker-folders" data-role="folders"></div>`;
+  const search = $('[data-role="search"]', host);
+  const summary = $('[data-role="summary"]', host);
+  const foldersEl = $('[data-role="folders"]', host);
+  const allBtn = $('[data-act="all"]', host);
+  const clearBtn = $('[data-act="clear"]', host);
+  let records = [];
+  let selected = [];
+  let open = new Set();
+  try { open = new Set(JSON.parse(localStorage.getItem(openKey || '') || '[]')); } catch { open = new Set(); }
+  const saveOpen = () => { if (openKey) { try { localStorage.setItem(openKey, JSON.stringify([...open])); } catch { /* ignore */ } } };
+  const byId = () => new Map(records.map((r) => [r.id, r]));
+  const folderOfRec = (r) => r.folder || '';
+  const change = (ids, activated) => { selected = ids; onChange(ids, activated); };
+
+  const toggle = (id) => {
+    if (mode === 'single') { change([id], id); return; }
+    if (selected.includes(id)) { change(selected.filter((x) => x !== id), undefined); return; }
+    if (max && selected.length >= max) { toast(`At most ${max} slokas. Untick one to swap, or raise the maximum.`, 'info'); return; }
+    change([...selected, id], id);
+  };
+  const renderSummary = () => {
+    summary.innerHTML = '';
+    const count = document.createElement('span');
+    count.className = 'count';
+    const n = selected.length;
+    count.textContent = mode === 'single' ? (n ? '1 chosen' : 'None chosen') : max ? `${n} of ${max} ticked` : `${n} ticked`;
+    summary.appendChild(count);
+    if (!n) { const s = document.createElement('span'); s.className = 'none'; s.textContent = mode === 'single' ? 'Open a folder below and choose a sloka.' : 'Open a folder below and tick slokas; they appear here.'; summary.appendChild(s); return; }
+    const map = byId();
+    const act = activeId();
+    const shown = selected.slice(0, 40);
+    for (const id of shown) {
+      const r = map.get(id);
+      const chip = document.createElement('span');
+      chip.className = `picker-chip${id === act ? ' active' : ''}`;
+      chip.innerHTML = '<button class="name" type="button"></button><button class="x" type="button" aria-label="Untick">×</button>';
+      $('.name', chip).textContent = r ? r.name : 'gone';
+      $('.name', chip).title = r ? `${r.folder ? r.folder + ' · ' : ''}click to preview` : '';
+      $('.name', chip).addEventListener('click', () => { if (onActivate) onActivate(id); });
+      $('.x', chip).addEventListener('click', () => change(selected.filter((x) => x !== id), undefined));
+      summary.appendChild(chip);
+    }
+    if (selected.length > shown.length) { const m = document.createElement('span'); m.className = 'picker-chip'; m.innerHTML = '<span class="more"></span>'; m.firstChild.textContent = `+${selected.length - shown.length} more`; summary.appendChild(m); }
+  };
+  const renderFolders = () => {
+    foldersEl.innerHTML = '';
+    const q = search.value.trim().toLowerCase();
+    const groups = new Map();
+    for (const r of records.slice().sort((x, y) => folderOfRec(x).localeCompare(folderOfRec(y)) || x.name.localeCompare(y.name))) {
+      const f = folderOfRec(r);
+      if (!groups.has(f)) groups.set(f, []);
+      groups.get(f).push(r);
+    }
+    if (!groups.size) { const e = document.createElement('div'); e.className = 'picker-empty'; e.textContent = 'No slokas.'; foldersEl.appendChild(e); return; }
+    const act = activeId();
+    const full = mode === 'multi' && max && selected.length >= max;
+    let anyShown = false;
+    for (const [f, items] of groups) {
+      const matching = q ? items.filter((r) => r.name.toLowerCase().includes(q)) : items;
+      if (q && !matching.length) continue;
+      anyShown = true;
+      const nSel = items.filter((r) => selected.includes(r.id)).length;
+      const box = document.createElement('div');
+      const isOpen = q ? true : open.has(f) || (groups.size === 1);
+      box.className = `picker-folder${isOpen ? ' open' : ''}`;
+      box.innerHTML = `
+        <div class="picker-folder-head" role="button" tabindex="0">
+          <svg class="caret" viewBox="0 0 24 24"><path fill="currentColor" d="M9 6l6 6-6 6z"/></svg>
+          <span class="fname"></span>
+          <span class="fsel"></span>
+          <span class="fcount"></span>
+          ${mode === 'multi' ? '<input type="checkbox" title="Tick or untick every sloka in this folder" aria-label="All of this folder" />' : ''}
+        </div>
+        <div class="picker-items"></div>`;
+      const head = $('.picker-folder-head', box);
+      $('.fname', head).textContent = folderLabel(f);
+      $('.fcount', head).textContent = `${items.length} sloka${items.length === 1 ? '' : 's'}`;
+      $('.fsel', head).textContent = nSel ? `${nSel} ${mode === 'single' ? 'chosen' : 'ticked'}` : '';
+      const fcb = $('input', head);
+      if (fcb) {
+        fcb.checked = nSel === items.length && items.length > 0;
+        fcb.indeterminate = nSel > 0 && nSel < items.length;
+        fcb.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const ids = items.map((r) => r.id);
+          if (fcb.checked) {
+            let next = [...selected, ...ids.filter((id) => !selected.includes(id))];
+            if (max && next.length > max) { next = next.slice(0, max); toast(`At most ${max} slokas: the first ${max} were ticked.`, 'info'); }
+            change(next, ids.find((id) => next.includes(id)));
+          } else change(selected.filter((id) => !ids.includes(id)), undefined);
+        });
+      }
+      const flip = () => { if (open.has(f)) open.delete(f); else open.add(f); saveOpen(); renderFolders(); };
+      head.addEventListener('click', (e) => { if (e.target !== fcb) flip(); });
+      head.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); flip(); } });
+      const list = $('.picker-items', box);
+      for (const r of matching) {
+        const on = selected.includes(r.id);
+        const row = document.createElement('div');
+        row.className = `picker-item${on ? ' checked' : ''}${r.id === act ? ' active' : ''}${full && !on ? ' disabled' : ''}`;
+        row.innerHTML = `<input type="${mode === 'single' ? 'radio' : 'checkbox'}" /><button class="iname" type="button"></button><span class="idur mono"></span>`;
+        const inp = $('input', row);
+        inp.checked = on;
+        inp.disabled = full && !on;
+        inp.setAttribute('aria-label', `${pickLabel} ${r.name}`);
+        inp.addEventListener('click', (e) => { e.preventDefault(); toggle(r.id); });
+        const nm = $('.iname', row);
+        nm.textContent = r.name;
+        nm.title = on ? 'Preview this sloka' : `${pickLabel} this sloka`;
+        nm.addEventListener('click', () => { if (on) { if (onActivate) onActivate(r.id); } else toggle(r.id); });
+        $('.idur', row).textContent = fmtTime(r.duration);
+        list.appendChild(row);
+      }
+      foldersEl.appendChild(box);
+    }
+    if (!anyShown) { const e = document.createElement('div'); e.className = 'picker-empty'; e.textContent = `No sloka matches “${search.value.trim()}”.`; foldersEl.appendChild(e); }
+  };
+  const render = () => { renderSummary(); renderFolders(); setHidden(allBtn, mode !== 'multi' || !!max); };
+  search.addEventListener('input', renderFolders);
+  allBtn.addEventListener('click', () => change(records.map((r) => r.id), undefined));
+  clearBtn.addEventListener('click', () => change([], undefined));
+  return {
+    setRecords(list) { records = list.slice(); render(); },
+    setSelection(ids) { selected = ids.slice(); render(); },
+    setMode(m, mx = null) { mode = m; max = mx; render(); },
+    setBusy(b) { host.classList.toggle('busy', b); search.disabled = b; allBtn.disabled = b; clearBtn.disabled = b; },
+    refresh: render,
+    get openFolders() { return [...open]; },
+    get selection() { return selected.slice(); },
+  };
+}
+
+const practicePicker = createSlokaPicker($('#practice-picker'), {
+  mode: 'multi',
+  openKey: 'tutor-picker-open',
+  onChange: (ids, activated) => setSelection(ids, activated),
+  onActivate: (id) => setSelection(practice.selection.includes(id) ? practice.selection : [...practice.selection, id], id),
+  activeId: () => practice.activeId,
+});
+
 function setListBusy(busy) {
-  $('#practice-list').classList.toggle('busy', busy);
-  $('#practice-select-all').disabled = busy;
-  $('#practice-select-none').disabled = busy;
+  practicePicker.setBusy(busy);
 }
 const nameOf = (id) => { const r = (libraryCache || []).find((x) => x.id === id); return r ? r.name : 'this sloka'; };
 
@@ -1465,35 +1619,8 @@ async function refreshPracticeSelect(selectIds) {
   else if (picked) want = practice.teach ? picked.slice(0, 1) : picked;
   else if (practice.teach) want = practice.selection.includes(practice.activeId) ? [practice.activeId] : practice.selection.slice(0, 1);
   else want = practice.selection.length ? practice.selection : savedSelection();
-  const ul = $('#practice-list');
-  ul.innerHTML = '';
-  const sorted = list.slice().sort((x, y) => (x.folder || '').localeCompare(y.folder || '') || x.name.localeCompare(y.name));
-  const grouped = new Set(sorted.map((r) => r.folder || '')).size > 1;
-  let lastFolder = null;
-  for (const r of sorted) {
-    if (grouped && (r.folder || '') !== lastFolder) {
-      lastFolder = r.folder || '';
-      const hd = document.createElement('li');
-      hd.className = 'lib-folder';
-      hd.textContent = folderLabel(lastFolder);
-      ul.appendChild(hd);
-    }
-    const li = document.createElement('li');
-    li.className = 'base-row';
-    li.dataset.id = r.id;
-    li.innerHTML = `<input type="${practice.teach ? 'radio' : 'checkbox'}" name="practice-sloka" /><button class="base-name" type="button" title="${practice.teach ? 'Learn this sloka' : 'Preview this sloka'}"></button><span class="base-dur mono"></span>`;
-    const cb = $('input', li);
-    cb.setAttribute('aria-label', practice.teach ? `Learn ${r.name}` : `Evaluate against ${r.name}`);
-    $('.base-name', li).textContent = r.name;
-    $('.base-dur', li).textContent = fmtTime(r.duration);
-    cb.addEventListener('change', () => {
-      if (practice.teach) { setSelection([r.id], r.id); return; }
-      const ids = cb.checked ? [...practice.selection, r.id] : practice.selection.filter((x) => x !== r.id);
-      setSelection(ids, cb.checked ? r.id : undefined);
-    });
-    $('.base-name', li).addEventListener('click', () => setSelection(practice.teach ? [r.id] : [...practice.selection, r.id], r.id));
-    ul.appendChild(li);
-  }
+  practicePicker.setMode(practice.teach ? 'single' : 'multi');
+  practicePicker.setRecords(list);
   setHidden($('#practice-base-empty'), list.length > 0);
   renderQuizBox();
   await setSelection(want, picked ? picked[0] : undefined);
@@ -1517,51 +1644,29 @@ function renderModeChrome() {
     ? 'Learn one sloka at a time: play it at any speed, then let SlokAbhyasa listen to you and show exactly where you drifted.'
     : 'Pick one or more slokas, perform once, and browse a report for each: exactly where you drifted, and where recordings conflict.';
   $('#practice-step1-title').textContent = teach ? 'Choose a sloka' : 'Choose one or more slokas';
-  $('#practice-base-role').textContent = teach ? 'Learning' : 'Previewing';
-  setHidden($('#teach-actions'), !teach);
+  $('#practice-base-role').textContent = teach ? 'Learning' : practice.quiz ? 'Quiz' : 'Previewing';
   setHidden($('#teach-hint'), !teach || !(libraryCache || []).length);
   setHidden($('#practice-list-hint'), teach || !!practice.quiz || !(libraryCache || []).length);
-  $('#practice-step2 h2').textContent = teach ? 'Recite it back' : 'Perform it';
+  $('#practice-step2-title').textContent = teach ? 'Play it, then recite it back' : practice.quiz ? 'Recite from memory' : 'Perform it';
 }
-bindPlayButton($('#teach-play'), basePlayer);
-$('#teach-listen').addEventListener('click', () => {
-  const rec = $('#practice-rec');
-  if (rec.disabled) return;
-  rec.click();
-  if (!(practiceRecorder && practiceRecorder.active)) $('#practice-step2').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-});
-function syncTeachListen(on) {
-  const b = $('#teach-listen');
-  b.classList.toggle('recording', on);
-  $('.teach-listen-text', b).textContent = on ? 'Stop · SlokAbhyasa is listening' : 'Listen';
-}
-{
-  const orig = practiceUI.setRecording;
-  practiceUI.setRecording = (on) => { orig(on); syncTeachListen(on); };
-}
-$('#practice-select-all').addEventListener('click', async () => setSelection((await getLibrary()).map((r) => r.id)));
-$('#practice-select-none').addEventListener('click', () => setSelection([]));
 
+// The picker shows the same selection the app holds: ticks, chips, the previewed sloka.
 function syncBaseList() {
-  $$('.base-row', $('#practice-list')).forEach((li) => {
-    const on = practice.selection.includes(li.dataset.id);
-    li.classList.toggle('checked', on);
-    li.classList.toggle('active', li.dataset.id === practice.activeId);
-    $('input', li).checked = on;
-  });
+  practicePicker.setSelection(practice.selection);
+  const n = practice.selection.length;
+  $('#practice-pick-count').textContent = practice.quiz ? '' : practice.teach ? (n ? nameOf(practice.selection[0]) : '') : n ? `${n} sloka${n === 1 ? '' : 's'} ticked` : '';
 }
 
 function updateRecLabel() {
   if (practiceRecorder && practiceRecorder.active) return;
   const n = practice.selection.length;
   $('#practice-rec').disabled = !practice.base || quizScoring;
-  $('#teach-listen').disabled = $('#practice-rec').disabled;
-  $('#teach-play').disabled = !practice.base;
-  $('#practice-rec-label').textContent = !n ? (practice.quiz ? 'None of this quiz\'s slokas is in the library any more' : 'Select a sloka first')
+  setHidden($('#practice-base-none'), !!practice.base || !!practice.quiz);
+  $('#practice-rec-label').textContent = !n ? (practice.quiz ? 'None of this quiz\'s slokas is in the library any more' : 'Choose a sloka first')
     : !practice.base ? 'Loading sloka…'
       : quizScoring ? 'Scoring the quiz…'
         : practice.quiz ? `Tap to start the quiz recording · ${n} sloka${n === 1 ? '' : 's'}`
-          : practice.teach ? 'Press Listen above (or this button), recite the sloka, then press again to stop'
+          : practice.teach ? 'Tap to listen: recite the sloka, then tap again to stop'
             : n > 1 ? `Tap to start recording · compared with ${n} slokas` : 'Tap to start recording';
 }
 
@@ -2069,11 +2174,10 @@ function renderQuizBox() {
   renderToleranceRow();
   setHidden($('#practice-quiz-box'), !q);
   const n = (libraryCache || []).length;
-  setHidden($('#practice-list'), !!q);
+  setHidden($('#practice-picker'), !!q);
   setHidden($('#practice-list-hint'), !!q || practice.teach || n === 0);
   setHidden($('#teach-hint'), !!q || !practice.teach || n === 0);
-  setHidden($('#practice-select-all'), !!q || practice.teach || n < 2);
-  setHidden($('#practice-select-none'), !!q || practice.teach || n < 2);
+  renderModeChrome();
   if (!q) return;
   $('#quiz-box-name').textContent = q.name;
   const ol = $('#quiz-box-items');
@@ -2596,48 +2700,29 @@ let quizListCache = [];
 let quizPicks = []; // ids of the slokas chosen for the next quiz, in the order they were ticked
 
 function quizSetup() {
-  const folders = $$('.folder-row input:checked', $('#quiz-folders')).map((cb) => cb.value);
   const mode = ($('input[name="quiz-mode"]:checked') || {}).value === 'single' ? 'single' : 'multiple';
   const max = Math.max(2, Math.min(200, Math.round(Number($('#quiz-max').value) || 10)));
-  return { folders, mode, max };
+  return { mode, max };
 }
 function saveQuizSetup() { try { localStorage.setItem(QUIZ_SETUP_KEY, JSON.stringify(quizSetup())); } catch { /* ignore */ } }
 
-// The slokas the list offers: those in the ticked folders, or the whole library when none is ticked.
+// The whole library, in folder order; "Pick at random" draws from the folders open in the
+// picker (all of them when none is open).
 function quizCandidates() {
-  const { folders } = quizSetup();
-  const lib = (libraryCache || []).slice().sort((x, y) => (x.folder || '').localeCompare(y.folder || '') || x.name.localeCompare(y.name));
-  return folders.length ? lib.filter((r) => folders.includes(r.folder || '')) : lib;
+  return (libraryCache || []).slice().sort((x, y) => (x.folder || '').localeCompare(y.folder || '') || x.name.localeCompare(y.name));
 }
+const quizPicker = createSlokaPicker($('#quiz-picker'), {
+  mode: 'multi',
+  max: 10,
+  openKey: 'tutor-quiz-picker-open',
+  pickLabel: 'Include',
+  onChange: (ids) => { quizPicks = ids; renderQuizSlokas(); },
+});
 
 async function refreshQuizView() {
-  const [lib, allFolders] = await Promise.all([getLibrary(true), getFolders(true)]);
-  const folders = visibleFolders(allFolders);
+  const lib = await getLibrary(true);
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(QUIZ_SETUP_KEY) || 'null'); } catch { saved = null; }
-  const ul = $('#quiz-folders');
-  ul.innerHTML = '';
-  const wanted = new Set(saved && Array.isArray(saved.folders) ? saved.folders : []);
-  for (const f of folders) {
-    const li = document.createElement('li');
-    li.className = `folder-row${f.count ? '' : ' empty'}`;
-    li.innerHTML = '<input type="checkbox" /><span class="name"></span><span class="count"></span>';
-    const cb = $('input', li);
-    cb.value = f.path;
-    cb.checked = wanted.has(f.path) && f.count > 0;
-    cb.disabled = !f.count;
-    cb.setAttribute('aria-label', `Choose from ${folderLabel(f.path)}`);
-    $('.name', li).textContent = folderLabel(f.path);
-    $('.count', li).textContent = `${f.count} sloka${f.count === 1 ? '' : 's'}`;
-    li.classList.toggle('checked', cb.checked);
-    li.addEventListener('click', (e) => {
-      if (e.target !== cb) { if (cb.disabled) return; cb.checked = !cb.checked; }
-      li.classList.toggle('checked', cb.checked);
-      saveQuizSetup();
-      renderQuizSlokas();
-    });
-    ul.appendChild(li);
-  }
   if (saved) {
     const modeEl = $(`input[name="quiz-mode"][value="${saved.mode === 'single' ? 'single' : 'multiple'}"]`);
     if (modeEl) modeEl.checked = true;
@@ -2646,6 +2731,7 @@ async function refreshQuizView() {
   setHidden($('#quiz-empty'), lib.length > 0);
   setHidden($('#quiz-setup'), lib.length === 0);
   setHidden($('#quiz-choose'), lib.length === 0);
+  quizPicker.setRecords(lib);
   renderQuizSlokas();
   try { quizListCache = await api.listQuizzes(); } catch (err) { quizListCache = []; toast(err.message, 'error'); }
   renderQuizList();
@@ -2653,75 +2739,45 @@ async function refreshQuizView() {
 $$('input[name="quiz-mode"]').forEach((r) => r.addEventListener('change', () => { saveQuizSetup(); renderQuizSlokas(); }));
 $('#quiz-max').addEventListener('change', () => { $('#quiz-max').value = String(quizSetup().max); saveQuizSetup(); renderQuizSlokas(); });
 
-// The list of slokas to choose from, with the rules: one in single mode, two to `max` in
-// multiple mode (boxes lock once the maximum is reached), Start only when the rule is met.
+// The rules of the choice: one in single mode, two to `max` in multiple mode (boxes lock once
+// the maximum is reached), Start only when the rule is met.
 function renderQuizSlokas() {
   const { mode, max } = quizSetup();
-  const candidates = quizCandidates();
-  const allowed = new Set(candidates.map((r) => r.id));
+  const allowed = new Set(quizCandidates().map((r) => r.id));
   quizPicks = quizPicks.filter((id) => allowed.has(id));
   if (mode === 'single') quizPicks = quizPicks.slice(0, 1);
   else quizPicks = quizPicks.slice(0, max);
-  const full = mode === 'multiple' && quizPicks.length >= max;
-  const ul = $('#quiz-slokas');
-  ul.innerHTML = '';
-  let lastFolder = null;
-  const grouped = new Set(candidates.map((r) => r.folder || '')).size > 1;
-  for (const r of candidates) {
-    if (grouped && (r.folder || '') !== lastFolder) {
-      lastFolder = r.folder || '';
-      const hd = document.createElement('li');
-      hd.className = 'lib-folder';
-      hd.textContent = folderLabel(lastFolder);
-      ul.appendChild(hd);
-    }
-    const on = quizPicks.includes(r.id);
-    const li = document.createElement('li');
-    li.className = `base-row${on ? ' checked' : ''}`;
-    li.innerHTML = `<input class="base-pick" type="${mode === 'single' ? 'radio' : 'checkbox'}" name="quiz-sloka" /><span class="base-name"></span><span class="base-folder"></span><span class="base-dur mono"></span>`;
-    const inp = $('input', li);
-    inp.value = r.id;
-    inp.checked = on;
-    inp.disabled = full && !on;
-    inp.setAttribute('aria-label', `Include ${r.name}`);
-    li.classList.toggle('disabled', inp.disabled);
-    $('.base-name', li).textContent = r.name;
-    $('.base-folder', li).remove(); // the heading, or the ticked folder, already says where it is
-    $('.base-dur', li).textContent = fmtTime(r.duration);
-    const toggle = () => {
-      if (mode === 'single') quizPicks = [r.id];
-      else if (quizPicks.includes(r.id)) quizPicks = quizPicks.filter((x) => x !== r.id);
-      else if (quizPicks.length < max) quizPicks = [...quizPicks, r.id];
-      else { toast(`At most ${max} slokas. Raise the maximum or untick one.`, 'info'); }
-      renderQuizSlokas();
-    };
-    inp.addEventListener('click', (e) => { e.preventDefault(); toggle(); });
-    li.addEventListener('click', (e) => { if (e.target !== inp) toggle(); });
-    ul.appendChild(li);
-  }
+  quizPicker.setMode(mode === 'single' ? 'single' : 'multi', mode === 'single' ? null : max);
+  quizPicker.setSelection(quizPicks);
   const n = quizPicks.length;
+  const full = mode === 'multiple' && n >= max;
   const ready = mode === 'single' ? n === 1 : n >= 2;
   $('#quiz-start').disabled = !ready;
-  $('#quiz-random').disabled = !candidates.length;
-  $('#quiz-choose-count').textContent = mode === 'single' ? (n ? '1 chosen' : 'none chosen') : `${n} of ${max} chosen`;
-  $('#quiz-choose-title').textContent = candidates.length ? `Choose the slokas (${candidates.length} in ${quizSetup().folders.length ? 'the ticked folders' : 'the library'})` : 'Choose the slokas';
-  $('#quiz-choose-hint').textContent = !candidates.length ? 'The ticked folders have no slokas.'
-    : mode === 'single' ? 'Pick one sloka, then start the quiz.'
+  $('#quiz-random').disabled = !allowed.size;
+  const openNames = quizPicker.openFolders.filter((f) => (libraryCache || []).some((r) => (r.folder || '') === f));
+  $('#quiz-random').textContent = mode === 'single' ? 'Pick one at random' : `Pick ${max} at random`;
+  $('#quiz-random').title = openNames.length ? `From the open folder${openNames.length === 1 ? '' : 's'}: ${openNames.map(folderLabel).join(', ')}` : 'From the whole library, spread across its folders (open folders to draw from those alone)';
+  $('#quiz-choose-hint').textContent = !allowed.size ? 'No slokas in the library yet.'
+    : mode === 'single' ? 'Open a folder and choose one sloka, then start the quiz.'
       : full ? `Maximum reached (${max}). Untick one to swap, or raise the maximum above.`
-        : n < 2 ? 'Pick at least two slokas to start a quiz with several.' : `Pick up to ${max}.`;
+        : n < 2 ? `Open folders and tick at least two slokas (up to ${max}), or let "Pick at random" choose; it draws from the open folders.` : `Pick up to ${max}.`;
 }
 $('#quiz-random').addEventListener('click', () => {
   const { mode, max } = quizSetup();
-  quizPicks = pickBaselines(quizCandidates(), mode === 'single' ? 1 : max).map((r) => r.id);
+  const open = new Set(quizPicker.openFolders);
+  let pool = quizCandidates().filter((r) => open.has(r.folder || ''));
+  if (!pool.length) pool = quizCandidates();
+  quizPicks = pickBaselines(pool, mode === 'single' ? 1 : max).map((r) => r.id);
   renderQuizSlokas();
 });
 
 $('#quiz-start').addEventListener('click', async () => {
-  const { folders, mode, max } = quizSetup();
+  const { mode, max } = quizSetup();
   const chosen = quizCandidates().filter((r) => quizPicks.includes(r.id));
   if (!chosen.length || (mode === 'multiple' && chosen.length < 2)) return;
   const items = chosen.map((r) => ({ id: r.id, name: r.name, folder: r.folder || '' }));
-  const suggestion = (folders.length ? folders : [...new Set(items.map((it) => it.folder))]).map((f) => folderLabel(f)).join(', ');
+  const folders = [...new Set(items.map((it) => it.folder))];
+  const suggestion = folders.map((f) => folderLabel(f)).join(', ');
   const friendly = await askDialog({ title: 'Name this quiz', message: 'The date and time are added to the name to keep it unique.', label: 'Friendly name', value: suggestion, okText: 'Start' });
   if (!friendly) return;
   const name = `${friendly} · ${fmtStamp()}`;
