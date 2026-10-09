@@ -273,6 +273,15 @@ categories are outside it. A quiz always judges on the default tolerances for th
 learner, its fields are locked, and every attempt records the tolerance and learner it was
 judged with, so changing the learner later never rewrites old scores.
 
+*Ignore tolerances.* The Tolerance card has a switch, "Ignore tolerances · scores and grades
+only". With it on, nothing is judged within or outside a tolerance anywhere: the score tiles
+lose their verdict line and colour, the ring and report rows say nothing about tolerance,
+quiz slokas show their scores and grades without ✓/✗ marks or a "Correct" column, and a quiz
+attempt has no "correct" percentage (its overall score and grade still lead the card and the
+trend). Attempts and sessions made while the switch is on record that they were judged
+without a tolerance, so they keep showing that way in Reports; older ones keep theirs. The
+tolerance fields stay visible but greyed until the switch is off again.
+
 ### Transcripts (speech to text)
 * **Learn** – after a take (or when you pick a file) the words are transcribed automatically
   and shown under the preview. Use "Edit" to correct them; the text is saved with the sloka
@@ -475,7 +484,8 @@ The choices (mode, period, date, folder, grouping) are remembered.
 Three cards, all remembered in the browser: **Weights** (what the overall score is made of,
 see "What is scored"; "Defaults" restores the recommended 30/25/15/10/10/5/5), **Tolerance**
 (the acceptable variation per category for Self Evaluation and Teach; a quiz always uses the
-defaults for the chosen learner), and **Speech recognition** (the language the words are
+defaults for the chosen learner; and the "Ignore tolerances" switch that turns every
+within/outside verdict off, leaving scores and grades), and **Speech recognition** (the language the words are
 heard in, the model, and whether transcripts are made automatically — the same controls
 that sit beside every transcript panel). Beside them, "Why these defaults" explains how the
 weights and tolerances are tuned for Sanskrit śloka recitation and lists the references

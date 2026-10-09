@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { cleanFolder, parseBaselineFilename, nameFromSlug, parseWavHeader } from '../js/libutil.js';
 import { encodeWavBytes } from '../js/wav.js';
-import { itemScores, attemptSummary, scoreFor, normalizeCategories, pickBaselines, shuffle, DEFAULT_QUIZ_CATEGORIES, DEFAULT_TOLERANCE, normalizeTolerance, withinTolerance, itemVerdict, correctness, overallScore, attemptOverall, gradeOf, CATEGORY_WEIGHTS, QUIZ_CATEGORIES, normalizeWeights } from '../js/quizscore.js';
+import { itemScores, attemptSummary, scoreFor, normalizeCategories, pickBaselines, shuffle, DEFAULT_QUIZ_CATEGORIES, DEFAULT_TOLERANCE, normalizeTolerance, recordTolerance, withinTolerance, itemVerdict, correctness, overallScore, attemptOverall, gradeOf, CATEGORY_WEIGHTS, QUIZ_CATEGORIES, normalizeWeights } from '../js/quizscore.js';
 
 test('cleanFolder: usable names pass, traversal and reserved names do not', () => {
   assert.equal(cleanFolder('Chapter 12'), 'Chapter 12');
@@ -174,4 +174,26 @@ test('correctness: share of items within tolerance, and per-category pass rates'
   assert.deepEqual(c.passRate.timing, { ok: 2, n: 3, pct: 67 });
   assert.equal(correctness([], ['phoneme']).pct, null);
   assert.equal(correctness(items, ['phoneme'], { ...DEFAULT_TOLERANCE, phoneme: 25 }).correct, 2, 'a wider phoneme tolerance accepts the second item');
+});
+
+test('tolerances switched off (null): nothing is judged, scores and grades remain', () => {
+  const good = itemScores(result({ scores: { timing: 45, pitch: 70, emphasis: 60, phrasing: 50 } }), { phonology: phon({ phonemes: 90, vowels: 85, syllables: 92 }), sttAvailable: true });
+  assert.equal(withinTolerance(90, null), null);
+  assert.equal(withinTolerance(90, undefined), null);
+  assert.deepEqual(itemVerdict(good, ['phoneme', 'vowel'], null), { ok: null, failed: [], judged: [] });
+  const items = [good, itemScores(result(), { phonology: phon({ phonemes: 80 }), sttAvailable: true })];
+  const c = correctness(items, ['phoneme', 'vowel'], null);
+  assert.equal(c.pct, null);
+  assert.equal(c.counted, 0);
+  assert.equal(c.passRate.phoneme, null);
+  const sum = attemptSummary(items, ['phoneme', 'vowel'], null);
+  assert.equal(sum.score, null, 'no correctness without a tolerance');
+  assert.equal(sum.overall, attemptOverall(items, ['phoneme', 'vowel']), 'the weighted overall is unaffected');
+  assert.ok(sum.grade, 'and so is the grade');
+  // what a stored attempt or session is judged with
+  assert.deepEqual(recordTolerance(null), DEFAULT_TOLERANCE);
+  assert.deepEqual(recordTolerance({}), DEFAULT_TOLERANCE, 'before tolerances existed: the defaults');
+  assert.deepEqual(recordTolerance({ tolerance: { phoneme: 25 } }), { ...DEFAULT_TOLERANCE, phoneme: 25 });
+  assert.equal(recordTolerance({ tolerance: null, noTolerance: true }), null, 'judged with tolerances off');
+  assert.equal(recordTolerance({ tolerance: { phoneme: 25 }, noTolerance: true }), null, 'the flag wins');
 });

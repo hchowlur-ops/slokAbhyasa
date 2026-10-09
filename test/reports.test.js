@@ -67,6 +67,13 @@ test('quiz attempts and evaluation sessions come out in one shape', () => {
   const two = assessmentFromSession({ ...session, items: [...session.items, { id: 'd', name: 'CH18-67', folder: 'CH-18', matched: false, missing: false, content: 0, pronunciation: 0, timing: 0, pitch: 0, dynamics: 0 }] });
   assert.equal(two.overall, 86);
   assert.equal(two.recited, 1);
+  // an attempt judged with tolerances off keeps its overall and grade but has no correctness
+  const off = assessmentsFromQuiz({ ...quiz, attempts: [{ ...quiz.attempts[0], tolerance: null, noTolerance: true }] })[0];
+  assert.equal(off.overall, 47);
+  assert.equal(off.grade, 'practice');
+  assert.equal(off.correct, null);
+  assert.equal(off.tolerance, null);
+  assert.equal(assessmentFromSession({ ...session, noTolerance: true }).tolerance, null);
   assert.equal(assessmentFromSession({ ...session, items: [{ ...session.items[0], matched: false, content: 0 }] }).overall, 0, 'nothing recited scores 0');
 });
 

@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { trimSilence } from './js/dsp/trim.js';
 import { decodeWav, encodeWavBytes } from './js/wav.js';
 import { cleanFolder, parseBaselineFilename, nameFromSlug, parseWavHeader, RESERVED_FOLDERS } from './js/libutil.js';
-import { normalizeCategories, normalizeTolerance, normalizeWeights, correctness, attemptOverall, gradeOf } from './js/quizscore.js';
+import { normalizeCategories, normalizeTolerance, normalizeWeights, recordTolerance, correctness, attemptOverall, gradeOf } from './js/quizscore.js';
 import { resolveDataDir } from './datadir.js';
 import { readMeta, writeMeta, removeMeta, moveMeta, ensureMeta, sanitizeMeta, audioInfo, withBext, bextDescription, readProfiles, writeProfiles, sanitizeProfile } from './meta-store.js';
 import { normalizeStore, pickTranscript, putInStore, removeFromStore, shiftStore, transcriptToText, applyTextEdit, publicStore } from './js/transcripts.js';
@@ -328,7 +328,7 @@ function quizSummary(q) {
   // correctness on the quiz's current categories and the tolerance the attempt was judged with;
   // the weighted overall (and its grade) likewise on the current categories
   const hasItems = (a) => Array.isArray(a.items) && a.items.length;
-  const scoreOf = (a) => (hasItems(a) ? correctness(a.items, q.categories, a.tolerance ? normalizeTolerance(a.tolerance) : undefined).pct : a.score == null ? null : a.score);
+  const scoreOf = (a) => (hasItems(a) ? correctness(a.items, q.categories, recordTolerance(a)).pct : a.score == null ? null : a.score);
   const overallOf = (a) => (hasItems(a) ? attemptOverall(a.items, q.categories, a.weights ? normalizeWeights(a.weights) : undefined) : a.overall == null ? null : a.overall);
   const lastOverall = last ? overallOf(last) : null;
   const lastGrade = gradeOf(lastOverall);
@@ -393,6 +393,7 @@ async function handleQuizzes(req, res, parts) {
     };
     // the tolerance, weights and learner it was judged with (a child's allowances differ)
     if (a.tolerance && typeof a.tolerance === 'object') attempt.tolerance = normalizeTolerance(a.tolerance);
+    if (a.noTolerance) attempt.noTolerance = true; // judged with tolerances off: no correctness
     if (a.weights && typeof a.weights === 'object') attempt.weights = normalizeWeights(a.weights);
     if (a.learner && typeof a.learner === 'object') {
       attempt.learner = { profileId: typeof a.learner.profileId === 'string' ? a.learner.profileId.slice(0, 40) : null, voiceType: String(a.learner.voiceType || 'preferNotToSay').slice(0, 20), ageGroup: String(a.learner.ageGroup || 'unspecified').slice(0, 20) };
@@ -477,6 +478,9 @@ function sessionFields(body, s) {
   if (body.grade !== undefined) s.grade = typeof body.grade === 'string' ? body.grade.slice(0, 20) : null;
   if (body.options && typeof body.options === 'object') s.options = { ignoreKey: !!body.options.ignoreKey, judgeSpeed: !!body.options.judgeSpeed };
   if (body.tolerance && typeof body.tolerance === 'object') s.tolerance = normalizeTolerance(body.tolerance);
+  else if (body.tolerance === null) s.tolerance = null;
+  // judged with tolerances switched off (scores and grades only)
+  if (body.noTolerance !== undefined) s.noTolerance = !!body.noTolerance;
   if (body.weights && typeof body.weights === 'object') s.weights = normalizeWeights(body.weights);
   if (body.learner && typeof body.learner === 'object') s.learner = { profileId: typeof body.learner.profileId === 'string' ? body.learner.profileId.slice(0, 40) : null, voiceType: String(body.learner.voiceType || 'preferNotToSay').slice(0, 20), ageGroup: String(body.learner.ageGroup || 'unspecified').slice(0, 20) };
   else if (body.learner === null) s.learner = null;

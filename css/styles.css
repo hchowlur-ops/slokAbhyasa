@@ -861,6 +861,12 @@ canvas { display: block; }
 .tol-fields { display: flex; flex-wrap: wrap; gap: 6px 12px; }
 .tol-field { display: inline-flex; align-items: center; gap: 6px; font-size: 0.85rem; color: var(--muted); }
 .tol-field input { width: 58px; font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 4px 6px; text-align: right; }
+/* tolerances switched off: the fields stay visible but greyed */
+.tol-row.off .tol-fields { opacity: .45; }
+.tol-off { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--border); }
+.tol-off .toggle { font-weight: 600; }
+.tol-off p { margin: 6px 0 0 26px; }
+.quiz-pct.off { opacity: .6; border-top-color: var(--border); }
 .score-tol { margin-top: 4px; font-size: 0.75rem; font-weight: 600; min-height: 1.1em; }
 .score.ok .score-tol { color: var(--accent-strong); }
 .score.bad .score-tol { color: var(--danger); }

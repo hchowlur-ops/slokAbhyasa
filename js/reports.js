@@ -2,7 +2,7 @@
 // evaluation sessions brought into one shape ("assessments"), and the per-sloka rows of the
 // folder view. Pure; shared by the browser and the server, and tested in Node.
 
-import { QUIZ_CATEGORIES, overallScore, attemptOverall, gradeOf, correctness, normalizeTolerance, normalizeWeights, DEFAULT_TOLERANCE, CATEGORY_WEIGHTS } from './quizscore.js';
+import { QUIZ_CATEGORIES, overallScore, attemptOverall, gradeOf, correctness, recordTolerance, normalizeWeights, CATEGORY_WEIGHTS } from './quizscore.js';
 
 export const PERIODS = ['day', 'week', 'month', 'all'];
 const CAT_IDS = QUIZ_CATEGORIES.map((c) => c.id);
@@ -67,12 +67,13 @@ const weightsOf = (rec) => (rec && rec.weights ? normalizeWeights(rec.weights) :
 const foldersOf = (items) => [...new Set((items || []).map((it) => it.folder || ''))];
 
 // A quiz's attempts as assessments: scored on the quiz's current categories and each
-// attempt's own tolerance, the way the quiz view shows them.
+// attempt's own tolerance (null when it was judged with tolerances off: no correctness),
+// the way the quiz view shows them.
 export function assessmentsFromQuiz(quiz) {
   const attempts = Array.isArray(quiz.attempts) ? quiz.attempts : [];
   const categories = quiz.categories || [];
   return attempts.map((a, i) => {
-    const tolerance = a.tolerance ? normalizeTolerance(a.tolerance) : DEFAULT_TOLERANCE;
+    const tolerance = recordTolerance(a);
     const weights = weightsOf(a);
     const items = (a.items || []).map((it) => itemWithOverall(it, categories, weights));
     const overall = items.length ? attemptOverall(items, categories, weights) : a.overall == null ? null : a.overall;
@@ -99,7 +100,7 @@ export function assessmentFromSession(s) {
   const g = gradeOf(overall);
   return {
     key: `session:${s.id}`, kind: s.kind === 'teach' ? 'teach' : 'evaluation', sessionId: s.id, at: s.at,
-    name: s.kind === 'teach' ? 'Teach' : 'Self Evaluation', categories: CAT_IDS, tolerance: s.tolerance ? normalizeTolerance(s.tolerance) : DEFAULT_TOLERANCE, weights, learner: s.learner || null,
+    name: s.kind === 'teach' ? 'Teach' : 'Self Evaluation', categories: CAT_IDS, tolerance: recordTolerance(s), weights, learner: s.learner || null,
     items, overall, grade: g ? g.id : null, correct: null,
     counted: items.filter((it) => !it.missing).length, recited: items.filter((it) => it.matched).length,
     audio: !!s.audio, folders: foldersOf(items), takeDuration: s.takeDuration || null,

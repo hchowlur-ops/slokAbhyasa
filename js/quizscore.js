@@ -110,20 +110,29 @@ export function normalizeTolerance(t) {
   return out;
 }
 
+// The tolerance stored with an attempt or session: its own, the defaults when it predates
+// tolerances, or null when it was judged with tolerances switched off (`noTolerance`).
+export function recordTolerance(rec) {
+  if (!rec) return DEFAULT_TOLERANCE;
+  if (rec.noTolerance) return null;
+  return rec.tolerance ? normalizeTolerance(rec.tolerance) : DEFAULT_TOLERANCE;
+}
+
 // A score is acceptable when its variation from perfect is within the tolerance.
-// null when the score could not be judged.
+// null when the score could not be judged, or when there is no tolerance to judge by
+// (tolerances switched off: scores and grades only).
 export function withinTolerance(score, tol) {
-  if (score == null) return null;
+  if (score == null || tol == null) return null;
   return 100 - score <= tol;
 }
 
 // Verdict for one item over some categories: ok when every judgeable one is within tolerance.
 // Returns { ok: true | false | null, failed: [...], judged: [...] }; ok is null when nothing
-// could be judged (or the item is missing).
+// could be judged (or the item is missing, or `tolerance` is null).
 export function itemVerdict(item, categories, tolerance = DEFAULT_TOLERANCE) {
   const failed = [];
   const judged = [];
-  if (!item || item.missing) return { ok: null, failed, judged };
+  if (!item || item.missing || !tolerance) return { ok: null, failed, judged };
   for (const c of categories || []) {
     const w = withinTolerance(item[c], tolerance[c]);
     if (w === null) continue;
@@ -135,7 +144,8 @@ export function itemVerdict(item, categories, tolerance = DEFAULT_TOLERANCE) {
 
 // Correctness of an attempt: the share of items whose chosen categories are all within
 // tolerance. Also the share within tolerance per category. Items that could not be judged
-// are left out of every share.
+// are left out of every share. With `tolerance` null nothing is judged: pct null, every
+// pass rate null.
 export function correctness(items, categories, tolerance = DEFAULT_TOLERANCE) {
   let correct = 0;
   let counted = 0;
@@ -144,7 +154,7 @@ export function correctness(items, categories, tolerance = DEFAULT_TOLERANCE) {
     let ok = 0;
     let n = 0;
     for (const it of items || []) {
-      const w = it && !it.missing ? withinTolerance(it[c], tolerance[c]) : null;
+      const w = it && !it.missing && tolerance ? withinTolerance(it[c], tolerance[c]) : null;
       if (w === null) continue;
       n++;
       if (w) ok++;

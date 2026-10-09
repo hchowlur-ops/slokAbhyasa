@@ -9,7 +9,7 @@ import { Analyzer } from './analyzer.js';
 import { drawWaveform, drawLiveWave, ComparisonChart } from './visualizer.js';
 import { serializeFeatures, deserializeFeatures, isValidFeatures } from './dsp/features.js';
 import { MISMATCH_CONTRAST, confirmByWords } from './dsp/compare.js';
-import { QUIZ_CATEGORIES, LEGACY_CATEGORIES, DEFAULT_QUIZ_CATEGORIES, DEFAULT_TOLERANCE, CATEGORY_WEIGHTS, categoryLabel, normalizeWeights, itemScores, attemptSummary, scoreFor, normalizeCategories, normalizeTolerance, withinTolerance, itemVerdict, correctness, pickBaselines, overallScore, attemptOverall, gradeOf } from './quizscore.js';
+import { QUIZ_CATEGORIES, LEGACY_CATEGORIES, DEFAULT_QUIZ_CATEGORIES, DEFAULT_TOLERANCE, CATEGORY_WEIGHTS, categoryLabel, normalizeWeights, itemScores, attemptSummary, scoreFor, normalizeCategories, normalizeTolerance, recordTolerance, withinTolerance, itemVerdict, correctness, pickBaselines, overallScore, attemptOverall, gradeOf } from './quizscore.js';
 import { comparePhonology, ERROR_LABEL } from './phon.js';
 import { mixToMono } from './dsp/resample.js';
 import { trimSilence } from './dsp/trim.js';
@@ -1276,6 +1276,10 @@ const TOL_KEY = 'tutor-tolerance';
 // The user's own tolerance, or null for the defaults (which follow the learner: speech
 // recognition is 2–5× less accurate on children, so their pronunciation tolerance is wider).
 let tolerance = (() => { try { const v = JSON.parse(localStorage.getItem(TOL_KEY) || 'null'); return v ? normalizeTolerance(v) : null; } catch { return null; } })();
+// Tolerances switched off altogether: scores and grades only, no within/outside verdicts,
+// no quiz correctness. Attempts and sessions made meanwhile record `noTolerance`.
+const TOL_OFF_KEY = 'tutor-tolerance-off';
+let tolOff = (() => { try { return localStorage.getItem(TOL_OFF_KEY) === '1'; } catch { return false; } })();
 // The learner's allowance on the words (speech recognition is 2–5× less accurate on a child)
 // widens the three word-level tolerances by the same amount.
 const learnerTolerance = (learner = learnerSpeaker()) => {
@@ -1283,8 +1287,13 @@ const learnerTolerance = (learner = learnerSpeaker()) => {
   return { ...DEFAULT_TOLERANCE, phoneme: DEFAULT_TOLERANCE.phoneme + extra, vowel: DEFAULT_TOLERANCE.vowel + extra, syllable: DEFAULT_TOLERANCE.syllable + extra, pronunciation: DEFAULT_TOLERANCE.pronunciation + extra };
 };
 // A quiz always judges on the defaults for the learner (fixed for the attempt once scored).
-const activeTolerance = () => (practice.quiz ? (practice.quizAttempt && practice.quizAttempt.tolerance) || learnerTolerance() : tolerance || learnerTolerance());
-const attemptTolerance = (a) => (a && a.tolerance ? normalizeTolerance(a.tolerance) : DEFAULT_TOLERANCE);
+// null everywhere when tolerances are off (or the open attempt was made with them off).
+const activeTolerance = () => {
+  if (practice.quiz && practice.quizAttempt) return attemptTolerance(practice.quizAttempt);
+  if (tolOff) return null;
+  return practice.quiz ? learnerTolerance() : tolerance || learnerTolerance();
+};
+const attemptTolerance = (a) => recordTolerance(a);
 function renderToleranceFields() {
   const host = $('#tol-fields');
   host.innerHTML = '';
@@ -1296,6 +1305,7 @@ function renderToleranceFields() {
     label.firstChild.textContent = c.label;
     const inp = $('input', label);
     inp.value = String(cur[c.id]);
+    inp.disabled = tolOff;
     inp.setAttribute('aria-label', `${c.label} tolerance in percent`);
     inp.addEventListener('change', () => {
       tolerance = normalizeTolerance({ ...(tolerance || learnerTolerance()), [c.id]: inp.value });
@@ -1305,6 +1315,9 @@ function renderToleranceFields() {
     });
     host.appendChild(label);
   }
+  $('#tol-reset').disabled = tolOff;
+  $('#tol-row').classList.toggle('off', tolOff);
+  $('#tol-ignore').checked = tolOff;
   renderToleranceRow();
 }
 renderToleranceFields();
@@ -1314,13 +1327,22 @@ $('#tol-reset').addEventListener('click', () => {
   renderToleranceFields();
   refreshVerdicts();
 });
+$('#tol-ignore').addEventListener('change', (e) => {
+  tolOff = e.target.checked;
+  try { if (tolOff) localStorage.setItem(TOL_OFF_KEY, '1'); else localStorage.removeItem(TOL_OFF_KEY); } catch { /* ignore */ }
+  renderToleranceFields();
+  refreshVerdicts();
+  syncSession();
+});
 // The explanatory lines of the Tolerance settings (the fields live on the Settings page).
 function renderToleranceRow() {
   const d = learnerTolerance();
   const who = learnerSpeaker();
   const words = `phonemes ${d.phoneme} %, vowel length ${d.vowel} %, syllables ${d.syllable} %${d.phoneme !== DEFAULT_TOLERANCE.phoneme ? ` (widened for ${learnerName()}, aged ${ageGroupLabel(who.ageGroup).toLowerCase()})` : ''}`;
   $('#tol-hint').textContent = `A category is within tolerance when its score is at least 100 % minus the tolerance. Defaults: ${words}; emphasis, pitch contour and timing ${d.timing} %, phrasing ${d.phrasing} %.`;
-  $('#tol-quiz-note').textContent = `These tolerances apply to Self Evaluation and Teach. A quiz always judges on the defaults for the chosen learner (${words}; emphasis, pitch contour and timing ${d.timing} %, phrasing ${d.phrasing} %), and every attempt records the tolerance it was judged with.`;
+  $('#tol-quiz-note').textContent = tolOff
+    ? 'Tolerances are off: Self Evaluation, Teach and quizzes show scores and grades only until you switch them back on.'
+    : `These tolerances apply to Self Evaluation and Teach. A quiz always judges on the defaults for the chosen learner (${words}; emphasis, pitch contour and timing ${d.timing} %, phrasing ${d.phrasing} %), and every attempt records the tolerance it was judged with.`;
 }
 // What the chosen learner means for the evaluation, under the options.
 function renderLearnerNote() {
@@ -1899,7 +1921,7 @@ async function saveSession() {
     const saved = await api.createSession({
       kind: practice.teach ? 'teach' : 'evaluation', at: new Date().toISOString(), takeDuration: take.duration,
       items, overall: sum.overall, grade: sum.grade, options: { ignoreKey: practice.options.ignoreKey, judgeSpeed: practice.options.judgeSpeed },
-      tolerance: activeTolerance(), learner: learnerSpeaker(), weights: activeWeights(),
+      tolerance: activeTolerance(), noTolerance: tolOff, learner: learnerSpeaker(), weights: activeWeights(),
     });
     if (practice.session !== session) { api.deleteSession(saved.id).catch(() => {}); return; } // the take was discarded meanwhile
     session.id = saved.id;
@@ -1926,7 +1948,7 @@ function syncSession() {
     session.sent = body;
     session.dirty = false;
     const sum = sessionSummary(items);
-    try { await api.updateSession(session.id, { items, overall: sum.overall, grade: sum.grade }); } catch (err) { console.warn(`The session could not be updated: ${err.message}`); }
+    try { await api.updateSession(session.id, { items, overall: sum.overall, grade: sum.grade, tolerance: activeTolerance(), noTolerance: tolOff, weights: activeWeights() }); } catch (err) { console.warn(`The session could not be updated: ${err.message}`); }
   }, 600);
 }
 
@@ -2177,7 +2199,7 @@ async function scoreQuizAttempt() {
   const quiz = practice.quiz;
   const take = practice.take;
   if (!quiz || !take) return;
-  const attempt = { at: new Date().toISOString(), saved: false, sttAvailable: false, items: [], byCategory: {}, score: null, error: null, tolerance: learnerTolerance(), learner: learnerSpeaker(), weights: weights || CATEGORY_WEIGHTS };
+  const attempt = { at: new Date().toISOString(), saved: false, sttAvailable: false, items: [], byCategory: {}, score: null, error: null, tolerance: tolOff ? null : learnerTolerance(), noTolerance: tolOff, learner: learnerSpeaker(), weights: weights || CATEGORY_WEIGHTS };
   practice.quizAttempt = attempt;
   quizScoring = true;
   updateRecLabel();
@@ -2254,7 +2276,7 @@ async function scoreQuizAttempt() {
     const saved = await api.addQuizAttempt(quiz.id, {
       at: attempt.at, takeDuration: take.duration, categories: quiz.categories, score: attempt.score, overall: attempt.overall,
       byCategory: attempt.byCategory, counted: attempt.counted, recited: attempt.recited, items: attempt.items, correct: attempt.correct,
-      tolerance: attempt.tolerance, learner: attempt.learner, weights: attempt.weights,
+      tolerance: attempt.tolerance, noTolerance: attempt.noTolerance, learner: attempt.learner, weights: attempt.weights,
     });
     if (!live()) return;
     quiz.attempts = saved.attempts;
@@ -2283,8 +2305,10 @@ function renderQuizScore() {
   status.textContent = a.error ? `Not saved: ${a.error}` : !a.saved ? 'Scoring…' : `Attempt ${quiz.attempts.length} · saved ${fmtDate(a.at)}${a.sttAvailable ? '' : ' · pronunciation not available'}${who ? ` · judged as ${who}` : ''}`;
   const corr = a.saved || a.error ? correctness(a.items, quiz.categories, tol) : null;
   const pct = corr ? corr.pct : null;
+  const tolText = (c) => (tol ? `tolerance ${tol[c]} %` : 'no tolerance');
   $('#quiz-pct').textContent = pct == null ? '–' : `${pct}%`;
-  $('#quiz-pct').parentElement.querySelector('.quiz-pct-label').textContent = corr && corr.counted ? `correct · ${corr.correct} of ${corr.counted}` : 'correct';
+  $('#quiz-pct').parentElement.querySelector('.quiz-pct-label').textContent = !tol ? 'correct · judged without a tolerance' : corr && corr.counted ? `correct · ${corr.correct} of ${corr.counted}` : 'correct';
+  $('#quiz-pct').parentElement.classList.toggle('off', !tol);
   const overall = corr ? attemptOverall(a.items, quiz.categories, weightsOf(a)) : null;
   $('#quiz-overall').textContent = overall == null ? '–' : String(overall);
   setGrade($('#quiz-grade'), gradeOf(overall));
@@ -2301,8 +2325,8 @@ function renderQuizScore() {
     const pr = corr && corr.passRate ? corr.passRate[c.id] : null;
     b.innerHTML = `<span></span><span class="val"></span>`;
     b.firstChild.textContent = c.label;
-    b.lastChild.textContent = pr ? `${pr.ok}/${pr.n}` : (a.saved ? 'n/a' : '');
-    b.title = `${c.hint} · tolerance ${tol[c.id]} %`;
+    b.lastChild.textContent = pr ? `${pr.ok}/${pr.n}` : (a.saved && tol ? 'n/a' : '');
+    b.title = `${c.hint} · ${tolText(c.id)}`;
     b.addEventListener('click', async () => {
       const next = on ? quiz.categories.filter((x) => x !== c.id) : [...quiz.categories, c.id];
       if (!next.length) return; // keep at least one
@@ -2319,7 +2343,8 @@ function renderQuizScore() {
   const cats = columnsFor(a.items);
   const aw = weightsOf(a);
   const head = document.createElement('tr');
-  head.innerHTML = '<th>Sloka</th><th>Recited</th>' + cats.map((c) => `<th title="tolerance ${tol[c.id]} % · weight ${aw[c.id]}">${c.label}</th>`).join('') + '<th title="Weighted over the chosen categories">Overall</th><th>Correct</th>';
+  // the Correct column exists only when there is a tolerance to be correct against
+  head.innerHTML = '<th>Sloka</th><th>Recited</th>' + cats.map((c) => `<th title="${tolText(c.id)} · weight ${aw[c.id]}">${c.label}</th>`).join('') + `<th title="Weighted over the chosen categories">Overall</th>${tol ? '<th>Correct</th>' : ''}`;
   table.appendChild(head);
   const gradeCell = (o) => { const g = gradeOf(o); return o == null ? '–' : `${o} <span class="rr-grade ${g.id}">${g.label}</span>`; };
   for (const it of a.items) {
@@ -2331,26 +2356,30 @@ function renderQuizScore() {
     for (const c of cats) {
       const v = it[c.id];
       const on = quiz.categories.includes(c.id);
-      const w = withinTolerance(v, tol[c.id]);
-      const mark = v == null ? '' : `<span class="mark ${w ? 'ok' : 'bad'}" title="${w ? 'within' : 'outside'} ${tol[c.id]} %">${w ? '✓' : '✗'}</span>`;
+      const w = tol ? withinTolerance(v, tol[c.id]) : null;
+      const mark = w == null ? '' : `<span class="mark ${w ? 'ok' : 'bad'}" title="${w ? 'within' : 'outside'} ${tol[c.id]} %">${w ? '✓' : '✗'}</span>`;
       cells.push(`<td class="${on ? 'on' : 'off'}">${v == null ? '–' : v}${on ? mark : ''}</td>`);
     }
     cells.push(`<td class="on">${it.missing ? '–' : gradeCell(overallScore(it, quiz.categories, aw))}</td>`);
-    const v = itemVerdict(it, quiz.categories, tol);
-    cells.push(`<td class="on">${v.ok === null ? '–' : v.ok ? 'yes' : 'no'}</td>`);
+    if (tol) {
+      const v = itemVerdict(it, quiz.categories, tol);
+      cells.push(`<td class="on">${v.ok === null ? '–' : v.ok ? 'yes' : 'no'}</td>`);
+    }
     tr.innerHTML = cells.join('');
     tr.firstChild.textContent = it.folder ? `${it.name} · ${it.folder}` : it.name;
     tr.firstChild.title = it.missing ? 'This sloka could not be compared (missing from the library, or the comparison failed)' : '';
     table.appendChild(tr);
   }
   if (a.saved || a.error) {
-    const tr = document.createElement('tr');
-    tr.className = 'total';
-    tr.innerHTML = `<td>Within tolerance</td><td>${a.recited} of ${a.counted}</td>` + cats.map((c) => { const pr = corr.passRate[c.id]; return `<td class="${quiz.categories.includes(c.id) ? 'on' : 'off'}">${pr ? `${pr.ok}/${pr.n}` : '–'}</td>`; }).join('') + `<td class="on">${gradeCell(overall)}</td><td class="on">${pct == null ? '–' : `${corr.correct} of ${corr.counted} · ${pct}%`}</td>`;
-    table.appendChild(tr);
+    if (tol) {
+      const tr = document.createElement('tr');
+      tr.className = 'total';
+      tr.innerHTML = `<td>Within tolerance</td><td>${a.recited} of ${a.counted}</td>` + cats.map((c) => { const pr = corr.passRate[c.id]; return `<td class="${quiz.categories.includes(c.id) ? 'on' : 'off'}">${pr ? `${pr.ok}/${pr.n}` : '–'}</td>`; }).join('') + `<td class="on">${gradeCell(overall)}</td><td class="on">${pct == null ? '–' : `${corr.correct} of ${corr.counted} · ${pct}%`}</td>`;
+      table.appendChild(tr);
+    }
     const avg = document.createElement('tr');
     avg.className = 'total';
-    avg.innerHTML = `<td>Average score</td><td></td>` + cats.map((c) => `<td class="${quiz.categories.includes(c.id) ? 'on' : 'off'}">${a.byCategory[c.id] == null ? '–' : a.byCategory[c.id]}</td>`).join('') + '<td></td><td></td>';
+    avg.innerHTML = `<td>Average score</td><td>${tol ? '' : `${a.recited} of ${a.counted}`}</td>` + cats.map((c) => `<td class="${quiz.categories.includes(c.id) ? 'on' : 'off'}">${a.byCategory[c.id] == null ? '–' : a.byCategory[c.id]}</td>`).join('') + `<td class="on">${tol ? '' : gradeCell(overall)}</td>${tol ? '<td></td>' : ''}`;
     table.appendChild(avg);
   }
   const trend = $('#quiz-trend');
@@ -2573,7 +2602,9 @@ function renderReportsDetail(a) {
   const cols = columnsFor(a.items);
   const aw = weightsOf(a);
   const head = document.createElement('tr');
-  head.innerHTML = '<th>Sloka</th><th>Recited</th>' + cols.map((c) => `<th title="tolerance ${a.tolerance[c.id] ?? '–'} % · weight ${aw[c.id]}">${c.label}</th>`).join('') + `<th>Overall</th>${a.kind === 'quiz' ? '<th>Correct</th>' : ''}`;
+  // a quiz judged with tolerances off has no Correct column
+  const judged = a.kind === 'quiz' && !!a.tolerance;
+  head.innerHTML = '<th>Sloka</th><th>Recited</th>' + cols.map((c) => `<th title="${a.tolerance ? `tolerance ${a.tolerance[c.id] ?? '–'} %` : 'no tolerance'} · weight ${aw[c.id]}">${c.label}</th>`).join('') + `<th>Overall</th>${judged ? '<th>Correct</th>' : ''}`;
   table.appendChild(head);
   for (const it of a.items || []) {
     const tr = document.createElement('tr');
@@ -2583,7 +2614,7 @@ function renderReportsDetail(a) {
     const cells = ['<td class="sloka-cell"></td>', `<td>${recited}</td>`];
     for (const c of cols) cells.push(scoreCell(it[c.id], a.categories.includes(c.id)));
     cells.push(`<td class="on">${it.missing ? '–' : gradeHtml(it.overall)}</td>`);
-    if (a.kind === 'quiz') { const v = itemVerdict(it, a.categories, a.tolerance); cells.push(`<td class="on">${v.ok === null ? '–' : v.ok ? 'yes' : 'no'}</td>`); }
+    if (judged) { const v = itemVerdict(it, a.categories, a.tolerance); cells.push(`<td class="on">${v.ok === null ? '–' : v.ok ? 'yes' : 'no'}</td>`); }
     tr.innerHTML = cells.join('');
     tr.firstChild.textContent = it.folder ? `${it.name} · ${it.folder}` : it.name;
     table.appendChild(tr);
@@ -2593,7 +2624,7 @@ function renderReportsDetail(a) {
   // a quiz averages every sloka (one not recited counts 0); an evaluation only those recited
   const counted = (a.items || []).filter((it) => !it.missing && (a.kind === 'quiz' || it.matched));
   const avg = (c) => { const vs = counted.filter((it) => it[c] != null).map((it) => it[c]); return vs.length ? Math.round(vs.reduce((x, y) => x + y, 0) / vs.length) : null; };
-  tot.innerHTML = `<td>${a.kind === 'quiz' ? 'Overall' : 'Overall · recited slokas'}</td><td>${a.recited ?? 0} of ${a.counted ?? 0}</td>` + cols.map((c) => scoreCell(avg(c.id), a.categories.includes(c.id))).join('') + `<td class="on">${gradeHtml(a.overall)}</td>${a.kind === 'quiz' ? `<td class="on">${a.correct == null ? '–' : `${a.correct}%`}</td>` : ''}`;
+  tot.innerHTML = `<td>${a.kind === 'quiz' ? 'Overall' : 'Overall · recited slokas'}</td><td>${a.recited ?? 0} of ${a.counted ?? 0}</td>` + cols.map((c) => scoreCell(avg(c.id), a.categories.includes(c.id))).join('') + `<td class="on">${gradeHtml(a.overall)}</td>${judged ? `<td class="on">${a.correct == null ? '–' : `${a.correct}%`}</td>` : ''}`;
   table.appendChild(tot);
 }
 
@@ -2762,11 +2793,12 @@ function renderQuizList() {
       <div class="quiz-item-details" hidden></div>`;
     $('.quiz-item-name', li).textContent = q.name;
     const lastGrade = q.last && q.last.overall != null ? gradeOf(q.last.overall) : null;
-    $('.quiz-item-score', li).textContent = lastScore == null ? (q.attempts ? '–' : 'not taken') : `${lastScore}% correct`;
+    // an attempt judged without a tolerance has no correctness: its overall and grade lead
+    $('.quiz-item-score', li).textContent = lastScore == null ? (lastGrade ? '' : q.attempts ? '–' : 'not taken') : `${lastScore}% correct`;
     if (lastGrade) {
       const g = document.createElement('span');
       g.className = `rr-grade ${lastGrade.id}`;
-      g.textContent = ` · ${q.last.overall} ${lastGrade.label}`;
+      g.textContent = `${lastScore == null ? '' : ' · '}${q.last.overall} ${lastGrade.label}`;
       $('.quiz-item-score', li).appendChild(g);
     }
     $('.quiz-item-score', li).title = 'Latest attempt: share of slokas within tolerance in the chosen categories, then the weighted overall score and its grade';
@@ -2939,7 +2971,7 @@ function renderTiles(res, id) {
     $(`#score-${cat}`).textContent = value == null ? '–' : String(value);
     $(`#score-${cat}-sub`).textContent = sub;
     const tile = $(`.score[data-cat="${cat}"]`);
-    const w = withinTolerance(sc[cat], tol[cat]);
+    const w = tol ? withinTolerance(sc[cat], tol[cat]) : null;
     tile.classList.toggle('ok', w === true);
     tile.classList.toggle('bad', w === false);
     $(`#score-${cat}-tol`).textContent = w === null ? '' : w ? `within ${tol[cat]} %` : `outside ${tol[cat]} %`;
