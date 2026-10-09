@@ -160,7 +160,19 @@ canvas { display: block; }
 .brand:hover .wm-blue { background-image: linear-gradient(180deg, #9adcfb 0%, #55a9ea 50%, #2a73c4 100%); }
 
 /* home: the sloka, the logo and its translation, in the middle of the page */
-.home-hero { position: relative; min-height: calc(100vh - 120px); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px; text-align: center; }
+/* the invocation: under the icon in the sidebar, at the head of every page, and in four
+   scripts above the logo on the home page */
+.side-invocation { margin: -6px 10px 0; font-size: 0.86rem; line-height: 1.5; letter-spacing: .02em; color: #ffe7b0; opacity: .92; }
+.invocation { margin: -14px 0 22px; text-align: center; font-size: 1.05rem; letter-spacing: .03em; color: var(--gold-deep); }
+:root[data-theme="dark"] .invocation { color: var(--gold); }
+.main:has(#view-home.active) > .invocation { display: none; }
+.home-invocation { margin: 0; }
+.home-invocation p { margin: 0; }
+.home-invocation .inv-sa { font-size: clamp(1.5rem, 3vw, 2.2rem); line-height: 1.5; font-weight: 600; color: var(--gold-deep); }
+:root[data-theme="dark"] .home-invocation .inv-sa { color: var(--gold); }
+.home-invocation .inv-small { font-size: clamp(0.95rem, 1.5vw, 1.15rem); line-height: 1.6; color: var(--muted); }
+.home-invocation .inv-en { font-family: var(--display); letter-spacing: .08em; font-size: clamp(0.85rem, 1.3vw, 1rem); }
+.home-hero { position: relative; min-height: calc(100vh - 120px); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 26px; text-align: center; }
 .home-hero::before {
   /* the sun behind the logo */
   content: ""; position: absolute; left: 50%; top: 50%; width: min(620px, 90vw); height: min(620px, 90vw); transform: translate(-50%, -50%);
@@ -364,6 +376,15 @@ canvas { display: block; }
 :root[data-theme="dark"] .view-header h1 { color: #f3e7c8; }
 .view-header h1::after { content: ""; display: block; width: 56px; height: 4px; margin-top: 10px; border-radius: 2px; background: linear-gradient(90deg, #f9d65e, var(--gold-deep)); }
 .subtitle { color: var(--muted); margin-top: 10px; max-width: 70ch; }
+
+/* ---------- about ---------- */
+.about-hero { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px; margin: 6px 0 26px; }
+.about-logo { width: min(260px, 60vw); height: auto; border-radius: 14%; box-shadow: 0 20px 50px -12px rgba(27, 35, 65, .45), 0 0 0 5px rgba(255, 255, 255, .55); margin-bottom: 8px; }
+.about-hero h1 { font-family: var(--font); font-size: 2.3rem; }
+.about-hero h1::after { display: none; }
+.about-tag { margin: 0; color: var(--muted); font-family: var(--display); font-style: italic; font-size: 1.05rem; }
+.about-text { max-width: 760px; margin: 0 auto; font-size: 1.02rem; line-height: 1.65; }
+.about-text p:last-child { margin-bottom: 0; }
 
 /* ---------- cards ---------- */
 .card {
@@ -728,6 +749,7 @@ canvas { display: block; }
   .app { grid-template-columns: 1fr; }
   .sidebar { position: sticky; height: auto; flex-direction: row; align-items: center; padding: 10px 12px; border-right: 0; border-bottom: 1px solid var(--border); z-index: 10; }
   .brand-name { display: none; }
+  .side-invocation { display: none; }
   .nav { flex-direction: row; flex: 1; justify-content: center; gap: 2px; }
   .nav-btn { padding: 8px 10px; }
   .nav-btn span { display: none; }

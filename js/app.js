@@ -262,7 +262,7 @@ function progressUI(target) {
 
 // ---------- routing ----------
 
-const VIEWS = ['home', 'learn', 'teach', 'evaluate', 'quiz', 'reports', 'library', 'settings'];
+const VIEWS = ['home', 'learn', 'teach', 'evaluate', 'quiz', 'reports', 'library', 'settings', 'about'];
 function showView(name) {
   if (!VIEWS.includes(name)) name = 'home';
   const section = name === 'teach' ? 'evaluate' : name; // Teach is Self Evaluation for one sloka at a time

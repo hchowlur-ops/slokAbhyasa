@@ -9,8 +9,12 @@ see exactly where your attempt deviates, with the sloka and your own recording o
 SlokAbhyasa calls every recording it has learnt a *sloka* (a verse); the word is used for any short
 piece, chanted, sung or spoken.
 
-The app opens on a home page that shows the logo (more will grow there); the sidebar, with the
-two-tone wordmark linking back to it, is the same on every page.
+The app opens on a home page: the invocation ॥ ॐ श्री कृष्ण परमात्मने नमः ॥ in Sanskrit,
+Kannada, Telugu and English above the logo, and Gītā 18.66 with its translation below it.
+The same invocation, in Sanskrit, heads every other page and sits under the icon in the
+sidebar, whose two-tone wordmark links back to home. **About**, the last entry in the
+sidebar, says what the app is for: students, and anyone learning the Bhagavad Gītā, who
+want to learn its ślokas by ear and recite them well.
 
 Everything runs on your machine. Slokas are ordinary WAV files in folders under `library/`
 (one folder per chapter, say); quizzes are JSON files in `quizzes/`.

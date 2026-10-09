@@ -15,6 +15,7 @@
       <img class="brand-logo" src="assets/logo-192.png" width="52" height="52" alt="SlokAbhyasa logo" />
       <span class="brand-name wordmark"><span class="wm-gold">SlokA</span><span class="wm-blue">bhyasa</span></span>
     </a>
+    <div class="side-invocation" lang="sa" title="Om Sri Krishna Paramatmane Namaha">॥ ॐ श्री कृष्ण परमात्मने नमः ॥</div>
     <nav class="nav" aria-label="Main">
       <button class="nav-btn active" data-view="home" type="button">
         <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 3 2 12h3v8h5v-6h4v6h5v-8h3z"/></svg><span>Home</span>
@@ -40,6 +41,9 @@
       <button class="nav-btn" data-view="settings" type="button">
         <svg viewBox="0 0 24 24"><path fill="currentColor" d="M19.4 13a7.6 7.6 0 0 0 .1-1 7.6 7.6 0 0 0-.1-1l2.1-1.6a.5.5 0 0 0 .1-.6l-2-3.5a.5.5 0 0 0-.6-.2l-2.5 1a7.3 7.3 0 0 0-1.7-1l-.4-2.6a.5.5 0 0 0-.5-.5h-4a.5.5 0 0 0-.5.4l-.4 2.7a7.3 7.3 0 0 0-1.7 1l-2.5-1a.5.5 0 0 0-.6.2l-2 3.5a.5.5 0 0 0 .1.6L4.6 11a7.6 7.6 0 0 0 0 2l-2.1 1.6a.5.5 0 0 0-.1.6l2 3.5a.5.5 0 0 0 .6.2l2.5-1a7.3 7.3 0 0 0 1.7 1l.4 2.6a.5.5 0 0 0 .5.5h4a.5.5 0 0 0 .5-.4l.4-2.7a7.3 7.3 0 0 0 1.7-1l2.5 1a.5.5 0 0 0 .6-.2l2-3.5a.5.5 0 0 0-.1-.6zM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"/></svg><span>Settings</span>
       </button>
+      <button class="nav-btn" data-view="about" type="button">
+        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 15h-2v-6h2zm0-8h-2V7h2z"/></svg><span>About</span>
+      </button>
     </nav>
     <div class="sidebar-footer">
       <div class="bg-status" id="bg-status" hidden title="Transcribing saved slokas in the other languages. Your own transcriptions always go first.">
@@ -61,15 +65,22 @@
   </aside>
 
   <main class="main">
+    <div class="invocation" lang="sa" aria-label="Om Sri Krishna Paramatmane Namaha">॥ ॐ श्री कृष्ण परमात्मने नमः ॥</div>
 
     <!-- ================= HOME ================= -->
     <section class="view active" id="view-home" aria-label="Home">
       <div class="home-hero">
+        <div class="home-invocation" aria-label="Om Sri Krishna Paramatmane Namaha, in Sanskrit, Kannada, Telugu and English">
+          <p class="inv-sa" lang="sa">॥ ॐ श्री कृष्ण परमात्मने नमः ॥</p>
+          <p class="inv-small" lang="kn">॥ ಓಂ ಶ್ರೀ ಕೃಷ್ಣ ಪರಮಾತ್ಮನೇ ನಮಃ ॥</p>
+          <p class="inv-small" lang="te">॥ ఓం శ్రీ కృష్ణ పరమాత్మనే నమః ॥</p>
+          <p class="inv-small inv-en" lang="en">|| OM SRI KRISHNA PARAMATMANE NAMAHA ||</p>
+        </div>
+        <img class="home-logo" src="assets/logo.png" alt="SlokAbhyasa" />
         <blockquote class="home-sloka" lang="sa" aria-label="Bhagavad Gita 18.66 in Sanskrit">
           <p>सर्वधर्मान्परित्यज्य मामेकं शरणं व्रज ।</p>
           <p>अहं त्वा सर्वपापेभ्यो मोक्षयिष्यामि मा शुचः ॥</p>
         </blockquote>
-        <img class="home-logo" src="assets/logo.png" alt="SlokAbhyasa" />
         <blockquote class="home-translation" lang="en" aria-label="Bhagavad Gita 18.66 in English">
           <p>Setting aside all other duties, take refuge in Me alone.</p>
           <p>I shall free you from all sins; do not grieve.</p>
@@ -596,6 +607,21 @@
       <div class="card settings-card settings-note" id="settings-whisper">
         <h2>Whisper · how the words are heard</h2>
         <p>The words of a sloka and of your attempt are written down by <a href="https://github.com/openai/whisper" target="_blank" rel="noopener">OpenAI's Whisper</a>, a speech-recognition model that runs inside your browser. The first time you use a model tier (Fast, Better or Best) it is downloaded from Hugging Face, 75 MB to 750 MB, and kept in the browser's cache; after that transcription needs no internet connection, and no audio ever leaves this computer. Treat the text as a guide rather than a verdict: Whisper has seen very little Sanskrit and recognises chanted or sung words only approximately, so a transcript can carry errors that are its own, not yours. In particular it writes a recited visarga as the breath it hears, so रताः comes back as रतहः or रताहा, and it writes the anusvāra where the text has a nasal (संग for सङ्ग); the comparison reads both spellings as the sounds they are, but other slips in a transcript can still show up in the word scores. Typing a sloka's canonical text in its Details, or correcting its transcript, gives the comparison a reliable reference.</p>
+      </div>
+    </section>
+
+    <!-- ================= ABOUT ================= -->
+    <section class="view" id="view-about" aria-labelledby="about-title">
+      <div class="about-hero">
+        <img class="about-logo" src="assets/logo.png" alt="SlokAbhyasa" />
+        <h1 id="about-title"><span class="wordmark"><span class="wm-gold">SlokA</span><span class="wm-blue">bhyasa</span></span></h1>
+        <p class="about-tag">śloka · abhyāsa — verse, practice</p>
+      </div>
+      <div class="card about-text">
+        <p>SlokAbhyasa was created to help students, and anyone learning the Bhagavad Gītā, to learn its ślokas by ear and to recite them well. It is for the learner who has a teacher's recording, or a good recitation, and wants to practise against it: listen as often as you like, at any speed; recite it back; and see exactly where the sounds, the vowel lengths, the syllables, the emphasis, the melody and the pauses differed from the original.</p>
+        <p>A śloka is learnt once (recorded, or taken from a file) and kept as an ordinary audio file in your own folders, a chapter at a time. Teach takes one śloka at a time; Self Evaluation compares one recitation with several; a Quiz asks for them from memory and keeps every attempt, so that progress can be seen in Reports. The words are heard by a speech-recognition model that runs on this computer, and the comparison is tuned for Sanskrit recitation: the akṣara, not the voice, is what is judged, so a child and an adult, a man and a woman, are measured on the same scale.</p>
+        <p>Everything runs on your own computer. Nothing you record is sent anywhere.</p>
+        <p class="muted small">Weights, tolerances and the references behind them are in Settings. The full guide is the README that comes with the app.</p>
       </div>
     </section>
 
