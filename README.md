@@ -304,8 +304,8 @@ tolerance fields stay visible but greyed until the switch is off again.
   (transcribed on the spot if it has none yet). After each attempt your words are transcribed
   and compared, in the Transcript block directly under the scores: sloka words that were not
   heard are highlighted in red there and at the top; extra or different words in your attempt
-  are highlighted in amber. Click any phrase to hear it. "Transcribe again" reruns with
-  another language or model.
+  are highlighted in amber. Click any phrase to hear it; the small "i" by "Yours" opens
+  this legend as an overlay. "Transcribe again" reruns with another language or model.
 * **Library** – "Transcript" shows, creates or corrects the transcript of a sloka.
 
 Every transcript panel has a language and model choice and an "Automatic" switch (shared

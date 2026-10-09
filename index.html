@@ -389,6 +389,12 @@
                     <svg class="ico-pause" viewBox="0 0 24 24"><path fill="currentColor" d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>
                   </button>
                   <span>Yours</span>
+                  <button class="info-btn" id="stt-legend-btn" type="button" aria-label="How to read these words" aria-expanded="false" aria-controls="stt-legend">i</button>
+                  <div class="info-pop" id="stt-legend" role="tooltip" hidden>
+                    <p>Click any phrase to hear it.</p>
+                    <p><span class="w-del">Highlighted</span> sloka words were not heard in your attempt; <span class="w-ins">highlighted</span> words in yours are extra or different.</p>
+                    <p><span class="w-dim">Greyed</span> words lie outside the part that was compared.</p>
+                  </div>
                 </div>
                 <div class="stt-text" id="stt-heard" data-empty="what SlokAbhyasa heard, once transcribed"></div>
               </div>
@@ -410,7 +416,6 @@
             </div>
             <div id="stt-out" hidden>
               <details class="phon-report" id="stt-phon" hidden></details>
-              <p class="muted small">Click any phrase to hear it. <span class="w-del">Highlighted</span> sloka words were not heard in your attempt; <span class="w-ins">highlighted</span> words in yours are extra or different. <span class="w-dim">Greyed</span> words lie outside the part that was compared.</p>
             </div>
             <p class="muted small">Your attempt is transcribed automatically after each take (switch "Automatic" off in any transcript panel to stop that). Words of the sloka text that were not heard are highlighted here and at the top of this page. Speech is turned into text on this computer with Whisper; the first use downloads the model from Hugging Face and keeps it cached. Chanted or sung words are recognised approximately, so treat the text as a guide.</p>
           </div>

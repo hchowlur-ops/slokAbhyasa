@@ -673,6 +673,23 @@ canvas { display: block; }
 #transcript .stt-label { display: flex; align-items: center; gap: 8px; padding-top: 4px; }
 #transcript .stt-label .btn-play { width: 36px; height: 36px; flex: none; }
 #transcript .stt-label .btn-play svg { width: 18px; height: 18px; }
+/* the small "i" by "Yours", and the overlay it opens */
+#transcript .stt-label { position: relative; }
+.info-btn {
+  width: 15px; height: 15px; padding: 0; border-radius: 50%; border: 1px solid currentColor; background: transparent;
+  color: var(--muted); font: italic 700 10px/1 var(--display); display: inline-grid; place-items: center;
+  cursor: pointer; align-self: flex-end; margin: 0 0 1px -2px; opacity: .75; transition: opacity .12s, color .12s;
+}
+.info-btn:hover, .info-btn[aria-expanded="true"] { opacity: 1; color: var(--accent-strong); border-color: var(--accent); background: var(--accent-soft); }
+.info-btn:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 2px; }
+.info-pop {
+  position: absolute; z-index: 20; top: calc(100% + 8px); left: 0; width: min(360px, 78vw);
+  padding: 12px 14px; border-radius: 12px; background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow-lift);
+  font-family: var(--font); font-size: 0.88rem; font-weight: 500; line-height: 1.55; letter-spacing: 0; text-transform: none; color: var(--text); text-align: left;
+}
+.info-pop::before { content: ""; position: absolute; top: -6px; left: 54px; width: 10px; height: 10px; background: var(--surface); border-left: 1px solid var(--border); border-top: 1px solid var(--border); transform: rotate(45deg); }
+.info-pop p { margin: 0 0 6px; }
+.info-pop p:last-child { margin: 0; }
 .btn-play.play-heard { background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--heard) 70%, #fff), var(--heard) 45%, color-mix(in srgb, var(--heard) 80%, #000)); box-shadow: 0 10px 24px -8px color-mix(in srgb, var(--heard) 80%, transparent), inset 0 1px 0 rgba(255, 255, 255, .25); }
 #transcript .stt-text:empty::before { content: attr(data-empty); color: var(--muted); font-size: 0.9rem; font-style: italic; }
 #res-playback { margin: 10px 0 10px; padding-top: 10px; border-top: 1px dashed var(--border); }

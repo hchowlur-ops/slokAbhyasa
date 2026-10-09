@@ -1319,6 +1319,16 @@ function syncDuet() {
 $('#res-play-both').addEventListener('click', () => { getCtx(); playBoth(); });
 // the Analysis fold: the chart draws itself when it becomes visible, the rest follows
 $('#analysis').addEventListener('toggle', () => { if ($('#analysis').open) redrawAll(); });
+// How to read the two transcripts: an overlay off the small "i" by "Yours", closed by a
+// click elsewhere or Escape.
+{
+  const btn = $('#stt-legend-btn');
+  const pop = $('#stt-legend');
+  const open = (on) => { setHidden(pop, !on); btn.setAttribute('aria-expanded', on ? 'true' : 'false'); };
+  btn.addEventListener('click', (e) => { e.stopPropagation(); open(pop.hidden); });
+  document.addEventListener('click', (e) => { if (!pop.hidden && !pop.contains(e.target)) open(false); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !pop.hidden) { open(false); btn.focus(); } });
+}
 
 // ---------- tolerance: how much variation is acceptable per category ----------
 
