@@ -165,7 +165,10 @@ slokas you had ticked there.
 1. Tick one or more slokas in the picker (a whole folder with its checkbox if you like).
    Click a name or a chip to preview it and listen at any speed.
 2. Record your attempt once. If you wear headphones you can have the previewed sloka play
-   while you record. The one recording is compared with every ticked sloka.
+   while you record. The one recording is compared with every ticked sloka. With two or more
+   ticked, their texts are listed in a scrolling panel above the record button; "Show the
+   slokas' text during Self Evaluation" in Settings turns that off, and the preview's text
+   panel with it.
 3. Read the results (one report per sloka, see "Several slokas at once" below). As soon as
    they appear, steps 1 and 2 fold up into their heads — "1 sloka ticked", "Recorded 0:21 ·
    open to record again" — so the report is what you see; click a head to open that step
@@ -437,9 +440,9 @@ A memory test drawn from your library.
    recordings stay hidden, "play the sloka while I record" is off, and you recite everything
    in one recording, in any order. By default the step is titled **"Recite with the text
    shown"** and each sloka's text (the text typed in its details, else its transcript in the
-   chosen language) is shown in a panel above the record button, one sloka at a time —
-   Previous / Next, or scroll sideways. Switch "Show the slokas' text while reciting a quiz"
-   off in Settings and the step becomes **"Recite from memory"** with nothing shown. Then the
+   chosen language) is listed in a scrolling panel above the record button. Switch "Show the
+   slokas' text while reciting a quiz" off in Settings and the step becomes **"Recite from
+   memory"** with nothing shown. Then the
    results open laid out as in Self Evaluation, with the quiz's own block on top.
 
 **The scores.** Each sloka is scored in the seven categories of "What is scored" (phonemes,
@@ -532,8 +535,8 @@ see "What is scored"; "Defaults" restores the recommended 30/25/15/10/10/5/5), *
 defaults for the chosen learner; and the "Ignore tolerances" switch that turns every
 within/outside verdict off, leaving scores and grades), **Speech recognition** (the language the words are
 heard in, the model, and whether transcripts are made automatically — the same controls
-that sit beside every transcript panel), and **Quiz** (whether the slokas' text is shown, one
-at a time, while reciting a quiz; on by default). Beside them, "Why these defaults" explains how the
+that sit beside every transcript panel), and **Sloka text** (whether the slokas' text is
+shown during Self Evaluation and while reciting a quiz; both on by default). Beside them, "Why these defaults" explains how the
 weights and tolerances are tuned for Sanskrit śloka recitation and lists the references
 (reproduced under "References" below). Under both columns a short note, "Whisper · how the
 words are heard", says that the model is downloaded once and runs on this computer, that

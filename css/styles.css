@@ -933,11 +933,11 @@ canvas { display: block; }
 /* the slokas' text during a quiz, one at a time */
 .quiz-texts { margin: 0 0 16px; padding: 12px 14px 14px; border-radius: 14px; background: var(--surface-2); border: 1px solid var(--border); border-left: 4px solid var(--gold); }
 .quiz-texts-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-.quiz-texts-strip { display: flex; gap: 14px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: thin; outline: none; }
-.quiz-texts-strip:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 2px; border-radius: 10px; }
-.quiz-text { flex: 0 0 100%; scroll-snap-align: start; min-width: 0; }
+.quiz-texts-list { display: flex; flex-direction: column; gap: 12px; max-height: 26rem; overflow-y: auto; padding-right: 6px; scrollbar-width: thin; scrollbar-gutter: stable; outline: none; }
+.quiz-texts-list:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 2px; border-radius: 10px; }
+.quiz-text { min-width: 0; }
 .quiz-text-name { font-weight: 700; margin-bottom: 6px; }
-.quiz-text-body { font-size: 1.3rem; line-height: 2; max-height: 13.5rem; overflow-y: auto; background: var(--surface); white-space: pre-line; }
+.quiz-text-body { font-size: 1.3rem; line-height: 2; background: var(--surface); white-space: pre-line; }
 .quiz-text-body.muted { font-size: 0.95rem; line-height: 1.5; }
 .quiz-trend { margin-top: 14px; }
 .quiz-trend h4 { margin: 0 0 6px; font-size: 0.95rem; }

@@ -1702,11 +1702,13 @@ function renderModeChrome() {
   setHidden($('#teach-hint'), !teach || !(libraryCache || []).length);
   setHidden($('#practice-list-hint'), teach || !!practice.quiz || !(libraryCache || []).length);
   $('#practice-step2-title').textContent = teach ? 'Play it, then recite it back' : practice.quiz ? (quizTextOn ? 'Recite with the text shown' : 'Recite from memory') : 'Perform it';
+  setHidden($('#practice-transcript'), !teach && !practice.quiz && !evalTextOn); // no sloka text in Self Evaluation when switched off
 }
 
 // The picker shows the same selection the app holds: ticks, chips, the previewed sloka.
 function syncBaseList() {
   practicePicker.setSelection(practice.selection);
+  renderSlokaTexts();
   const n = practice.selection.length;
   $('#practice-pick-count').textContent = practice.quiz ? `${practice.quiz.name} · ${n} sloka${n === 1 ? '' : 's'}` : practice.teach ? (n ? nameOf(practice.selection[0]) : '') : n ? `${n} sloka${n === 1 ? '' : 's'} ticked` : '';
 }
@@ -2202,65 +2204,73 @@ const quizHidesBase = () => !!practice.quiz && !practice.take;
 // with the text shown". Off: "Recite from memory", nothing shown. The recordings stay hidden
 // either way until the take is in.
 const QUIZ_TEXT_KEY = 'tutor-quiz-text';
+const EVAL_TEXT_KEY = 'tutor-eval-text';
 let quizTextOn = (() => { try { return localStorage.getItem(QUIZ_TEXT_KEY) !== '0'; } catch { return true; } })();
+// ... and during Self Evaluation: with two or more slokas ticked their texts are listed in the
+// same panel; off, no sloka text is shown there at all (the preview's text panel included).
+let evalTextOn = (() => { try { return localStorage.getItem(EVAL_TEXT_KEY) !== '0'; } catch { return true; } })();
 {
-  const cb = $('#settings-quiz-text');
-  cb.checked = quizTextOn;
-  cb.addEventListener('change', () => {
-    quizTextOn = cb.checked;
-    try { if (quizTextOn) localStorage.removeItem(QUIZ_TEXT_KEY); else localStorage.setItem(QUIZ_TEXT_KEY, '0'); } catch { /* ignore */ }
-    renderModeChrome();
-    if (practice.quiz) renderQuizBox();
-  });
+  const bind = (sel, key, get, set) => {
+    const cb = $(sel);
+    cb.checked = get();
+    cb.addEventListener('change', () => {
+      set(cb.checked);
+      try { if (cb.checked) localStorage.removeItem(key); else localStorage.setItem(key, '0'); } catch { /* ignore */ }
+      renderModeChrome();
+      renderSlokaTexts();
+    });
+  };
+  bind('#settings-quiz-text', QUIZ_TEXT_KEY, () => quizTextOn, (v) => { quizTextOn = v; });
+  bind('#settings-eval-text', EVAL_TEXT_KEY, () => evalTextOn, (v) => { evalTextOn = v; });
 }
 const slokaTextOf = (base) => {
   const meta = base.record && base.record.meta;
   if (meta && meta.text && meta.text.body && meta.text.origin !== 'transcript') return meta.text.body;
   return base.transcript && base.transcript.text ? base.transcript.text : '';
 };
-let quizTextsToken = 0;
-async function renderQuizTexts() {
-  const host = $('#quiz-texts');
-  const show = !!practice.quiz && quizTextOn && !practice.take;
-  setHidden(host, !show);
-  if (!show) return;
-  const token = ++quizTextsToken;
-  const lib = new Set((libraryCache || []).map((r) => r.id));
-  const items = practice.quiz.items.filter((it) => lib.has(it.id));
-  const strip = $('#quiz-texts-strip');
-  strip.innerHTML = '';
-  for (const it of items) {
-    const slide = document.createElement('div');
-    slide.className = 'quiz-text';
-    slide.dataset.id = it.id;
-    slide.innerHTML = '<div class="quiz-text-name"></div><div class="stt-text quiz-text-body muted">Loading…</div>';
-    $('.quiz-text-name', slide).textContent = it.folder ? `${it.name} · ${it.folder}` : it.name;
-    strip.appendChild(slide);
+// Which slokas the text panel lists: a quiz's, until the take is in; in Self Evaluation the
+// ticked ones when there are two or more (one is in the preview already); never in Teach.
+function slokaTextItems() {
+  if (practice.quiz) {
+    if (!quizTextOn || practice.take) return [];
+    const lib = new Set((libraryCache || []).map((r) => r.id));
+    return practice.quiz.items.filter((it) => lib.has(it.id));
   }
-  strip.scrollLeft = 0;
-  updateQuizTextsPos();
+  if (practice.teach || !evalTextOn || practice.selection.length < 2) return [];
+  const byId = new Map((libraryCache || []).map((r) => [r.id, r]));
+  return practice.selection.filter((id) => byId.has(id)).map((id) => ({ id, name: byId.get(id).name, folder: byId.get(id).folder || '' }));
+}
+let slokaTextsToken = 0;
+async function renderSlokaTexts() {
+  const host = $('#practice-texts');
+  const items = slokaTextItems();
+  setHidden(host, !items.length);
+  if (!items.length) { $('#practice-texts-list').innerHTML = ''; return; }
+  const token = ++slokaTextsToken;
+  $('#practice-texts-title').textContent = practice.quiz ? 'The text' : 'The text of the ticked slokas';
+  $('#practice-texts-count').textContent = `${items.length} sloka${items.length === 1 ? '' : 's'}${items.length > 1 ? ' · scroll for the rest' : ''}`;
+  const list = $('#practice-texts-list');
+  list.innerHTML = '';
+  for (const it of items) {
+    const entry = document.createElement('div');
+    entry.className = 'quiz-text';
+    entry.dataset.id = it.id;
+    entry.innerHTML = '<div class="quiz-text-name"></div><div class="stt-text quiz-text-body muted">Loading…</div>';
+    $('.quiz-text-name', entry).textContent = it.folder ? `${it.name} · ${it.folder}` : it.name;
+    list.appendChild(entry);
+  }
+  list.scrollTop = 0;
   await Promise.all(items.map(async (it) => {
     let text = '';
     try { text = slokaTextOf(await ensureBase(it.id)); } catch { text = ''; }
-    if (token !== quizTextsToken) return;
-    const el = $(`.quiz-text[data-id="${it.id}"] .quiz-text-body`, strip);
+    if (token !== slokaTextsToken) return;
+    const el = $(`.quiz-text[data-id="${it.id}"] .quiz-text-body`, list);
     if (!el) return;
     el.textContent = text ? withDandas(text) : 'No text yet: transcribe this sloka, or type its text under Details in the Library.';
     el.classList.toggle('muted', !text);
   }));
 }
-function updateQuizTextsPos() {
-  const strip = $('#quiz-texts-strip');
-  const n = strip.children.length;
-  const i = n ? Math.round(strip.scrollLeft / Math.max(1, strip.clientWidth)) : 0;
-  $('#quiz-texts-pos').textContent = n ? `${Math.min(n, i + 1)} of ${n}` : '';
-  $('#quiz-texts-prev').disabled = i <= 0;
-  $('#quiz-texts-next').disabled = i >= n - 1;
-}
-$('#quiz-texts-strip').addEventListener('scroll', updateQuizTextsPos, { passive: true });
-$('#quiz-texts-prev').addEventListener('click', () => { const st = $('#quiz-texts-strip'); st.scrollBy({ left: -st.clientWidth, behavior: 'smooth' }); });
-$('#quiz-texts-next').addEventListener('click', () => { const st = $('#quiz-texts-strip'); st.scrollBy({ left: st.clientWidth, behavior: 'smooth' }); });
-sttLanguageListeners.add(() => { if (practice.quiz) renderQuizTexts(); }); // the text follows the language
+sttLanguageListeners.add(() => renderSlokaTexts()); // the text follows the language
 
 // Opens a quiz: its slokas become the selection, the checklist gives way to the quiz box.
 async function enterQuiz(quiz) {
@@ -2318,7 +2328,7 @@ function renderQuizBox() {
     if (!lib.has(it.id)) { li.classList.add('gone'); li.title = 'No longer in the library'; }
     ol.appendChild(li);
   }
-  renderQuizTexts();
+  renderSlokaTexts();
 }
 
 // Share of a sloka's words heard in the take, over the parts that were compared.
@@ -3044,7 +3054,7 @@ function focusResults() {
   const take = practice.take;
   $('#practice-step2-summary').textContent = take ? `Recorded ${fmtTime(take.duration)} · open to record again` : '';
   for (const sel of FOLDING_STEPS) setStepFolded(sel, true);
-  renderQuizTexts(); // the take exists now: the text panel gives way to the sloka itself
+  renderSlokaTexts(); // the take exists now: the text panel gives way to the sloka itself
 }
 function unfoldSteps() {
   $('#practice-step2-summary').textContent = '';
@@ -3066,7 +3076,7 @@ function hideResults() {
   practice.quizAttempt = null;
   practice.session = null;
   setHidden($('#quiz-score'), true);
-  if (practice.quiz) { practice.take = null; setHidden($('#practice-base'), true); renderQuizTexts(); } // the next attempt is from memory again
+  if (practice.quiz) { practice.take = null; setHidden($('#practice-base'), true); renderSlokaTexts(); } // the next attempt is from memory again
   setHidden($('#practice-results'), true);
   heardPlayer.pause();
   resetTranscriptUI();
