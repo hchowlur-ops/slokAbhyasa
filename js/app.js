@@ -1840,6 +1840,7 @@ async function setActiveBase(id) {
     await basePlayer.load(base.blob);
     if (token !== activeToken) return;
     practice.base = base;
+    warmStt(); // the model, ready before the recording rather than during it
     setHidden($('#practice-base'), !previewShown());
     drawBaseWave();
     practicePanel.reset();
@@ -1882,16 +1883,22 @@ transcriptListeners.add((id, store) => {
 $('#practice-rec').addEventListener('click', async () => {
   const rec = getPracticeRecorder();
   if (rec.active) {
+    // the last stretch recorded goes to the speech worker now, when the pages were turned
+    if (recSegments && recSegments.parts.length) markSegment(slokaTextItems()[currentTextIndex(slokaTextItems())]);
+    const segments = recSegments;
+    recSegments = null;
     const raw = await rec.stop();
     practiceUI.setRecording(false);
     setListBusy(false);
     updateRecLabel();
     basePlayer.pause();
     if (!raw || raw.duration < 0.5) { toast('That was too short. Try again.', 'error'); return; }
-    const { take, info, changed } = trimTake(raw, $('#practice-trim').checked);
+    const { take, info, changed, removedStart = 0 } = trimTake(raw, $('#practice-trim').checked);
     if (take.duration < 0.5) { toast('Hardly any sound was heard. Try again.', 'error'); return; }
     if (changed) toast(info, 'info', 2500);
     take.blob = encodeWav(take.samples, take.sampleRate);
+    // the stretches transcribed while recording, in the take's time (the trimmed lead taken off)
+    take.segments = segments && segments.parts.length ? segments.parts.map((p) => ({ ...p, from: p.from - removedStart, to: p.to - removedStart })) : null;
     practice.take = take;
     await heardPlayer.load(take.blob);
     await analyseAttempt();
@@ -1903,6 +1910,9 @@ $('#practice-rec').addEventListener('click', async () => {
       await rec.start();
       practiceUI.setRecording(true);
       setListBusy(true);
+      recSegments = { from: 0, parts: [] };
+      recTextIndex = currentTextIndex(slokaTextItems());
+      recNote('');
       if ($('#practice-playalong').checked && $('#practice-headphones').checked) {
         basePlayer.seek(0);
         basePlayer.play();
@@ -2333,9 +2343,26 @@ function slokaTextItems() {
 let quizTextIndex = 0; // the page before a quiz's take, when no sloka is active for playing
 const textShown = () => (practice.quiz ? (practice.take ? true : quizTextOn) : evalTextOn);
 const playShown = () => !practice.quiz || !!practice.take;
+// The speech model is loaded in the worker as soon as a sloka is ready to be recited (and
+// transcription will be wanted), so a stretch sent while recording, or the take itself,
+// finds it ready: the loading is what used to make the page stutter.
+const warmed = new Set(); // "tier:device" already asked for in this page
+function warmStt() {
+  if (!sttSettings.auto && !practice.quiz) return;
+  sttTier().then((tier) => {
+    const device = sttSettings.cpuTiers.includes(tier) ? 'wasm' : null;
+    const key = `${tier}:${device || 'auto'}`;
+    if (warmed.has(key)) return;
+    warmed.add(key);
+    stt.warm({ tier, device, language: sttSettings.language }).catch(() => warmed.delete(key)); // a tier this browser cannot run: asked again next time, and reported when used
+  }).catch(() => {});
+}
+const recordingNow = () => !!practiceRecorder && practiceRecorder.active;
+let recTextIndex = 0; // the page while recording in Self Evaluation: the active sloka is left alone
 function currentTextIndex(items) {
   if (!items.length) return -1;
   if (practice.quiz && !practice.take) return Math.max(0, Math.min(items.length - 1, quizTextIndex));
+  if (recordingNow()) return Math.max(0, Math.min(items.length - 1, recTextIndex));
   const i = items.findIndex((it) => it.id === practice.activeId);
   return i < 0 ? 0 : i;
 }
@@ -2391,10 +2418,69 @@ async function renderSlokaTexts() {
 }
 function stepText(delta) {
   const items = slokaTextItems();
-  const j = currentTextIndex(items) + delta;
+  const i = currentTextIndex(items);
+  const j = i + delta;
   if (j < 0 || j >= items.length) return;
+  if (recordingNow()) {
+    // a page turned while recording: the stretch since the last turn is the sloka that was in
+    // view — off to the speech worker it goes; the page itself turns without touching the
+    // active sloka or the recording
+    markSegment(items[i]);
+    if (practice.quiz) quizTextIndex = j; else recTextIndex = j;
+    renderSlokaTexts();
+    return;
+  }
   if (practice.quiz && !practice.take) { quizTextIndex = j; renderSlokaTexts(); return; }
   setActiveBase(items[j].id);
+}
+
+// ---------- the words while recording ----------
+// With several slokas in a take, each page turn (Previous / Next) closes the stretch recorded
+// since the last one and sends it to the speech worker at once, as a background job, so the
+// words are ready by the time the take is compared. The worker is its own thread: the
+// recording and the page go on untouched. Afterwards each report's stretch of the take takes
+// the words of the recorded stretch that overlaps it well enough (transcribeTakePart), and is
+// transcribed afresh otherwise.
+let recSegments = null; // { from, parts: [{ from, to, name, promise, transcript }] } in recording time
+function markSegment(item) {
+  const rec = practiceRecorder;
+  if (!rec || !rec.active || !recSegments) return;
+  if (!sttSettings.auto && !practice.quiz) return; // transcription only when asked for
+  const snap = rec.snapshot();
+  const from = recSegments.from;
+  const to = snap.duration;
+  recSegments.from = to;
+  if (to - from < 2) return; // a page turned back and forth: nothing to hear
+  const sr = snap.sampleRate;
+  const samples = snap.samples.slice(Math.round(from * sr), Math.round(to * sr));
+  const seg = { from, to, name: item ? item.name : '', promise: null, transcript: null, done: false };
+  recSegments.parts.push(seg);
+  const parts = recSegments.parts;
+  recNote(`Listening to ${seg.name || 'that stretch'} in the background…`);
+  seg.promise = runTranscription(samples, sr, null, seg.name || 'your recording', undefined, { background: true })
+    .then((t) => { seg.transcript = t; return t; })
+    .catch(() => null)
+    .finally(() => { seg.done = true; if (parts.every((p) => p.done)) recNote(''); else { const busy = parts.find((p) => !p.done); recNote(`Listening to ${busy.name || 'that stretch'} in the background…`); } });
+}
+function recNote(text) {
+  const el = $('#practice-rec-note');
+  el.textContent = text;
+  setHidden(el, !text);
+}
+// The recorded stretch whose words serve a report's stretch of the take: the best overlap,
+// when it covers it well (the page was turned near the sloka's end).
+function segmentFor(win) {
+  const take = practice.take;
+  if (!take || !take.segments || !win) return null;
+  let best = null;
+  let bestIou = 0;
+  for (const seg of take.segments) {
+    const inter = Math.max(0, Math.min(seg.to, win[1]) - Math.max(seg.from, win[0]));
+    const union = Math.max(seg.to, win[1]) - Math.min(seg.from, win[0]);
+    const iou = union > 0 ? inter / union : 0;
+    if (iou > bestIou) { bestIou = iou; best = seg; }
+  }
+  return bestIou >= 0.6 ? best : null;
 }
 $('#practice-texts-prev').addEventListener('click', () => stepText(-1));
 $('#practice-texts-next').addEventListener('click', () => stepText(1));
@@ -3676,6 +3762,16 @@ async function transcribeTakePart(win, force) {
   const key = partKey(win);
   const have = practice.heardTranscripts.get(key);
   if (fits(have)) return have;
+  const seg = !force ? segmentFor(win) : null;
+  if (seg) {
+    const t = await seg.promise;
+    if (practice.take !== take) return null;
+    if (t && t.language === language) {
+      const abs = shiftTranscript(t, seg.from, take.duration);
+      practice.heardTranscripts.set(key, abs);
+      return abs;
+    }
+  }
   const old = practice.heardJobs.get(key);
   if (old && old.take === take && fits(old)) return old.promise;
   if (old) old.ctrl.abort();

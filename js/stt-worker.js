@@ -143,6 +143,25 @@ if (typeof self !== 'undefined') self.onmessage = async (e) => {
     }
     return;
   }
+  if (msg.type === 'warm') {
+    // load the model now, so a job that follows (one sent while a recording is still going)
+    // finds it ready and the page sees none of the loading
+    const job = { id: msg.id, stopped: false };
+    current = job;
+    try {
+      const dev = msg.device === 'wasm' ? 'wasm' : await detectDevice();
+      const pipe = await getPipe(msg.tier, dev, msg.id, post);
+      // one second of silence through the model: on the GPU the first run compiles the
+      // shaders, which is the stall a page would otherwise feel at the first real job
+      if (!job.stopped) { try { await pipe(new Float32Array(16000), { language: msg.language || 'sanskrit', task: 'transcribe', chunk_length_s: 30, max_new_tokens: 1 }); } catch { /* the real job reports */ } }
+      if (!job.stopped) post({ type: 'result', id: msg.id, result: { warmed: true, tier: msg.tier, device: dev } });
+    } catch (err) {
+      if (!job.stopped) post({ type: 'error', id: msg.id, message: err && err.message ? err.message : String(err) });
+    } finally {
+      if (current === job) current = null;
+    }
+    return;
+  }
   if (msg.type !== 'transcribe') return;
   // `device` forces the CPU ('wasm') for a tier the client has learnt not to trust on the GPU.
   const { id, samples, language, tier, device } = msg;

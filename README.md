@@ -213,8 +213,17 @@ row to open that report. The sloka panel above switches with the open report, so
 button and text always belong to it. Once the take is compared, the **words of every
 report are transcribed in the background**, in turn, the open one first (each sloka's own
 stretch of the recording), and their word scores filled in as they arrive — so Next opens a
-report with its words ready, and the session's scores cover every sloka. Tick another sloka
-after a take and it is compared straight away, without recording again.
+report with its words ready, and the session's scores cover every sloka. Better still, turn
+the pages **while recording**: with several slokas, Previous / Next in the sloka panel work
+during the take, and each turn sends the stretch recorded since the last one — the sloka
+that was in view — to the speech worker at once, as a background job that touches neither
+the recording nor the page ("Listening to CH12-03 in the background…" under the timer).
+Afterwards each report's stretch of the take takes those words when the recorded stretch
+overlaps it well enough, so the words are there the moment the results open. The speech
+model is loaded in its worker as soon as a sloka is ready to be recited, so neither the
+recording nor the page feels the loading — the worker is its own thread, and the recording
+runs on the audio thread. Tick another
+sloka after a take and it is compared straight away, without recording again.
 You can also tick slokas in the Library and press "Self Evaluation with selected".
 
 *Different lengths.* A sloka does not have to be as long as your recording. When one is

@@ -528,6 +528,7 @@ canvas { display: block; }
 .rec-status { display: flex; flex-direction: column; }
 .rec-label { font-weight: 600; }
 .rec-timer { font-size: 1.4rem; color: var(--muted); }
+.rec-note { margin-top: 2px; color: var(--accent-strong); }
 .btn-record {
   position: relative; width: 72px; height: 72px; border-radius: 50%; border: 0;
   background: var(--record); cursor: pointer; display: grid; place-items: center; flex: none;

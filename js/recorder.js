@@ -112,6 +112,15 @@ export class Recorder extends EventTarget {
 
   get elapsed() { return this.active ? this.ctx.currentTime - this.startTime : 0; }
 
+  // The audio captured so far, as one buffer (a copy; the processor's last partial block is
+  // not in it), for work that cannot wait for stop.
+  snapshot() {
+    const samples = new Float32Array(this.length);
+    let o = 0;
+    for (const c of this.chunks) { samples.set(c, o); o += c.length; }
+    return { samples, sampleRate: this.ctx.sampleRate, duration: samples.length / this.ctx.sampleRate };
+  }
+
   async stop() {
     if (!this.active) return null;
     this.active = false;

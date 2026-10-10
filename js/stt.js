@@ -78,6 +78,7 @@ export class Transcriber {
     const job = this.queue.shift();
     this.running = job;
     this._ensure();
+    if (job.warm) { this.worker.postMessage({ id: job.id, type: 'warm', tier: job.tier, device: job.device, language: job.language }); return; }
     const samples = job.background ? job.samples.slice() : job.samples; // a background job keeps a copy in case it has to give way
     job.samples = job.background ? job.samples : null;
     this.worker.postMessage({ id: job.id, type: 'transcribe', samples, language: job.language, tier: job.tier, device: job.device }, [samples.buffer]);
@@ -159,6 +160,18 @@ export class Transcriber {
         if (i < 0) this.queue.push(job); else this.queue.splice(i, 0, job);
         if (this.running && this.running.background) this._yield(this.running);
       }
+      this._pump();
+    });
+  }
+
+  // Loads a tier's model in the worker ahead of use and runs a second of silence through
+  // it (the GPU compiles its shaders on the first run), as a background job that gives way
+  // to real work. Resolves with { warmed, tier, device }; a tier the browser
+  // cannot run rejects, which is the same answer a transcription would give.
+  warm({ tier, device = null, language = null }) {
+    return new Promise((resolve, reject) => {
+      const job = { id: ++this.seq, warm: true, samples: new Float32Array(0), tier, device, language, resolve, reject, done: false, killTimer: null, background: true, yielded: false, next: null };
+      this.queue.push(job);
       this._pump();
     });
   }
