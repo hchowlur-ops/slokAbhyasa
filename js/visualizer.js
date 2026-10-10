@@ -5,10 +5,14 @@ export function cssVar(name, fallback = '#888') {
   return v || fallback;
 }
 
+// null when the canvas has no layout (hidden, or in a folded card): nothing can be drawn,
+// and sizing it from its own pixel width would multiply it by the device-pixel ratio on
+// every draw until its buffers can no longer be allocated.
 export function fitCanvas(canvas) {
   const dpr = window.devicePixelRatio || 1;
-  const w = canvas.clientWidth || canvas.width;
-  const h = canvas.clientHeight || canvas.height;
+  if (!canvas.clientWidth) return null;
+  const w = canvas.clientWidth;
+  const h = canvas.clientHeight || canvas.height / dpr;
   const W = Math.max(1, Math.round(w * dpr));
   const H = Math.max(1, Math.round(h * dpr));
   if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
@@ -38,7 +42,9 @@ function peaksOf(canvas, samples, cols) {
 
 // Static waveform with a played-portion highlight and a cursor line.
 export function drawWaveform(canvas, samples, { progress = 0 } = {}) {
-  const { ctx, w, h } = fitCanvas(canvas);
+  const fit = fitCanvas(canvas);
+  if (!fit) return;
+  const { ctx, w, h } = fit;
   ctx.clearRect(0, 0, w, h);
   ctx.fillStyle = cssVar('--wave-bg');
   roundRect(ctx, 0, 0, w, h, 10);
@@ -69,7 +75,9 @@ export function drawWaveform(canvas, samples, { progress = 0 } = {}) {
 
 // Scrolling bars of recent chunk peaks, newest on the right.
 export function drawLiveWave(canvas, peaks) {
-  const { ctx, w, h } = fitCanvas(canvas);
+  const fit = fitCanvas(canvas);
+  if (!fit) return;
+  const { ctx, w, h } = fit;
   ctx.clearRect(0, 0, w, h);
   ctx.fillStyle = cssVar('--wave-bg');
   roundRect(ctx, 0, 0, w, h, 10);
@@ -174,7 +182,9 @@ export class ComparisonChart {
   }
 
   draw() {
-    const { ctx, w, h } = fitCanvas(this.canvas);
+    const fit = fitCanvas(this.canvas);
+    if (!fit) return;
+    const { ctx, w, h } = fit;
     ctx.clearRect(0, 0, w, h);
     ctx.fillStyle = cssVar('--chart-bg');
     roundRect(ctx, 0, 0, w, h, 12);

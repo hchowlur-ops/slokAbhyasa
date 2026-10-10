@@ -172,8 +172,8 @@ slokas you had ticked there.
 2. Record your attempt once. If you wear headphones you can have the previewed sloka play
    while you record. The one recording is compared with every ticked sloka. The panel above
    the record button shows the sloka in view — Previous / Next with several ticked — with
-   its text; "Show the slokas' text during Self Evaluation" in Settings leaves the text out
-   and keeps the name and the play button.
+   its text; with "Show the slokas' text during Self Evaluation" off in Settings the panel
+   lists only the names of the ticked slokas (four, the rest in a tooltip), with no paging.
 3. Read the results (one report per sloka, see "Several slokas at once" below). As soon as
    they appear, steps 1 and 2 fold up into their heads — "1 sloka ticked", "Recorded 0:21 ·
    open to record again" — so the report is what you see; click a head to open that step
@@ -447,7 +447,8 @@ A memory test drawn from your library.
    shown"** and each sloka's text (the text typed in its details, else its transcript in the
    chosen language) is shown in the panel above the record button, one sloka in view with
    Previous / Next. Switch "Show the slokas' text while reciting a quiz" off in Settings and
-   the step becomes **"Recite from memory"** with only the names shown. A running quiz is the
+   the step becomes **"Recite from memory"** with only the names listed (four, the rest in
+   a tooltip). A running quiz is the
    **Quiz** page: the sidebar keeps "Quiz" lit and the title reads Quiz; "Leave quiz" returns
    to the list of quizzes, and opening Self Evaluation from the sidebar leaves the quiz too. Then the
    results open laid out as in Self Evaluation, with the quiz's own block on top.

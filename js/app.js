@@ -1727,7 +1727,6 @@ function updateRecLabel() {
   if (practiceRecorder && practiceRecorder.active) return;
   const n = practice.selection.length;
   $('#practice-rec').disabled = !practice.base || quizScoring;
-  setHidden($('#practice-base-none'), !!practice.base || !!practice.quiz);
   $('#practice-rec-label').textContent = !n ? (practice.quiz ? 'None of this quiz\'s slokas is in the library any more' : 'Choose a sloka first')
     : !practice.base ? 'Loading sloka…'
       : quizScoring ? 'Scoring the quiz…'
@@ -2267,25 +2266,39 @@ async function renderSlokaTexts() {
   const i = currentTextIndex(items);
   setHidden(host, i < 0);
   if (i < 0) return;
-  const it = items[i];
   const token = ++slokaTextsToken;
   $('#practice-texts-title').textContent = practice.quiz ? 'The slokas of this quiz' : items.length > 1 ? 'The ticked slokas' : 'The sloka';
-  $('#practice-texts-pos').textContent = items.length > 1 ? `${i + 1} of ${items.length}` : '';
-  for (const sel of ['#practice-texts-prev', '#practice-texts-next']) setHidden($(sel), items.length < 2);
+  const withText = textShown();
+  setHidden($('#practice-text'), !withText);
+  setHidden($('#practice-text-names'), withText);
+  for (const sel of ['#practice-texts-prev', '#practice-texts-next']) setHidden($(sel), !withText || items.length < 2);
+  $('#practice-texts-pos').textContent = withText && items.length > 1 ? `${i + 1} of ${items.length}` : '';
+  if (!withText) {
+    // the names alone: four at most, all of them in the tooltip
+    const names = items.map((it) => it.name);
+    const el = $('#practice-text-names');
+    el.textContent = names.slice(0, 4).join(', ') + (names.length > 4 ? ` and ${names.length - 4} more` : '');
+    el.title = names.length > 4 ? names.join(', ') : '';
+    return;
+  }
+  const it = items[i];
   $('#practice-texts-prev').disabled = i <= 0;
   $('#practice-texts-next').disabled = i >= items.length - 1;
   $('#practice-text-name').textContent = it.folder ? `${it.name} · ${it.folder}` : it.name;
   for (const sel of ['#practice-texts-play', '#practice-texts-speed', '#practice-text-time']) setHidden($(sel), !playShown());
   const body = $('#practice-text-body');
-  setHidden(body, !textShown());
-  if (!textShown()) return;
+  const show = (text) => {
+    body.textContent = text ? withDandas(text) : 'No text yet: transcribe this sloka, or type its text under Details in the Library.';
+    body.classList.toggle('muted', !text);
+  };
+  const cached = practice.bases.get(it.id);
+  if (cached) { show(slokaTextOf(cached)); return; } // a sloka already loaded: no "Loading…" flicker when paging
   body.textContent = 'Loading…';
   body.classList.add('muted');
   let text = '';
   try { text = slokaTextOf(await ensureBase(it.id)); } catch { text = ''; }
   if (token !== slokaTextsToken) return;
-  body.textContent = text ? withDandas(text) : 'No text yet: transcribe this sloka, or type its text under Details in the Library.';
-  body.classList.toggle('muted', !text);
+  show(text);
 }
 function stepText(delta) {
   const items = slokaTextItems();
@@ -3069,8 +3082,10 @@ $('#practice-again').addEventListener('click', () => {
 const FOLDING_STEPS = ['#practice-step1', '#practice-step2'];
 function setStepFolded(sel, folded) {
   const card = $(sel);
+  const was = card.classList.contains('collapsed');
   card.classList.toggle('collapsed', folded);
   $('.step-head', card).setAttribute('aria-expanded', folded ? 'false' : 'true');
+  if (was && !folded) redrawAll(); // its canvases were skipped while it was folded
 }
 for (const sel of FOLDING_STEPS) {
   const head = $('.step-head', $(sel));

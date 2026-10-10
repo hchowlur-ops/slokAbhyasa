@@ -322,7 +322,6 @@ canvas { display: block; }
 /* the unified perform block */
 .speed-chips { gap: 4px; }
 .speed-chips .chip { padding: 3px 9px; font-size: 0.8rem; }
-#practice-base-none { margin: 0 0 14px; }
 .quiz-setup { display: flex; align-items: center; gap: 12px 18px; flex-wrap: wrap; margin-bottom: 14px; }
 .quiz-setup .field-label { margin: 0; }
 .quiz-choose { margin-top: 0; padding-top: 0; border-top: 0; }
@@ -934,6 +933,7 @@ canvas { display: block; }
 .quiz-texts { margin: 0 0 16px; padding: 12px 14px 14px; border-radius: 14px; background: var(--surface-2); border: 1px solid var(--border); border-left: 4px solid var(--gold); }
 .quiz-texts-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .quiz-text { min-width: 0; }
+.quiz-text-names { font-weight: 600; font-size: 1.05rem; line-height: 1.6; cursor: default; }
 .quiz-text-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
 .quiz-text-top .btn-play { width: 38px; height: 38px; flex: none; }
 .quiz-text-top .btn-play svg { width: 19px; height: 19px; }
