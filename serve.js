@@ -24,6 +24,7 @@ import { readMeta, writeMeta, removeMeta, moveMeta, ensureMeta, sanitizeMeta, au
 import { normalizeStore, pickTranscript, putInStore, removeFromStore, shiftStore, transcriptToText, applyTextEdit, publicStore } from './js/transcripts.js';
 import { transliterateTranscript } from './js/translit.js';
 import { assessmentsFromQuiz, assessmentFromSession, byDateDesc } from './js/reports.js';
+import { chandasForRecord } from './js/chandas.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const DATA = resolveDataDir(ROOT);
@@ -232,6 +233,18 @@ const textPath = (rec) => path.join(LIB, ...rec.file.replace(/\.wav$/i, '.txt').
 // Reads the stored transcripts (one per language; see js/transcripts.js). If <name>.txt
 // was edited by hand more recently than the JSON, its text wins for the current language
 // (timings are kept when the line count still matches the phrases).
+// The chandas (metre) in a sloka's details follows its text: recomputed when a transcript
+// is stored (and when its typed text changes, in the meta handler). Returns the details.
+async function refreshChandas(rec, store) {
+  const meta = await ensureMeta(rec, audioPath(rec));
+  const chandas = chandasForRecord({ name: rec.name, meta, store });
+  const same = (a, b) => JSON.stringify(a ? { ...a, at: null } : null) === JSON.stringify(b ? { ...b, at: null } : null);
+  if (same(meta.chandas || null, chandas)) return meta;
+  meta.chandas = chandas;
+  await writeMeta(audioPath(rec), meta);
+  return meta;
+}
+
 async function readTranscripts(rec) {
   const jp = transcriptPath(rec);
   const tp = textPath(rec);
@@ -844,7 +857,8 @@ async function handleApi(req, res, url) {
       const kept = !primary && !!pickTranscript(current, body.language);
       const store = kept ? current : putInStore(current, body, { primary });
       if (!kept) await writeTranscripts(rec, store);
-      return sendJson(res, 200, { ok: true, kept: !!kept, textFile: path.basename(textPath(rec)), ...publicStore(store) });
+      const meta = kept ? null : await refreshChandas(rec, store); // the metre follows the words
+      return sendJson(res, 200, { ok: true, kept: !!kept, textFile: path.basename(textPath(rec)), ...publicStore(store), ...(meta ? { meta } : {}) });
     }
     if (req.method === 'DELETE') {
       const language = url.searchParams.get('language');
@@ -868,6 +882,7 @@ async function handleApi(req, res, url) {
       const input = req.method === 'PATCH' ? body : { text: null, voice: null, measured: null, capture: null, ...body };
       const meta = sanitizeMeta(input, current);
       meta.name = rec.name; // the name is the library's
+      meta.chandas = chandasForRecord({ name: rec.name, meta, store: await readTranscripts(rec) }); // the metre follows the text
       await writeMeta(audioPath(rec), meta);
       // the bext chunk describes the sloka; refresh it when what it says has changed
       if (bextDescription(meta) !== bextDescription(current)) {

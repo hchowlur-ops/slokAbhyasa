@@ -283,6 +283,7 @@
                   <button class="chip" type="button" data-speed="2" title="Double speed">2×</button>
                 </div>
               </div>
+              <div class="chandas-hint" id="practice-text-chandas" hidden></div>
               <div class="stt-text quiz-text-body" id="practice-text-body"></div>
             </div>
           </div>
@@ -618,6 +619,13 @@
         <p class="muted small">The chosen sloka is shown above the record button with its name, a play button and its text; with several ticked, Previous / Next page through them. Switched off, the panel lists only the names of the ticked slokas (four, the rest in a tooltip).</p>
         <label class="toggle"><input type="checkbox" id="settings-quiz-text" /><span>Show the slokas' text while reciting a quiz</span></label>
         <p class="muted small" id="settings-quiz-text-note">Each chosen sloka's text (the text typed in its details, else its transcript in the chosen language) is shown above the record button, one sloka in view with Previous / Next, and the step is titled "Recite with the text shown". Switched off, the step is "Recite from memory" and only the names are listed (four, the rest in a tooltip). The slokas' recordings stay hidden either way until you have recorded.</p>
+        <div class="settings-row chandas-row">
+          <label class="toggle"><input type="checkbox" id="settings-chandas-hint" /><span>Show a hint of the chandas (metre)</span></label>
+          <span class="field-label">Write a sloka in</span>
+          <label class="toggle"><input type="radio" name="sloka-lines" value="2" /><span>two lines · the half-verses</span></label>
+          <label class="toggle"><input type="radio" name="sloka-lines" value="4" /><span>four lines · the pādas</span></label>
+        </div>
+        <p class="muted small">The chandas of a sloka is read from its text: anuṣṭubh (4 pādas of 8 syllables, 32) or the triṣṭubh family (4 pādas of 11, 44: indravajrā, upendravajrā, upajāti), the Gītā's own list deciding when a sloka's name says which verse it is. The hint names it under the sloka in Self Evaluation and quizzes, with the pattern in its tooltip; a transcript without line breaks is written out at the pāda or half-verse boundaries; and the results count the syllables heard pāda by pāda.</p>
       </div>
       </div>
 

@@ -934,6 +934,10 @@ canvas { display: block; }
 .quiz-texts-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .quiz-text { min-width: 0; }
 .quiz-text-names { font-weight: 600; font-size: 1.05rem; line-height: 1.6; cursor: default; }
+.chandas-hint { margin: -2px 0 8px; font-size: 0.85rem; font-weight: 600; letter-spacing: .02em; color: var(--gold-deep); cursor: help; }
+:root[data-theme="dark"] .chandas-hint { color: var(--gold); }
+.phon-padas { margin-top: 4px; }
+.chandas-row { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--border); }
 .quiz-text-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
 .quiz-text-top .btn-play { width: 38px; height: 38px; flex: none; }
 .quiz-text-top .btn-play svg { width: 19px; height: 19px; }

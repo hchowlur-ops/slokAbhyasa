@@ -207,7 +207,9 @@ export const ERROR_LABEL = {
 //   syllables – akṣaras missing, added or unrecognisable, out of the text's
 //   phonemes   – consonants, marks and vowel identity in the akṣaras that aligned
 //   vowels     – vowel length in the akṣaras whose vowel was the right one
-export function comparePhonology(refText, heardText) {
+//   padas      – with `perPada` (8 for anuṣṭubh, 11 for the triṣṭubh family), per pāda of
+//                the text: its akṣaras and how many were heard, missing, added, replaced
+export function comparePhonology(refText, heardText, { perPada = null } = {}) {
   const R = syllabify(refText);
   const H = syllabify(heardText);
   if (!R.length) return null;
@@ -220,12 +222,20 @@ export function comparePhonology(refText, heardText) {
   const errors = {};
   const examples = [];
   const aligned = [];
+  // four pādas; a text with syllables beyond the metre's count keeps them in the fourth
+  const padas = perPada ? Array.from({ length: Math.max(1, Math.min(4, Math.ceil(refCount / perPada))) }, () => ({ ref: 0, heard: 0, missing: 0, added: 0, replaced: 0 })) : null;
+  let lastRef = 0; // the pāda an added akṣara belongs to: that of the text's akṣara before it
+  const pada = (r) => (padas ? padas[Math.min(padas.length - 1, Math.floor(r / perPada))] : null);
   for (const p of pairs) {
-    if (p.r < 0) { added++; aligned.push({ ref: '', heard: H[p.h].text, kind: 'added' }); continue; }
-    if (p.h < 0) { missing++; aligned.push({ ref: R[p.r].text, heard: '', kind: 'missing' }); continue; }
+    if (p.r >= 0) lastRef = p.r;
+    const pd = pada(lastRef);
+    if (p.r < 0) { added++; if (pd) { pd.added++; pd.heard++; } aligned.push({ ref: '', heard: H[p.h].text, kind: 'added' }); continue; }
+    if (pd) pd.ref++;
+    if (p.h < 0) { missing++; if (pd) pd.missing++; aligned.push({ ref: R[p.r].text, heard: '', kind: 'missing' }); continue; }
+    if (pd) pd.heard++;
     const c = compareAksharas(R[p.r], H[p.h]);
     // less than half its sounds right: another syllable altogether, not a slip in this one
-    if (c.credit < 0.5) { unrelated++; aligned.push({ ref: R[p.r].text, heard: H[p.h].text, kind: 'replaced' }); continue; }
+    if (c.credit < 0.5) { unrelated++; if (pd) pd.replaced++; aligned.push({ ref: R[p.r].text, heard: H[p.h].text, kind: 'replaced' }); continue; }
     credit += c.credit * c.n; n += c.n;
     if (c.vowelLength !== null) { vowelsCompared++; if (!c.vowelLength) vowelSlips++; }
     for (const e of c.errors) {
@@ -243,5 +253,6 @@ export function comparePhonology(refText, heardText) {
     errors,
     examples,
     aligned,
+    padas,
   };
 }

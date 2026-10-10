@@ -376,12 +376,35 @@ phonemes, aligned akṣara by akṣara, and every slip is named — a dental for
 missing aspiration, a short vowel for a long one, a dropped visarga, a syllable left out.
 That breakdown is shown under the transcripts.
 
-Wherever a śloka's text is shown — the preview in Teach and Self Evaluation, a quiz's text
-panel, the "Sloka" row of the results, the Library — it is set line by line with its
+**Chandas.** Every sloka's **metre** is read from its text (`js/chandas.js`): the akṣaras
+are counted and weighed — laghu or guru by vowel length, anusvāra, visarga, a closing
+consonant or a following cluster — and the family found: **anuṣṭubh**, 4 pādas of 8
+syllables (32), with its cadence checked (5th light, 6th heavy, 7th heavy in pādas 1 and 3
+and light in 2 and 4: *pathyā*, else a *vipulā*), or the **triṣṭubh family**, 4 pādas of
+11 (44), each pāda matched against indravajrā (G G L G G L L G L G G) and upendravajrā
+(L G L G G L L G L G G) — all of one kind, or **upajāti** when mixed. When a sloka's name
+says which Gītā verse it is ("CH12-04", "ch2-5"), the Gītā's own list decides the family:
+everything is anuṣṭubh except 2.5–8, 20, 22, 29, 70; 8.9–11, 28; 9.20–21; 11.15–50; 15.2–5,
+15. The result is kept in the sloka's details (`chandas`: family, name, syllables per pāda,
+how many the text has, the laghu/guru pattern, where the text came from) and is recomputed
+whenever a transcript or the typed text is stored; `node tools/chandas.mjs` does the whole
+library at once (`--dry` to look). The Library tags each sloka with it, in amber when the
+text's count is not the metre's (a transcript that lost a syllable).
+
+The chandas is used in three places. A **hint** under the sloka in Self Evaluation and
+quizzes ("Anuṣṭubh · 4 pādas of 8 syllables (32) · pathyā"; the pattern in its tooltip),
+also with the names when the text is hidden — "Show a hint of the chandas" in Settings
+switches it off. A transcript, which has no line breaks, is **written out in its lines** —
+two (the half-verses) or four (the pādas), chosen in Settings — broken between words at the
+boundary nearest the pāda count, so Whisper's spacing can put a break a syllable off but
+never inside a word; text typed in lines is left as typed. And the results' sounds-and-
+syllables breakdown counts the **syllables heard pāda by pāda** ("pāda 3: 7 of 8 (1
+missing)"), so a dropped syllable is placed in its pāda.
+
+Wherever a śloka's text is shown — the preview in Teach, the sloka panel in Self Evaluation
+and quizzes, the "Sloka" row of the results, the Library — it is set line by line with its
 daṇḍas: ॥ after the last line, । after the first of two lines or the second of four (| and
-|| for romanised text). Type the text in its two or four lines under Details for this; a
-transcript, which has no lines, gets only the final ॥, and daṇḍas already in the text are
-not doubled.
+|| for romanised text), and daṇḍas already in the text are not doubled.
 
 Two Sanskrit spellings are read as the sounds they are before the strict comparison.
 Whisper has seen very little Sanskrit and writes Devanagari the Hindi way, so a recited
@@ -544,7 +567,8 @@ defaults for the chosen learner; and the "Ignore tolerances" switch that turns e
 within/outside verdict off, leaving scores and grades), **Speech recognition** (the language the words are
 heard in, the model, and whether transcripts are made automatically — the same controls
 that sit beside every transcript panel), and **Sloka text** (whether the slokas' text is
-shown during Self Evaluation and while reciting a quiz; both on by default). Beside them, "Why these defaults" explains how the
+shown during Self Evaluation and while reciting a quiz, both on by default; the chandas hint;
+and whether a sloka is written in two lines or four). Beside them, "Why these defaults" explains how the
 weights and tolerances are tuned for Sanskrit śloka recitation and lists the references
 (reproduced under "References" below). Under both columns a short note, "Whisper · how the
 words are heard", says that the model is downloaded once and runs on this computer, that

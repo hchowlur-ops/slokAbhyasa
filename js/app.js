@@ -16,6 +16,7 @@ import { trimSilence } from './dsp/trim.js';
 import { Transcriber, STT_LANGUAGES, STT_LANGUAGE_CODES, STT_TIERS, sttLanguageLabel, sttLanguageTag, sttTierLabel, isStopped } from './stt.js';
 import { normalizeStore, putInStore, pickTranscript, availableLanguages } from './transcripts.js';
 import { transliterateTranscript } from './translit.js';
+import { identifyChandas, layoutSloka, padaBreaks, chandasLabel, chandasPattern, gitaVerse, gitaFamily } from './chandas.js';
 import { periodRange, shiftPeriod, inRange, isoDate, slokaRows, summarize, KIND_LABEL } from './reports.js';
 import { diffWords, diffSummary, compareWords, tokenizeTranscript, windowedTokens, tokenize, dandaMarks, withDandas } from './textdiff.js';
 import { AGE_GROUPS, VOICE_TYPES, STYLE_MODES, DEFAULT_STYLE_MODE, presetsFor, ADULT_PRESET, compareModeFor, speakerLabel, ageGroupLabel, styleMode, voiceStats, deriveText } from './meta.js';
@@ -410,7 +411,15 @@ async function runTranscription(samples, sampleRate, progress, what, signal, { l
 const bgQueue = []; // { rec, getAudio: async () => ({ samples, sampleRate }), languages }
 let bgRun = null; // { ctrl } while the queue is being worked through
 const transcriptListeners = new Set(); // fn(id, store): a sloka's stored transcripts changed
-const notifyTranscripts = (id, store) => { for (const fn of transcriptListeners) fn(id, store); };
+const notifyTranscripts = (id, store) => {
+  if (store && store.meta) { // the server's details came back with the transcript (its chandas follows the words)
+    const r = (libraryCache || []).find((x) => x.id === id);
+    if (r) r.meta = store.meta;
+    const b = practice.bases.get(id);
+    if (b && b.record) b.record.meta = store.meta;
+  }
+  for (const fn of transcriptListeners) fn(id, store);
+};
 const langName = (code) => sttLanguageLabel(code).split(' · ')[0];
 
 // The supported languages a store lacks, the chosen one first.
@@ -509,11 +518,17 @@ function renderTranscriptText(host, t, toks, flagged, cls, play, dimmed = null, 
     const { lines, marks } = dandaMarks(t.text);
     const counts = lines.map((l) => tokenize(l).length);
     const total = counts.reduce((x, y) => x + y, 0);
-    if (lines.length && total === toks.length) {
+    if (lines.length > 1 && total === toks.length) {
       let acc = 0;
       lines.forEach((l, li) => { acc += counts[li]; lineEnd.set(acc - 1, { mark: marks.get(li) || '', last: li === lines.length - 1 }); });
     } else if (lines.length) {
-      lineEnd.set(toks.length - 1, { mark: marks.get(lines.length - 1), last: true });
+      // one line: broken at the pāda or half-verse boundaries by the metre, between words
+      const breaks = padaBreaks(toks.map((tok) => tok.word), (t.perPada || identifyChandas(t.text).perPada), slokaLines);
+      const n = breaks.length + 1;
+      const latin = !/[\u0900-\u0DFF]/.test(t.text);
+      const markOf = (li) => (li === n - 1 ? (latin ? '||' : '॥') : (n === 2 && li === 0) || (n === 4 && li === 1) ? (latin ? '|' : '।') : '');
+      breaks.forEach((b, li) => lineEnd.set(b, { mark: markOf(li), last: false }));
+      lineEnd.set(toks.length - 1, { mark: markOf(n - 1), last: true });
     }
   }
   let ci = null;
@@ -537,7 +552,7 @@ function renderTranscriptText(host, t, toks, flagged, cls, play, dimmed = null, 
     const le = lineEnd.get(i);
     if (le) {
       if (le.mark) { const d = document.createElement('span'); d.className = 'danda'; d.textContent = le.mark; span.appendChild(d); }
-      if (!le.last) { host.appendChild(document.createElement('br')); span = null; }
+      if (!le.last) { host.appendChild(document.createElement('br')); span = null; return; } // the next word opens a new chunk span
     }
     span.appendChild(document.createTextNode(' '));
   });
@@ -2234,6 +2249,40 @@ let evalTextOn = (() => { try { return localStorage.getItem(EVAL_TEXT_KEY) !== '
   bind('#settings-quiz-text', QUIZ_TEXT_KEY, () => quizTextOn, (v) => { quizTextOn = v; });
   bind('#settings-eval-text', EVAL_TEXT_KEY, () => evalTextOn, (v) => { evalTextOn = v; });
 }
+// The chandas hint under a sloka, and how many lines a sloka is written in (2: the
+// half-verses, 4: the pādas).
+const CHANDAS_HINT_KEY = 'tutor-chandas-hint';
+const SLOKA_LINES_KEY = 'tutor-sloka-lines';
+let chandasHintOn = (() => { try { return localStorage.getItem(CHANDAS_HINT_KEY) !== '0'; } catch { return true; } })();
+let slokaLines = (() => { try { return localStorage.getItem(SLOKA_LINES_KEY) === '4' ? 4 : 2; } catch { return 2; } })();
+{
+  const cb = $('#settings-chandas-hint');
+  cb.checked = chandasHintOn;
+  cb.addEventListener('change', () => {
+    chandasHintOn = cb.checked;
+    try { if (chandasHintOn) localStorage.removeItem(CHANDAS_HINT_KEY); else localStorage.setItem(CHANDAS_HINT_KEY, '0'); } catch { /* ignore */ }
+    renderSlokaTexts();
+  });
+  for (const r of $$('input[name="sloka-lines"]')) {
+    r.checked = Number(r.value) === slokaLines;
+    r.addEventListener('change', () => {
+      if (!r.checked) return;
+      slokaLines = Number(r.value) === 4 ? 4 : 2;
+      try { if (slokaLines === 2) localStorage.removeItem(SLOKA_LINES_KEY); else localStorage.setItem(SLOKA_LINES_KEY, '4'); } catch { /* ignore */ }
+      renderSlokaTexts();
+      if (practice.base && practice.base.transcript) practicePanel.set(practice.base.transcript, practice.base.transcripts); // redrawn in its new lines
+      if (sttPractice.heard) renderTranscriptDiff();
+    });
+  }
+}
+// The chandas of a record: its details' (the server keeps it with the text), else read from
+// the text now, the Gītā table deciding the family when the name says which verse it is.
+function chandasOf(record, text) {
+  if (record && record.meta && record.meta.chandas && record.meta.chandas.family) return record.meta.chandas;
+  if (!text) return null;
+  const v = record ? gitaVerse(record.name) : null;
+  return identifyChandas(text, { expected: v ? gitaFamily(v.chapter, v.verse) : null });
+}
 const slokaTextOf = (base) => {
   const meta = base.record && base.record.meta;
   if (meta && meta.text && meta.text.body && meta.text.origin !== 'transcript') return meta.text.body;
@@ -2275,7 +2324,8 @@ async function renderSlokaTexts() {
   $('#practice-texts-pos').textContent = withText && items.length > 1 ? `${i + 1} of ${items.length}` : '';
   if (!withText) {
     // the names alone: four at most, all of them in the tooltip
-    const names = items.map((it) => it.name);
+    const byId = new Map((libraryCache || []).map((r) => [r.id, r]));
+    const names = items.map((it) => { const ch = chandasHintOn ? chandasOf(byId.get(it.id), null) : null; return ch && ch.name ? `${it.name} (${ch.name.toLowerCase()})` : it.name; });
     const el = $('#practice-text-names');
     el.textContent = names.slice(0, 4).join(', ') + (names.length > 4 ? ` and ${names.length - 4} more` : '');
     el.title = names.length > 4 ? names.join(', ') : '';
@@ -2287,18 +2337,26 @@ async function renderSlokaTexts() {
   $('#practice-text-name').textContent = it.folder ? `${it.name} · ${it.folder}` : it.name;
   for (const sel of ['#practice-texts-play', '#practice-texts-speed', '#practice-text-time']) setHidden($(sel), !playShown());
   const body = $('#practice-text-body');
-  const show = (text) => {
-    body.textContent = text ? withDandas(text) : 'No text yet: transcribe this sloka, or type its text under Details in the Library.';
+  const hintEl = $('#practice-text-chandas');
+  const show = (base) => {
+    const text = slokaTextOf(base);
+    const ch = chandasOf(base.record, text);
+    const hint = chandasHintOn && ch && ch.family ? chandasLabel(ch) : '';
+    hintEl.textContent = hint;
+    hintEl.title = hint ? chandasPattern(ch) : '';
+    setHidden(hintEl, !hint);
+    body.textContent = text ? withDandas(layoutSloka(text, { perPada: ch ? ch.perPada : null, lines: slokaLines })) : 'No text yet: transcribe this sloka, or type its text under Details in the Library.';
     body.classList.toggle('muted', !text);
   };
   const cached = practice.bases.get(it.id);
-  if (cached) { show(slokaTextOf(cached)); return; } // a sloka already loaded: no "Loading…" flicker when paging
+  if (cached) { show(cached); return; } // a sloka already loaded: no "Loading…" flicker when paging
+  setHidden(hintEl, true);
   body.textContent = 'Loading…';
   body.classList.add('muted');
-  let text = '';
-  try { text = slokaTextOf(await ensureBase(it.id)); } catch { text = ''; }
+  let base = null;
+  try { base = await ensureBase(it.id); } catch { base = null; }
   if (token !== slokaTextsToken) return;
-  show(text);
+  if (base) show(base); else { body.textContent = 'This sloka could not be loaded.'; }
 }
 function stepText(delta) {
   const items = slokaTextItems();
@@ -3686,7 +3744,9 @@ function windowedDiff(res, baseT, heardT, baseDuration, takeDuration) {
   const dimA = new Set(A.toks.map((_, i) => i).filter((i) => !A.inside[i]));
   const dimB = new Set(B.toks.map((_, i) => i).filter((i) => !B.inside[i]));
   // the same words, as text, for the akṣara-and-phoneme comparison
-  const phonology = ai.length ? comparePhonology(ai.map((i) => A.toks[i].word).join(' '), bi.map((i) => B.toks[i].word).join(' ')) : null;
+  // pāda by pāda when the whole text was compared (the metre is read from the text itself)
+  const perPada = ai.length === A.toks.length ? identifyChandas(baseT.text).perPada : null;
+  const phonology = ai.length ? comparePhonology(ai.map((i) => A.toks[i].word).join(' '), bi.map((i) => B.toks[i].word).join(' '), { perPada }) : null;
   return { A, B, ai, bi, delA, insB, dimA, dimB, summary: cmp.summary, phonology };
 }
 
@@ -3710,6 +3770,14 @@ function renderPhonologyReport(host, ph) {
   const echoes = ph.counts.visargaEchoes ? ` · ${ph.counts.visargaEchoes} visarga${ph.counts.visargaEchoes === 1 ? '' : 's'} Whisper wrote out as "ha", read as ḥ` : '';
   p.textContent = `${ph.counts.ref} akṣaras in the text, ${ph.counts.heard} heard · ${ph.counts.missing} missing, ${ph.counts.added} added, ${ph.counts.replaced} replaced · ${parts.length ? parts.join(' · ') : 'no slips in the sounds'}${echoes}`;
   body.appendChild(p);
+  if (ph.padas && ph.padas.length > 1) {
+    const q = document.createElement('div');
+    q.className = 'muted small phon-padas';
+    const per = ph.padas[0].ref; // the text's akṣaras per pāda
+    const cells = ph.padas.map((pd, i) => `pāda ${i + 1}: ${pd.heard} of ${pd.ref}${pd.missing ? ` (${pd.missing} missing)` : ''}${pd.added ? ` (+${pd.added})` : ''}`);
+    q.textContent = `${per === 11 ? 'Triṣṭubh' : per === 8 ? 'Anuṣṭubh' : 'Pādas'} · syllables heard per pāda — ${cells.join(' · ')}`;
+    body.appendChild(q);
+  }
   if (ph.examples.length) {
     const ul = document.createElement('ul');
     for (const e of ph.examples) {
@@ -3767,6 +3835,7 @@ function renderLibTags(host, r) {
   // a recording whose voice barely rises above the room blurs every comparison against it
   if (meta.measured && meta.measured.snrDb != null && meta.measured.snrDb < 25) tag(`noisy · ${Math.round(meta.measured.snrDb)} dB`, 'warn', `The voice is only ${Math.round(meta.measured.snrDb)} dB above the room noise; evaluations against this recording are less reliable. Record it again in a quiet moment (Learn), then delete this one.`);
   if (meta.text && meta.text.aksharaCount) tag(`${meta.text.aksharaCount} akṣaras`);
+  if (meta.chandas && meta.chandas.family) tag(meta.chandas.exact ? meta.chandas.name : `${meta.chandas.name} · ${meta.chandas.syllables} of ${meta.chandas.expectedSyllables} syllables`, meta.chandas.exact ? '' : 'warn', `${chandasLabel(meta.chandas)} · from the ${meta.chandas.source}`);
   if (meta.voice && meta.voice.medianF0Hz) tag(`${Math.round(meta.voice.medianF0Hz)} Hz`);
   setHidden(host, !host.childElementCount);
 }

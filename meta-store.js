@@ -162,6 +162,16 @@ export async function ensureMeta(rec, wavPath) {
 
 // Validates the parts of a sidecar a client may set. Server-owned fields (id, audio,
 // software, createdAt) are kept from `current`.
+function sanitizeChandas(c) {
+  const verse = c.verse && typeof c.verse === 'object' && num(c.verse.chapter) && num(c.verse.verse) ? { chapter: c.verse.chapter, verse: c.verse.verse } : null;
+  return {
+    family: str(c.family, 20) || null, name: str(c.name, 40) || null, perPada: num(c.perPada), padas: 4,
+    syllables: num(c.syllables), expectedSyllables: num(c.expectedSyllables), exact: !!c.exact, form: str(c.form, 20) || null,
+    weights: str(c.weights, 200) || '', confidence: num(c.confidence), source: str(c.source, 20) || null, language: str(c.language, 20) || null,
+    verse, at: str(c.at, 40) || null,
+  };
+}
+
 export function sanitizeMeta(body, current) {
   const b = body && typeof body === 'object' ? body : {};
   const cur = current || {};
@@ -182,6 +192,10 @@ export function sanitizeMeta(body, current) {
     if (t) { t.origin = b.text.origin === 'transcript' ? 'transcript' : 'typed'; if (b.text.title) t.title = str(b.text.title, 120); }
     base.text = t;
   } else base.text = cur.text || null;
+  // chandas: the metre read from the text or transcript (js/chandas.js); null clears it
+  if (b.chandas === null) base.chandas = null;
+  else if (b.chandas && typeof b.chandas === 'object') base.chandas = sanitizeChandas(b.chandas);
+  else base.chandas = cur.chandas || null;
   base.voice = b.voice && typeof b.voice === 'object' ? pick(b.voice, ['medianF0Hz', 'f0P10Hz', 'f0P90Hz', 'f0RangeSemitones', 'voicedFraction', 'leadSilenceSec', 'trailSilenceSec', 'activeSec', 'tempoSylPerSec']) : cur.voice || null;
   base.measured = b.measured && typeof b.measured === 'object' ? pick(b.measured, ['durationSec', 'sampleCount', 'peakDbfs', 'rmsDbfs', 'noiseFloorDbfs', 'snrDb', 'clippedSampleCount']) : cur.measured || null;
   if (b.capture && typeof b.capture === 'object') {
