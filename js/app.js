@@ -2287,9 +2287,32 @@ function chandasOf(record, text) {
   const v = record ? gitaVerse(record.name) : null;
   return identifyChandas(text, { expected: v ? gitaFamily(v.chapter, v.verse) : null });
 }
+// The language the sloka's text is shown in (the panel in Self Evaluation and quizzes): the
+// speech-recognition language unless one is chosen here. Recognition, and so the words
+// compared, stay in the speech-recognition language.
+const TEXT_LANGUAGE_KEY = 'tutor-text-language';
+let textLanguage = (() => { try { const v = localStorage.getItem(TEXT_LANGUAGE_KEY) || ''; return STT_LANGUAGE_CODES.includes(v) ? v : ''; } catch { return ''; } })();
+{
+  const sel = $('#settings-text-language');
+  for (const l of STT_LANGUAGES) { const o = document.createElement('option'); o.value = l.code; o.textContent = l.label; sel.appendChild(o); }
+  sel.value = textLanguage;
+  sel.addEventListener('change', () => {
+    textLanguage = STT_LANGUAGE_CODES.includes(sel.value) ? sel.value : '';
+    try { if (textLanguage) localStorage.setItem(TEXT_LANGUAGE_KEY, textLanguage); else localStorage.removeItem(TEXT_LANGUAGE_KEY); } catch { /* ignore */ }
+    renderSlokaTexts();
+  });
+}
 const slokaTextOf = (base) => {
   const meta = base.record && base.record.meta;
-  if (meta && meta.text && meta.text.body && meta.text.origin !== 'transcript') return meta.text.body;
+  const typed = meta && meta.text && meta.text.body && meta.text.origin !== 'transcript' ? meta.text : null;
+  if (textLanguage) {
+    // a chosen language: the text typed in it, else the transcript in it, else what there is
+    const lang = (STT_LANGUAGES.find((l) => l.code === textLanguage) || {}).lang;
+    if (typed && typed.language === lang) return typed.body;
+    const t = transcriptIn(base.transcripts, textLanguage);
+    if (t && t.text) return t.text;
+  }
+  if (typed) return typed.body;
   return base.transcript && base.transcript.text ? base.transcript.text : '';
 };
 // The slokas the panel pages through: a quiz's, else the ticked ones; never in Teach, which

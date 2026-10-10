@@ -572,8 +572,10 @@ defaults for the chosen learner; and the "Ignore tolerances" switch that turns e
 within/outside verdict off, leaving scores and grades), **Speech recognition** (the language the words are
 heard in, the model, and whether transcripts are made automatically — the same controls
 that sit beside every transcript panel), and **Sloka text** (whether the slokas' text is
-shown during Self Evaluation and while reciting a quiz, both on by default; the chandas hint;
-and whether an anuṣṭubh sloka is written in two lines or four). Beside them, "Why these defaults" explains how the
+shown during Self Evaluation and while reciting a quiz, both on by default; the language the
+sloka's text is shown in — the speech-recognition language unless chosen, with the text typed
+in that language preferred, else the transcript in it — while recognition keeps its own
+language; the chandas hint; and whether an anuṣṭubh sloka is written in two lines or four). Beside them, "Why these defaults" explains how the
 weights and tolerances are tuned for Sanskrit śloka recitation and lists the references
 (reproduced under "References" below). Under both columns a short note, "Whisper · how the
 words are heard", says that the model is downloaded once and runs on this computer, that
