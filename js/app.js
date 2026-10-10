@@ -1891,6 +1891,7 @@ $('#practice-rec').addEventListener('click', async () => {
     practiceUI.setRecording(false);
     setListBusy(false);
     updateRecLabel();
+    renderSlokaTexts(); // the text returns
     basePlayer.pause();
     if (!raw || raw.duration < 0.5) { toast('That was too short. Try again.', 'error'); return; }
     const { take, info, changed, removedStart = 0 } = trimTake(raw, $('#practice-trim').checked);
@@ -1913,6 +1914,7 @@ $('#practice-rec').addEventListener('click', async () => {
       recSegments = { from: 0, parts: [] };
       recTextIndex = currentTextIndex(slokaTextItems());
       recNote('');
+      renderSlokaTexts(); // the text may hide while recording
       if ($('#practice-playalong').checked && $('#practice-headphones').checked) {
         basePlayer.seek(0);
         basePlayer.play();
@@ -2316,6 +2318,18 @@ let textLanguage = (() => { try { const v = localStorage.getItem(TEXT_LANGUAGE_K
     renderSlokaTexts();
   });
 }
+// Hide the sloka's text while recording (recite from memory); the name and the pages stay.
+const HIDE_TEXT_REC_KEY = 'tutor-hide-text-recording';
+let hideTextRec = (() => { try { return localStorage.getItem(HIDE_TEXT_REC_KEY) === '1'; } catch { return false; } })();
+{
+  const cb = $('#settings-hide-text-recording');
+  cb.checked = hideTextRec;
+  cb.addEventListener('change', () => {
+    hideTextRec = cb.checked;
+    try { if (hideTextRec) localStorage.setItem(HIDE_TEXT_REC_KEY, '1'); else localStorage.removeItem(HIDE_TEXT_REC_KEY); } catch { /* ignore */ }
+    renderSlokaTexts();
+  });
+}
 const slokaTextOf = (base) => {
   const meta = base.record && base.record.meta;
   const typed = meta && meta.text && meta.text.body && meta.text.origin !== 'transcript' ? meta.text : null;
@@ -2396,6 +2410,8 @@ async function renderSlokaTexts() {
   for (const sel of ['#practice-texts-play', '#practice-texts-speed', '#practice-text-time']) setHidden($(sel), !playShown());
   const body = $('#practice-text-body');
   const hintEl = $('#practice-text-chandas');
+  if (recordingNow() && hideTextRec) { setHidden(body, true); setHidden(hintEl, true); return; } // from memory: the name and the pages stay
+  setHidden(body, false);
   const show = (base) => {
     const text = slokaTextOf(base);
     const ch = chandasOf(base.record, text);

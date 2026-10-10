@@ -2,6 +2,8 @@
 // which is loaded from a CDN on first use; the model weights are downloaded once from
 // Hugging Face and cached by the browser. Audio never leaves this machine.
 
+import { resample } from './dsp/resample.js';
+
 const TRANSFORMERS_URL = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/dist/transformers.min.js';
 
 export const MODELS = {
@@ -164,7 +166,9 @@ if (typeof self !== 'undefined') self.onmessage = async (e) => {
   }
   if (msg.type !== 'transcribe') return;
   // `device` forces the CPU ('wasm') for a tier the client has learnt not to trust on the GPU.
-  const { id, samples, language, tier, device } = msg;
+  const { id, language, tier, device } = msg;
+  // the audio comes at the recorder's rate: resampled here, off the page's thread
+  const samples = msg.sampleRate && msg.sampleRate !== 16000 ? resample(msg.samples, msg.sampleRate, 16000) : msg.samples;
   const job = { id, stopped: false };
   current = job;
   // `steady` reruns the decoder with a repetition penalty and no repeated trigrams: the way

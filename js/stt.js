@@ -1,6 +1,5 @@
 // Client wrapper around the speech-to-text worker.
 
-import { resample } from './dsp/resample.js';
 
 export const STT_LANGUAGES = [
   { code: 'english', lang: 'en', label: 'English' },
@@ -81,7 +80,7 @@ export class Transcriber {
     if (job.warm) { this.worker.postMessage({ id: job.id, type: 'warm', tier: job.tier, device: job.device, language: job.language }); return; }
     const samples = job.background ? job.samples.slice() : job.samples; // a background job keeps a copy in case it has to give way
     job.samples = job.background ? job.samples : null;
-    this.worker.postMessage({ id: job.id, type: 'transcribe', samples, language: job.language, tier: job.tier, device: job.device }, [samples.buffer]);
+    this.worker.postMessage({ id: job.id, type: 'transcribe', samples, sampleRate: job.sampleRate, language: job.language, tier: job.tier, device: job.device }, [samples.buffer]);
   }
 
   // The running background job makes room for foreground work: a copy of it goes back to
@@ -149,10 +148,9 @@ export class Transcriber {
   // only when nobody is waiting (see above).
   transcribe({ samples, sampleRate, language, tier, device = null, onProgress, signal, background = false }) {
     if (signal && signal.aborted) return Promise.reject(stoppedError());
-    const x = resample(samples, sampleRate, 16000);
-    const copy = x === samples ? Float32Array.from(x) : x;
+    const copy = Float32Array.from(samples); // the worker resamples: nothing heavy on this thread
     return new Promise((resolve, reject) => {
-      const job = { id: ++this.seq, samples: copy, language, tier, device, onProgress, resolve, reject, done: false, killTimer: null, background, yielded: false, next: null };
+      const job = { id: ++this.seq, samples: copy, sampleRate, language, tier, device, onProgress, resolve, reject, done: false, killTimer: null, background, yielded: false, next: null };
       if (signal) signal.addEventListener('abort', () => this._stop(job), { once: true });
       if (background) this.queue.push(job);
       else {
