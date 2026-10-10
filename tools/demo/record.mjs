@@ -1,7 +1,7 @@
 // Records one session of the demo in headless Chrome (see README.md in this folder).
 //   node record.mjs prewarm   make Best-model transcripts for the slokas the demo shows
-//   node record.mjs 1         library, learn, teach, self evaluation
-//   node record.mjs 2         quiz and outro
+//   node record.mjs 1         home, library, learn, teach and its report, self evaluation
+//   node record.mjs 2         quiz, reports, settings and the outro
 // Output: out/<session>/frames/*.jpg and out/<session>/timeline.json
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -16,7 +16,7 @@ const session = process.argv[2] || '1';
 const CHROME = process.env.CHROME || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const DEBUG = 9340;
 const APP = process.env.APP || 'http://127.0.0.1:8787/';
-const PROFILE = path.join(os.tmpdir(), 'slokabhyasa-demo-profile'); // keeps the speech models cached between runs
+const PROFILE = process.env.PROFILE || path.join(os.tmpdir(), 'slokabhyasa-demo-profile'); // keeps the speech models cached between runs
 const AUDIO = path.join(here, 'audio');
 const NARR = path.join(here, 'narration');
 const durations = JSON.parse(fs.readFileSync(path.join(NARR, 'durations.json'), 'utf8'));
@@ -27,6 +27,9 @@ fs.mkdirSync(FRAMES, { recursive: true });
 const W = 1440;
 const H = 900;
 const GITHUB = 'github.com/hchowlur-ops/slokAbhyasa';
+const ATTEMPT_SECONDS = 14.7; // attempt-03.wav before its silent tail
+const QUIZ_TAKE = process.env.QUIZ_TAKE || 'quiz-take-single.wav';
+const QUIZ_TAKE_SECONDS = Number(process.env.QUIZ_TAKE_SECONDS || 16.4);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
@@ -36,10 +39,9 @@ const lib = await (await fetch(`${APP}api/baselines`)).json();
 const byName = (n) => { const r = lib.find((x) => x.name.toLowerCase() === n.toLowerCase()); if (!r) throw new Error(`no sloka named ${n}`); return r; };
 const S = { c1: byName('CH12-01'), c2: byName('CH12-02'), c3: byName('CH12-03'), c4: byName('CH12-04'), c5: byName('CH12-05') };
 const LIBDIR = path.join(resolveDataDir(path.resolve(here, '..', '..')), 'library');
-const wavOf = (r) => path.join(LIBDIR, ...r.file.split('/'));
+export const wavOf = (r) => path.join(LIBDIR, ...r.file.split('/'));
 
 // ---------- chrome ----------
-const QUIZ_TAKE = process.env.QUIZ_TAKE || 'quiz-take.wav';
 const mic = session === '2' ? path.join(AUDIO, QUIZ_TAKE) : path.join(AUDIO, 'attempt-03.wav');
 const chrome = spawn(CHROME, [
   '--headless=new', '--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=d3d11', '--ignore-gpu-blocklist',
@@ -109,13 +111,14 @@ const HELPERS = `(() => {
   const style = document.createElement('style');
   style.textContent = \`
     #demo-cursor { position: fixed; left: -100px; top: -100px; z-index: 100000; pointer-events: none; transition: left .45s cubic-bezier(.3,.7,.3,1), top .45s cubic-bezier(.3,.7,.3,1); filter: drop-shadow(0 2px 3px rgba(0,0,0,.45)); }
-    #demo-pulse { position: fixed; width: 40px; height: 40px; margin: -20px 0 0 -20px; border: 3px solid #0f766e; border-radius: 50%; z-index: 99999; pointer-events: none; opacity: 0; }
-    #demo-caption { position: fixed; left: 50%; bottom: 30px; transform: translateX(-50%); max-width: 1000px; background: rgba(17,24,39,.86); color: #fff; font: 500 21px/1.4 system-ui, Segoe UI, sans-serif; padding: 13px 22px; border-radius: 14px; z-index: 99998; pointer-events: none; text-align: center; opacity: 0; transition: opacity .35s; box-shadow: 0 6px 24px rgba(0,0,0,.25); }
-    #demo-card { position: fixed; inset: 0; z-index: 99997; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; background: linear-gradient(135deg, #0f766e 0%, #134e4a 60%, #0b3b37 100%); color: #fff; font-family: system-ui, Segoe UI, sans-serif; opacity: 0; transition: opacity .7s; pointer-events: none; }
-    #demo-card .mark { width: 112px; height: 112px; border-radius: 32px; background: rgba(255,255,255,.14); display: grid; place-items: center; margin-bottom: 10px; }
+    #demo-pulse { position: fixed; width: 40px; height: 40px; margin: -20px 0 0 -20px; border: 3px solid #e9a62a; border-radius: 50%; z-index: 99999; pointer-events: none; opacity: 0; }
+    #demo-caption { position: fixed; left: 50%; bottom: 30px; transform: translateX(-50%); max-width: 1000px; background: rgba(17,24,39,.86); color: #fff; font: 500 21px/1.4 system-ui, Segoe UI, sans-serif; padding: 13px 22px; border-radius: 14px; z-index: 99998; opacity: 0; transition: opacity .3s; text-align: center; }
+    #demo-card { position: fixed; inset: 0; z-index: 99997; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; background: linear-gradient(135deg, #1b2341 0%, #2b3566 55%, #141a33 100%); color: #fff; font-family: system-ui, Segoe UI, sans-serif; opacity: 0; transition: opacity .7s; }
+    #demo-card .mark { width: 176px; height: 176px; border-radius: 40px; object-fit: cover; box-shadow: 0 18px 48px rgba(0,0,0,.45); margin-bottom: 10px; }
     #demo-card h1 { font-size: 76px; font-weight: 700; letter-spacing: -0.03em; margin: 0; }
+    #demo-card h1 .g { color: #e9a62a; }
     #demo-card p { font-size: 28px; margin: 0; opacity: .9; }
-    #demo-card .url { margin-top: 26px; font: 500 26px ui-monospace, Consolas, monospace; background: rgba(255,255,255,.14); padding: 12px 24px; border-radius: 12px; }
+    #demo-card .url { margin-top: 26px; font: 500 26px ui-monospace, Consolas, monospace; background: rgba(233,166,42,.18); border: 1px solid rgba(233,166,42,.45); padding: 12px 24px; border-radius: 12px; }
     body { padding-bottom: 120px; }
   \`;
   document.head.appendChild(style);
@@ -159,8 +162,8 @@ const HELPERS = `(() => {
   function setCaption(text) { if (!text) { caption.style.opacity = '0'; return; } caption.textContent = text; caption.style.opacity = '1'; }
   async function showCard(o) {
     if (!o) { card.style.opacity = '0'; await sleep(750); card.innerHTML = ''; return; }
-    card.innerHTML = '<div class="mark"><svg viewBox="0 0 24 24" width="64" height="64"><path fill="#fff" d="M10 5v11.2A3.5 3.5 0 1 0 12 19.5V8.4l6-1.3v6.1a3.5 3.5 0 1 0 2 3.3V3z"/></svg></div><h1></h1><p></p>' + (o.url ? '<div class="url"></div>' : '');
-    card.querySelector('h1').textContent = o.title; card.querySelector('p').textContent = o.sub;
+    card.innerHTML = '<img class="mark" src="assets/logo.png" alt=""><h1><span class="g">SlokA</span>bhyasa</h1><p></p>' + (o.url ? '<div class="url"></div>' : '');
+    card.querySelector('p').textContent = o.sub;
     if (o.url) card.querySelector('.url').textContent = o.url;
     card.style.opacity = '1';
     await sleep(750);
@@ -173,6 +176,7 @@ const HELPERS = `(() => {
 function say(id) {
   const b = BEATS[id];
   const dur = durations[id];
+  if (dur == null) throw new Error(`no narration for ${id}: run tts.mjs`);
   const at = now();
   timeline.audio.push({ src: path.join(NARR, `${id}.mp3`), at, gain: 1 });
   timeline.captions.push({ text: b.caption || b.say, start: at, end: at + dur });
@@ -202,7 +206,7 @@ async function openApp(hash) {
   await send('Page.navigate', { url: 'about:blank' });
   await sleep(200);
   await send('Page.navigate', { url: `${APP}#${hash}` });
-  await until(`document.readyState === 'complete' && !!document.querySelector('#practice-list')`, 'the app');
+  await until(`document.readyState === 'complete' && !!document.querySelector('#practice-picker')`, 'the app');
   await sleep(400);
   await evaluate(HELPERS);
 }
@@ -213,26 +217,28 @@ async function prepareStorage() {
   await evaluate(`
     localStorage.setItem('tutor-stt', JSON.stringify({ language: 'sanskrit', tier: 'best', auto: true, cpuTiers: [] }));
     localStorage.setItem('tutor-learn-folder', 'CH-18');
-    for (const k of ['tutor-eval-selection', 'tutor-quiz-setup', 'tutor-dev-filter', 'tutor-tolerance', 'tutor-theme']) localStorage.removeItem(k);
+    for (const k of ['tutor-eval-selection', 'tutor-quiz-setup', 'tutor-dev-filter', 'tutor-tolerance', 'tutor-theme', 'tutor-eval-text', 'tutor-quiz-text', 'tutor-hide-transcript', 'tutor-text-language', 'tutor-chandas-hint', 'tutor-sloka-lines', 'tutor-weights']) localStorage.removeItem(k);
     'ok'`);
 }
 
-const recDone = `(${visible('#practice-results')}) && document.querySelector('#practice-progress').hidden`;
+// the open report is in: Evaluating… gone, the body shown
+const reportReady = `(() => { const ev = document.querySelector('#evaluating'); const b = document.querySelector('#report-body'); const c = document.querySelector('#practice-results'); return !!ev && ev.hidden && !b.hidden && !c.hidden; })()`;
 const panelIdle = (panel) => `(() => { const h = document.querySelector('${panel}'); return !!h && h.querySelector('.progress').hidden && !h.querySelector('[data-role="text"]').hidden; })()`;
-const tick = (rec) => pg(`await __demo.click('#practice-list li[data-id="${rec.id}"] input')`);
+// the shared folder picker (Teach, Self Evaluation, the Quiz page): open a folder, tick a sloka
+const openFolder = (host, name) => pg(`const h = [...document.querySelectorAll('${host} .picker-folder-head')].find((x) => x.querySelector('.fname').textContent === '${name}'); if (!h) throw new Error('no folder ${name}'); if (!h.closest('.picker-folder').classList.contains('open')) await __demo.click(h);`);
+const tick = (host, rec) => pg(`const row = [...document.querySelectorAll('${host} .picker-item')].find((x) => x.querySelector('.iname').textContent === '${rec.name}'); if (!row) throw new Error('no sloka ${rec.name} in ${host}'); await __demo.click(row.querySelector('input'));`);
 
 // ---------- sessions ----------
 async function prewarm() {
   // Transcripts for the slokas the demo shows, made with the Best model; stored in the library.
-  await openApp('evaluate');
-  await evaluate(`for (const i of document.querySelectorAll('#practice-list li input')) if (i.checked) i.click(); 'ok'`);
+  await openApp('teach');
+  await until(`document.querySelectorAll('#practice-picker .picker-item').length > 20`, 'the teach picker');
   // optional argv[3]: which to do, e.g. "c1!,c3" (! = transcribe again even if one exists)
-  const want = (process.argv[3] || 'c1,c2!,c3,c5').split(',').map((s) => [S[s.replace('!', '')], s.endsWith('!')]);
+  const want = (process.argv[3] || 'c1,c2,c3,c4,c5').split(',').map((s) => [S[s.replace('!', '')], s.endsWith('!')]);
+  await openFolder('#practice-picker', 'CH-12');
   for (const [rec, force] of want) {
-    await evaluate(`for (const i of document.querySelectorAll('#practice-list li input')) if (i.checked) i.click(); 'ok'`);
-    await sleep(300);
-    await evaluate(`document.querySelector('#practice-list li[data-id="${rec.id}"] input').click()`);
-    await until(`!document.querySelector('#practice-rec').disabled`, `${rec.name} to load`);
+    await tick('#practice-picker', rec);
+    await until(`!document.querySelector('#practice-rec').disabled`, `${rec.name} to load`, 120000);
     await sleep(500);
     if (force) { await evaluate(`document.querySelector('#practice-transcript [data-act="run"]').click()`); await sleep(500); }
     await until(panelIdle('#practice-transcript'), `${rec.name} transcription`, 300000);
@@ -242,9 +248,9 @@ async function prewarm() {
 }
 
 async function session1() {
-  await openApp('library');
-  await until(`document.querySelectorAll('#library-list li[data-id]').length > 20`, 'the library list');
-  await pg(`await __demo.showCard({ title: 'SlokAbhyasa', sub: 'Learn slokas by ear' })`);
+  await openApp('home');
+  await until(visible('.home-logo'), 'the home page');
+  await pg(`await __demo.showCard({ sub: 'Learn slokas by ear' })`);
   await startRecording();
   await sleep(900);
 
@@ -254,16 +260,35 @@ async function session1() {
   await pg('await __demo.showCard(null)');
   await waitUntil(end + 0.3);
 
+  // home
+  end = say('home');
+  await pg(`await __demo.moveTo('.home-sloka')`);
+  await waitUntil(end - 2);
+  await pg(`await __demo.moveTo('.nav-btn[data-view="library"]')`);
+  await waitUntil(end + 0.2);
+
   // library
+  await clickNav('library');
+  await until(`document.querySelectorAll('#library-list li[data-id]').length > 20`, 'the library list');
   end = say('library');
   await pg(`await __demo.moveTo('#library-list li[data-id="${S.c1.id}"] .lib-name')`);
-  await waitUntil(end - 13);
+  await waitUntil(end - 12);
   await pg(`await __demo.scrollTo('#library-list li[data-id="${S.c5.id}"]', 'center')`);
-  await waitUntil(end - 7);
+  await waitUntil(end - 6);
   await pg(`await __demo.scrollTo('#library-list li:last-child', 'end')`);
-  await waitUntil(end - 2.5);
-  await pg(`await __demo.scrollTo('#library-list li[data-id="${S.c2.id}"]', 'center')`);
+  await waitUntil(end - 2);
+  await pg(`await __demo.scrollTo('#library-list li[data-id="${S.c3.id}"]', 'center')`);
   await waitUntil(end + 0.2);
+
+  // everything saved about a sloka: a right-click
+  end = say('metadata');
+  await pg(`const li = __demo.q('#library-list li[data-id="${S.c3.id}"]'); const r = await __demo.moveTo(li.querySelector('.lib-name')); li.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + 60, clientY: r.top + r.height / 2 }));`);
+  await until(`!document.querySelector('#meta-popup').hidden`, 'the metadata popup', 5000);
+  await waitUntil(end - 5);
+  await pg(`const b = __demo.q('#meta-popup-body'); const h = [...b.querySelectorAll('h4')].find((x) => /chandas/i.test(x.textContent)); if (h) h.scrollIntoView({ block: 'start', behavior: 'smooth' });`);
+  await waitUntil(end + 0.6);
+  await pg(`__demo.q('#meta-popup-close').click()`);
+  await sleep(300);
 
   // a stored transcript
   await pg(`await __demo.click('#library-list li[data-id="${S.c2.id}"] [data-act="transcript"]')`);
@@ -275,6 +300,8 @@ async function session1() {
   // learn from a file
   await clickNav('learn');
   await sleep(300);
+  await pg(`await __demo.click('.tab[data-tab="learn-file"]')`);
+  await sleep(300);
   await setFile('#learn-file-input', path.join(AUDIO, 'Gita 18-66 (teacher).wav'));
   await until(visible('#learn-file-loaded'), 'the imported file');
   end = say('learn');
@@ -283,7 +310,7 @@ async function session1() {
   await pg('__demo.hideCursor()');
   await waitUntil(end + 0.2);
   await cutUntil(panelIdle('#learn-file-transcript'), 'the 18.66 transcript');
-  await sleep(1800);
+  await sleep(1500);
   end = say('learnSave');
   await pg(`await __demo.type('#learn-file-name-input', 'CH18-66 demo')`);
   await pg(`await __demo.click('#learn-file-save')`);
@@ -292,82 +319,113 @@ async function session1() {
 
   // teach
   await clickNav('teach');
-  await until(`document.querySelectorAll('#practice-list li[data-id]').length > 20`, 'the teach list');
-  await sleep(400);
-  await tick(S.c3);
-  await until(`!document.querySelector('#practice-rec').disabled`, 'the sloka to load');
+  await until(`document.querySelectorAll('#practice-picker .picker-item').length > 20`, 'the teach picker');
+  await sleep(300);
+  await openFolder('#practice-picker', 'CH-12');
+  await tick('#practice-picker', S.c3);
+  await until(`!document.querySelector('#practice-rec').disabled && ${visible('#practice-base')}`, 'the sloka to load', 120000);
+  await until(panelIdle('#practice-transcript'), 'the sloka text', 120000).catch(() => {});
   end = say('teach');
   await pg(`await __demo.scrollTo('#practice-base', 'center')`);
   await waitUntil(end + 0.3);
   end = say('teachPlay');
-  await pg(`await __demo.click('#teach-speed-chips .chip[data-speed="0.5"]')`);
-  await pg(`await __demo.click('#teach-play')`);
+  await pg(`await __demo.click('#practice-speed-chips .chip[data-speed="0.5"]')`);
+  await pg(`await __demo.click('#practice-base-play')`);
   const teachPlayAt = mix('ch12-03-x050.wav', { gain: 0.8, dur: 9.5, fade: 0.6 });
   await pg('__demo.hideCursor()');
   await waitUntil(Math.max(end, teachPlayAt + 9.5));
-  await pg(`await __demo.click('#teach-play')`);
-  await sleep(400);
+  await pg(`await __demo.click('#practice-base-play')`);
+  await pg(`await __demo.click('#practice-speed-chips .chip[data-speed="1"]')`);
+  await sleep(300);
   end = say('teachListen');
-  await pg(`await __demo.click('#teach-listen')`);
+  await pg(`await __demo.click('#practice-rec')`);
   const listenAt = mix('attempt-03.wav', { gain: 0.6 });
   await pg('__demo.hideCursor()');
-  await waitUntil(listenAt + 14.7 + 0.9);
-  await pg(`await __demo.click('#teach-listen')`);
-  await until(recDone, 'the comparison', 60000);
-  await waitUntil(end + 0.3);
+  await waitUntil(Math.max(end + 0.2, listenAt + ATTEMPT_SECONDS + 0.9));
+  await pg(`await __demo.click('#practice-rec')`);
+  await until(visible('#evaluating'), 'Evaluating…', 10000);
+  end = say('evaluating');
+  await pg(`await __demo.scrollTo('#practice-results', 'start')`);
+  await waitUntil(end + 0.4);
+  await cutUntil(reportReady, 'the report', 240000);
 
-  // results
+  // the report: overall, both together, Analysis
   await pg(`await __demo.scrollTo('#practice-results', 'start')`);
   end = say('results');
-  await waitUntil(end - 11);
-  await pg(`await __demo.scrollTo('#compare-chart', 'center')`);
-  await waitUntil(end - 5);
-  await pg(`await __demo.scrollTo('#dev-list', 'center')`);
+  await pg(`await __demo.moveTo('#score-ring')`);
+  await waitUntil(end - 7);
+  await pg(`await __demo.moveTo('#score-verdict')`);
   await waitUntil(end + 0.3);
-  await cutUntil(visible('#stt-out'), 'the word diff', 180000);
+  end = say('duet');
+  await pg(`await __demo.click('#res-play-both')`);
+  const duetAt = mix('duet-03.wav', { gain: 0.7, dur: 9, fade: 0.7 });
+  await pg('__demo.hideCursor()');
+  await waitUntil(Math.max(end + 0.2, duetAt + 9));
+  await pg(`await __demo.click('#res-play-both')`);
+  await sleep(300);
+  await pg(`await __demo.click('#analysis > summary')`);
+  await sleep(400);
   await pg(`await __demo.scrollTo('#transcript', 'start')`);
-  end = say('diff');
-  await waitUntil(end + 1.0);
+  end = say('analysis');
+  await waitUntil(end - 6);
+  await pg(`await __demo.moveTo('#stt-heard')`);
+  await waitUntil(end + 0.4);
+  end = say('analysisMore');
+  await pg(`await __demo.scrollTo('#scores', 'start')`);
+  await pg('__demo.hideCursor()');
+  await waitUntil(end - 8);
+  await pg(`await __demo.scrollTo('#compare-chart', 'center')`);
+  await waitUntil(end - 3.5);
+  await pg(`await __demo.scrollTo('#dev-list', 'center')`);
+  await waitUntil(end + 0.4);
 
   // several slokas at once
   await clickNav('evaluate');
-  await until(`document.querySelectorAll('#practice-list li[data-id]').length > 20`, 'the evaluation list');
-  await sleep(400);
-  await evaluate(`for (const i of document.querySelectorAll('#practice-list li input')) if (i.checked) i.click(); 'ok'`);
+  await until(`document.querySelectorAll('#practice-picker .picker-item').length > 20`, 'the evaluation picker');
   await sleep(300);
-  await pg(`await __demo.scrollTo('#practice-list', 'start')`);
+  await pg(`const c = document.querySelector('#practice-picker [data-act="clear"]'); if (c) c.click();`);
+  await sleep(300);
+  await openFolder('#practice-picker', 'CH-12');
+  await pg(`await __demo.scrollTo('#practice-picker', 'start')`);
   end = say('evaluate');
-  for (const rec of [S.c1, S.c2, S.c3, S.c4, S.c5]) await tick(rec);
-  await until(`!document.querySelector('#practice-rec').disabled`, 'the slokas to load');
+  for (const rec of [S.c1, S.c2, S.c3, S.c4, S.c5]) await tick('#practice-picker', rec);
+  await until(`!document.querySelector('#practice-rec').disabled && /of 5/.test(document.querySelector('#practice-texts-pos').textContent)`, 'the slokas to load', 120000);
+  await pg(`await __demo.scrollTo('#practice-texts', 'center')`);
+  await waitUntil(end - 7);
+  await pg(`await __demo.click('#practice-texts-next')`);
+  await waitUntil(end - 4);
+  await pg(`await __demo.click('#practice-texts-next')`);
   await waitUntil(end + 0.3);
   end = say('evaluateRecord');
   await pg(`await __demo.click('#practice-rec')`);
   const recAt = mix('attempt-03.wav', { gain: 0.6 });
   await pg('__demo.hideCursor()');
-  await waitUntil(recAt + 14.7 + 0.9);
+  await waitUntil(Math.max(end + 0.2, recAt + ATTEMPT_SECONDS + 0.9));
   await pg(`await __demo.click('#practice-rec')`);
-  await until(`${recDone} && ${visible('#reports')}`, 'the reports', 90000);
-  await sleep(600);
+  await until(visible('#evaluating'), 'Evaluating…', 10000);
+  await sleep(1500);
+  await cutUntil(`${reportReady} && ${visible('#reports')}`, 'the reports', 240000);
   await pg(`await __demo.scrollTo('#practice-results', 'start')`);
   end = say('reports');
-  await waitUntil(end - 5);
+  await waitUntil(end - 10);
+  await pg(`await __demo.click('#reports-fold > summary')`);
   await pg(`await __demo.moveTo('#report-map')`);
-  await waitUntil(end - 2.2);
+  await waitUntil(end - 5.5);
   await pg(`await __demo.click('#report-next')`);
-  await waitUntil(end + 1.2);
+  await waitUntil(end + 1.0);
 }
 
 async function session2() {
   await openApp('quiz');
-  await until(`document.querySelectorAll('#quiz-slokas li').length > 5`, 'the quiz view');
+  await until(`document.querySelectorAll('#quiz-picker .picker-item').length > 5`, 'the quiz page');
   await sleep(300);
   await startRecording();
   await sleep(700);
 
   let end = say('quiz');
-  await pg(`await __demo.click('#quiz-folders li input[value="CH-12"]')`);
+  await openFolder('#quiz-picker', 'CH-12');
   await pg(`await __demo.click('input[name="quiz-mode"][value="single"]')`);
-  await pg(`await __demo.click('#quiz-slokas li input[value="${S.c3.id}"]')`);
+  await tick('#quiz-picker', S.c3);
   await pg(`await __demo.click('#quiz-start')`);
   await until(`document.querySelector('#dialog').open`, 'the name dialog');
   await pg(`await __demo.type('#dialog-input', 'Chapter 12 · sloka 3')`);
@@ -378,36 +436,62 @@ async function session2() {
   await pg('__demo.hideCursor()');
   await pg(`await __demo.scrollTo('#practice-quiz-box', 'start')`);
   end = say('quizMode');
+  await until(`!document.querySelector('#practice-rec').disabled && ${visible('#practice-texts')}`, 'the quiz to be ready', 120000);
+  await waitUntil(end - 4);
+  await pg(`await __demo.scrollTo('#practice-texts', 'center')`);
   await waitUntil(end + 0.3);
 
-  await until(`!document.querySelector('#practice-rec').disabled`, 'the quiz to be ready');
   await pg(`await __demo.click('#practice-rec')`);
   const recAt = mix(QUIZ_TAKE, { gain: 0.6 });
   await pg('__demo.hideCursor()');
   await sleep(1500);
   end = say('quizRecord');
-  await waitUntil(recAt + Number(process.env.QUIZ_TAKE_SECONDS || 39.2) + 1.0);
+  await waitUntil(Math.max(end + 0.2, recAt + QUIZ_TAKE_SECONDS + 1.0));
   await pg(`await __demo.click('#practice-rec')`);
-  await cutUntil(`${visible('#quiz-score')} && document.querySelector('#quiz-pct').textContent.trim() !== '–' && document.querySelector('#practice-progress').hidden`, 'the quiz score', 300000);
+  await until(visible('#evaluating'), 'Evaluating…', 10000);
+  await sleep(1800);
+  await cutUntil(`${visible('#quiz-score')} && /saved/.test(document.querySelector('#quiz-score-status').textContent) && document.querySelector('#evaluating').hidden`, 'the quiz score', 300000);
   await pg(`await __demo.scrollTo('#quiz-score', 'start')`);
   end = say('quizScore');
-  await waitUntil(end - 9.5);
-  // score on content alone: the pronunciation chip comes off
-  await pg(`const b = [...document.querySelectorAll('#quiz-cats .chip')].find((c) => c.textContent.startsWith('Pronunciation')); await __demo.click(b);`);
-  await until(`document.querySelector('#quiz-pct').textContent.trim() === '100%'`, 'the recomputed quiz score', 15000).catch(() => {});
-  await waitUntil(end - 4);
+  await waitUntil(end - 10);
+  // the chips choose the categories that count: emphasis added for a moment
+  await pg(`const b = [...document.querySelectorAll('#quiz-cats .chip')].find((c) => c.textContent.startsWith('Emphasis')); await __demo.click(b);`);
+  await waitUntil(end - 6);
+  await pg(`const b = [...document.querySelectorAll('#quiz-cats .chip')].find((c) => c.textContent.startsWith('Emphasis')); await __demo.click(b);`);
   await pg(`await __demo.scrollTo('#quiz-table', 'center')`);
   await pg('__demo.hideCursor()');
   await waitUntil(end + 0.4);
 
   end = say('quizTrend');
-  await clickNav('quiz');
-  await sleep(500);
+  await pg(`await __demo.click('#quiz-trend-fold > summary')`).catch(() => {});
+  await waitUntil(end - 4.5);
+  await pg(`await __demo.click('#practice-step1 .step-head')`);
+  await pg(`await __demo.click('#quiz-leave')`);
+  await until(visible('#quiz-list .quiz-item'), 'the quiz list');
   await pg(`await __demo.scrollTo('#quiz-saved', 'start')`);
   await pg('__demo.hideCursor()');
   await waitUntil(end + 0.5);
 
-  await pg(`await __demo.showCard({ title: 'SlokAbhyasa', sub: 'Learn slokas by ear', url: '${GITHUB}' })`);
+  // the Reports page (by date, then by folder), and Settings
+  await clickNav('reports');
+  await sleep(500);
+  end = say('reportsPage');
+  await pg('__demo.hideCursor()');
+  await waitUntil(end - 3.2);
+  await pg(`await __demo.click('#reports-mode .chip[data-mode="folder"]')`);
+  await pg('__demo.hideCursor()');
+  await waitUntil(end + 0.4);
+  await clickNav('settings');
+  await sleep(400);
+  end = say('settings');
+  await pg('__demo.hideCursor()');
+  await waitUntil(end - 7);
+  await pg(`await __demo.scrollTo('#tol-row', 'center')`);
+  await waitUntil(end - 3.5);
+  await pg(`await __demo.scrollTo('#settings-whisper', 'center')`);
+  await waitUntil(end + 0.4);
+
+  await pg(`await __demo.showCard({ sub: 'Learn slokas by ear', url: '${GITHUB}' })`);
   end = say('outro');
   await waitUntil(end + 1.6);
 }
@@ -436,6 +520,7 @@ try {
   console.log('RESULT: ok');
 } catch (err) {
   console.log('RESULT: FAILED', err.message);
+  process.exitCode = 1;
   try { const shot = await send('Page.captureScreenshot', { format: 'png' }); fs.writeFileSync(path.join(OUT, 'failure.png'), Buffer.from(shot.data, 'base64')); console.log('screenshot: out/' + session + '/failure.png'); } catch { /* page gone */ }
 } finally {
   if (pageLogs.length) { console.log('--- page errors ---'); for (const l of pageLogs.slice(-12)) console.log(l); }

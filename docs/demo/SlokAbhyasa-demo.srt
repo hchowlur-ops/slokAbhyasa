@@ -1,79 +1,103 @@
 1
-00:00:00,901 --> 00:00:22,285
-SlokAbhyasa is a small app for learning slokas by ear. You record a verse, or load one from a file. The app listens, remembers it, and later tells you how closely your own recitation matches. Everything runs on your computer; nothing is uploaded.
+00:00:00,901 --> 00:00:26,341
+SlokAbhyasa is a small app for learning slokas by ear. You record a verse, or load one from a file. The app listens, remembers it, and later tells you how closely your own recitation matches: the words, the vowel lengths, every syllable, and the manner. Everything runs on your computer; nothing is uploaded.
 
 2
-00:00:22,595 --> 00:00:41,891
-This library holds the learner's own recordings: the twenty slokas of chapter twelve of the Bhagavad Gita, Bhakti Yoga, together with its opening and closing lines, and one sloka from chapter eighteen. They are ordinary WAV files, kept in one folder per chapter.
+00:00:26,644 --> 00:00:34,252
+It opens with an invocation and the closing sloka of the Gita. The pages are on the left.
 
 3
-00:00:43,031 --> 00:00:55,055
-Each recording can keep its words beside it, as a text file. The text is written on this computer by the Whisper speech model, and you can correct it by hand.
+00:00:35,647 --> 00:00:55,255
+The Library holds the learner's own recordings, a folder per chapter: the twenty slokas of chapter twelve of the Bhagavad Gita, Bhakti Yoga, with its opening and closing lines, and one sloka from chapter eighteen. They are ordinary WAV files, kept on this computer.
 
 4
-00:00:57,994 --> 00:01:09,610
-The Player plays any recording at any speed, with the pitch preserved. Slow a sloka down to three quarters, or half, and catch every syllable.
+00:00:55,466 --> 00:01:07,754
+A right-click lists everything saved about a sloka: who recorded it, how it is judged, the voice and the recording as measured, and the chandas, the metre found in its text.
 
 5
-00:01:14,442 --> 00:01:31,242
-To teach the app a new sloka, record it, or pick a file. Here is a recording of chapter eighteen, sloka sixty six, the famous closing sloka. The app trims the silence and writes down the words it hears.
+00:01:09,595 --> 00:01:19,795
+Each recording keeps its words beside it. They are written on this computer by the Whisper speech model, and you can correct them by hand.
 
 6
-00:01:33,924 --> 00:01:42,876
-Give it a name, choose a folder, and save. The recording, its words and its analysis are stored together.
+00:01:23,543 --> 00:01:40,343
+To teach the app a new sloka, record it, or pick a file. Here is a recording of chapter eighteen, sloka sixty six, the famous closing sloka. The app trims the silence and writes down the words it hears.
 
 7
-00:01:46,181 --> 00:01:55,037
-Teach mode works on one sloka at a time. Here is the third sloka of chapter twelve, with its text.
+00:01:42,722 --> 00:01:51,386
+Give it a name, choose a folder, and save. The recording, its words and its details are stored together.
 
 8
-00:01:55,348 --> 00:01:59,596
-Press Play to hear it, at half speed if you like.
+00:01:54,610 --> 00:02:03,466
+Teach mode works on one sloka at a time. Here is the third sloka of chapter twelve, with its text.
 
 9
-00:02:07,995 --> 00:02:19,443
-Then press Listen, and recite it yourself. For this demonstration the recitation rushes the first line, and skips a few syllables later on.
+00:02:03,767 --> 00:02:08,015
+Press Play to hear it, at half speed if you like.
 
 10
-00:02:27,175 --> 00:02:44,551
-The app lines your recitation up with the original and scores it: content, timing, pitch and dynamics. The chart shows the two side by side, and the list below names each deviation, judged against a tolerance you can set yourself.
+00:02:17,254 --> 00:02:28,702
+Then press Listen, and recite it yourself. For this demonstration the recitation rushes the first line, and skips a few syllables later on.
 
 11
-00:02:46,177 --> 00:02:57,577
-Your words are compared with the sloka's text too. Sloka words that were not heard are highlighted, and so are extra or different words in your attempt.
+00:02:34,740 --> 00:02:45,780
+The moment you stop, the app listens back, compares the two, and transcribes your words. It says Evaluating until the report is ready.
 
 12
-00:03:01,158 --> 00:03:10,782
-In Self Evaluation you can tick several slokas, recite any one of them from memory, and let the app work out which one you sang.
+00:02:47,486 --> 00:03:05,126
+The report opens with one overall score and a grade: a weighted mean of seven categories — phonemes, vowel length, syllables, emphasis, pitch contour, phrasing and timing — each judged against a tolerance you can set yourself.
 
 13
-00:03:11,090 --> 00:03:14,522
-Here the learner recites one of the five.
+00:03:05,438 --> 00:03:13,814
+Play both together plays the sloka in the left ear and your recitation in the right, so the difference is heard rather than read.
 
 14
-00:03:30,854 --> 00:03:41,270
-It found sloka three, opened its report, and marked the other four as not matching this recording. Every report is one click away.
+00:03:30,733 --> 00:03:47,653
+Under Analysis, your words stand against the sloka's text, laid out in its metre. Sloka words that were not heard are highlighted, and so are extra or different words in your attempt. Click any phrase to hear it.
 
 15
-00:03:44,376 --> 00:03:52,488
-Quizzes test your memory. Choose a folder, pick one sloka or several, and name the quiz.
+00:03:48,055 --> 00:03:59,455
+Below come the seven category tiles, a chart with the two pitch contours on one timeline, and the list of deviations, each with a button that plays just that moment.
 
 16
-00:03:53,459 --> 00:04:01,427
-The recording stays hidden; only the name is shown. You recite it from memory, in one take.
+00:04:02,340 --> 00:04:19,668
+In Self Evaluation you can tick several slokas. The panel shows one at a time, with its text and its metre; Previous and Next page through them. Recite any one from memory, and let the app work out which one you sang.
 
 17
-00:04:04,182 --> 00:04:11,238
-When you stop, the app compares the take with the original, just as in Self Evaluation.
+00:04:19,981 --> 00:04:23,413
+Here the learner recites one of the five.
 
 18
-00:04:22,320 --> 00:04:39,864
-Each sloka is judged on content, pronunciation, timing, pitch and dynamics, within fixed tolerances. You choose which categories count; here, content alone. The quiz score is the share of slokas that passed.
+00:04:40,275 --> 00:04:58,107
+It found sloka three, opened its report, and marked the other four as not matching this recording. Previous and Next step through the reports, and All the reports lists them. The other slokas' words are transcribed in the background meanwhile.
 
 19
-00:04:40,278 --> 00:04:46,566
-Every attempt is saved with the quiz, so the trend shows your progress over the weeks.
+00:05:01,015 --> 00:05:09,007
+Quizzes test your memory. Open a folder, pick one sloka or several, and name the quiz.
 
 20
-00:04:47,827 --> 00:05:04,723
+00:05:09,981 --> 00:05:19,437
+The recording stays hidden. The text is shown by default, and a setting hides it, to recite from memory in one take.
+
+21
+00:05:22,180 --> 00:05:30,700
+When you stop, the app compares the take with the original, just as in Self Evaluation, and scores the quiz.
+
+22
+00:05:42,128 --> 00:06:00,920
+Each sloka is judged within fixed tolerances; the chips choose which categories count — here phonemes, vowel length and syllables. The quiz score is the share of slokas within tolerance; the overall is their weighted mean, with a grade.
+
+23
+00:06:01,330 --> 00:06:10,042
+Every attempt is saved with the quiz, so the trend shows your progress over the weeks. Retake it any time.
+
+24
+00:06:12,234 --> 00:06:19,218
+Reports gathers every evaluation and every quiz attempt, by date or by folder.
+
+25
+00:06:21,221 --> 00:06:30,821
+Settings holds the weights and the tolerances, the speech model and its language, how the text is shown, and a short guide to Whisper.
+
+26
+00:06:31,985 --> 00:06:48,881
 Your recordings stay on your computer as plain WAV files, easy to copy and back up. SlokAbhyasa is free and open source: github.com/hchowlur-ops/slokAbhyasa
