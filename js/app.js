@@ -505,7 +505,9 @@ function shiftTranscript(t, delta, duration) {
 }
 
 // Renders a transcript as clickable phrases; `flagged` token indices get `cls`.
-function renderTranscriptText(host, t, toks, flagged, cls, play, dimmed = null, dandas = false) {
+// `dandas`: lay the words out in the metre's lines with their daṇḍas; `perPada` gives the
+// metre (the sloka's, so a recitation is laid out like the sloka it answers).
+function renderTranscriptText(host, t, toks, flagged, cls, play, dimmed = null, dandas = false, perPada = null) {
   host.innerHTML = '';
   host.lang = sttLanguageTag(t.language);
   if (!toks.length) { host.textContent = t.text || 'Nothing was recognised.'; host.classList.add('muted'); return; }
@@ -525,7 +527,7 @@ function renderTranscriptText(host, t, toks, flagged, cls, play, dimmed = null, 
       // one line: broken at the pāda or half-verse boundaries by the metre, between words
       const words = toks.map((tok) => tok.word);
       const skip = uvacaWords(words); // "arjuna uvāca": a line of its own, no daṇḍa, not a pāda
-      const pp = t.perPada || identifyChandas(t.text).perPada;
+      const pp = perPada || t.perPada || identifyChandas(t.text).perPada;
       const breaks = padaBreaks(words.slice(skip), pp, linesFor(pp, slokaLines)).map((b) => b + skip); // the triṣṭubh family always in four
       const n = breaks.length + 1;
       if (skip) lineEnd.set(skip - 1, { mark: '', last: false });
@@ -3843,8 +3845,10 @@ function renderTranscriptDiff() {
   }
   renderPhonologyReport($('#stt-phon'), phonology);
   refreshVerdicts();
-  renderTranscriptText($('#stt-base'), sttPractice.base, A.toks, delA, 'w-del', (s, e) => { heardPlayer.pause(); basePlayer.playRange(s, e); }, dimA, true);
-  renderTranscriptText($('#stt-heard'), sttPractice.heard, B.toks, insB, 'w-ins', (s, e) => { basePlayer.pause(); heardPlayer.playRange(s, e); }, dimB);
+  // both rows in the sloka's metre: its lines and daṇḍas, the recitation laid out the same way
+  const pp = (chandasOf(practice.base.record, sttPractice.base.text) || {}).perPada || null;
+  renderTranscriptText($('#stt-base'), sttPractice.base, A.toks, delA, 'w-del', (s, e) => { heardPlayer.pause(); basePlayer.playRange(s, e); }, dimA, true, pp);
+  renderTranscriptText($('#stt-heard'), sttPractice.heard, B.toks, insB, 'w-ins', (s, e) => { basePlayer.pause(); heardPlayer.playRange(s, e); }, dimB, true, pp);
   practicePanel.highlight(delA, 'w-del', dimA);
   $('#stt-summary').textContent = ai.length
     ? `${Math.round(sm.similarity * 100)}% of the sloka's ${sttPractice.base.typed ? 'typed text' : 'text'} heard (${sm.matched} of ${ai.length} words) · ${sm.missing} missing · ${sm.extra} extra or different · ${sttLanguageLabel(sttPractice.base.language)}`

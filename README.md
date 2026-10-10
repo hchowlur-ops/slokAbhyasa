@@ -402,9 +402,11 @@ typed in lines is left as typed. The daṇḍas go by pādas either way: । clo
 pāda and ॥ the fourth. A speaker's attribution opening the text — "अर्जुन उवाच",
 "श्रीभगवानुवाच", in any script and in Whisper's spellings — is not part of the śloka: it is
 left out of the count, written on a line of its own without a daṇḍa, and the pāda counts
-start after it. And the results' sounds-and-
-syllables breakdown counts the **syllables heard pāda by pāda** ("pāda 3: 7 of 8 (1
-missing)"), so a dropped syllable is placed in its pāda.
+start after it. In the results the "Yours" row is laid out
+the same way as the sloka's, by the sloka's metre — the same lines, daṇḍas and setting — so
+the two can be read against each other, and the sounds-and-syllables breakdown counts the
+**syllables heard pāda by pāda** ("pāda 3: 7 of 8 (1 missing)"), so a dropped syllable is
+placed in its pāda.
 
 Wherever a śloka's text is shown — the preview in Teach, the sloka panel in Self Evaluation
 and quizzes, the "Sloka" row of the results, the Library — it is set line by line with its
