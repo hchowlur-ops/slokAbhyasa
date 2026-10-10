@@ -753,6 +753,25 @@ canvas { display: block; }
 .lib-actions .btn:not(.btn-primary):hover { background: var(--surface-2); color: var(--text); }
 .lib-actions [data-act="delete"]:hover { color: var(--danger); }
 
+/* ---------- the metadata popup (Library, right-click) ---------- */
+.meta-popup {
+  position: fixed; z-index: 60; width: min(420px, 92vw); max-height: 72vh; display: flex; flex-direction: column;
+  padding: 12px 14px 10px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border); border-top: 4px solid var(--gold);
+  box-shadow: var(--shadow-lift); outline: none; font-size: 0.88rem;
+}
+.meta-popup-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.meta-popup-head strong { font-size: 1.05rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meta-popup-body { overflow-y: auto; scrollbar-width: thin; padding-right: 4px; }
+.meta-popup h4 { margin: 10px 0 4px; font-size: 0.78rem; text-transform: uppercase; letter-spacing: .06em; color: var(--gold-deep); }
+:root[data-theme="dark"] .meta-popup h4 { color: var(--gold); }
+.meta-popup h4:first-child { margin-top: 2px; }
+.meta-popup dl { display: grid; grid-template-columns: minmax(120px, 42%) 1fr; gap: 2px 10px; margin: 0; }
+.meta-popup dt { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meta-popup dd { margin: 0; overflow-wrap: anywhere; }
+.meta-popup dd.none { color: var(--muted); }
+.meta-popup dd.mono { font-size: 0.82rem; }
+.meta-popup-hint { margin: 8px 0 0; }
+
 /* ---------- toast / dialog ---------- */
 .toast-host { position: fixed; right: 20px; bottom: 20px; display: flex; flex-direction: column; gap: 8px; z-index: 50; pointer-events: none; }
 .toast {

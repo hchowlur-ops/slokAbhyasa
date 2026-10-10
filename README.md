@@ -327,7 +327,11 @@ tolerance fields stay visible but greyed until the switch is off again.
   heard are highlighted in red there and at the top; extra or different words in your attempt
   are highlighted in amber. Click any phrase to hear it; the small "i" by "Yours" opens
   this legend as an overlay. "Transcribe again" reruns with another language or model.
-* **Library** – "Transcript" shows, creates or corrects the transcript of a sloka.
+* **Library** – "Transcript" shows, creates or corrects the transcript of a sloka. A **right-click** on
+  a sloka opens a popup listing everything in its details file — the file itself, who recorded
+  it, the style, the text, the voice and the recording as measured, capture, edits, consent, the
+  audio's hash and format, the software, the chandas — which closes when it loses focus (Esc,
+  or a click elsewhere); "Details" on the card edits what can be edited.
 
 Every transcript panel has a language and model choice and an "Automatic" switch (shared
 across the app). Automatic is on by default — in Learn, Self Evaluation, Teach and quizzes —

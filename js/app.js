@@ -3528,6 +3528,89 @@ function playDeviation(d, which, btn) {
 
 const libPlayer = new Player();
 let libPlayingId = null;
+// ---------- everything saved about a sloka: a popup on a right-click in the Library ----------
+// Every key of the details file is listed (known ones under their own names, any other under
+// its key), so nothing saved is hidden. The popup is focused when it opens and goes when the
+// focus leaves it, on Esc, or on a click elsewhere.
+const META_LABELS = {
+  schemaVersion: 'Schema', source: 'Source', role: 'Role', speaker: 'Who recorded it', profileId: 'Person', voiceType: 'Voice', ageGroup: 'Age group',
+  style: 'Style', mode: 'Mode', tradition: 'Tradition', pitchPrescribed: 'Pitch prescribed', text: 'Text', language: 'Language', script: 'Script', origin: 'Origin',
+  aksharaCount: 'Akṣaras', body: 'Text', title: 'Title', voice: 'Voice, as measured', medianF0Hz: 'Median pitch (Hz)', f0P10Hz: 'Pitch, 10th percentile (Hz)',
+  f0P90Hz: 'Pitch, 90th percentile (Hz)', f0RangeSemitones: 'Pitch range (semitones)', voicedFraction: 'Voiced fraction', leadSilenceSec: 'Silence at the start (s)',
+  trailSilenceSec: 'Silence at the end (s)', activeSec: 'Sound (s)', tempoSylPerSec: 'Tempo (akṣaras per s)', measured: 'Recording, as measured', durationSec: 'Duration (s)',
+  sampleCount: 'Samples', peakDbfs: 'Peak (dBFS)', rmsDbfs: 'Loudness, RMS (dBFS)', noiseFloorDbfs: 'Noise floor (dBFS)', snrDb: 'Voice above the room (dB)',
+  clippedSampleCount: 'Clipped samples', capture: 'Capture', device: 'Microphone', sampleRate: 'Sample rate (Hz)', channelCount: 'Channels', echoCancellation: 'Echo cancellation',
+  noiseSuppression: 'Noise suppression', autoGainControl: 'Automatic gain', environment: 'Environment', edit: 'Edits', trimStartSec: 'Trimmed at the start (s)',
+  trimEndSec: 'Trimmed at the end (s)', consent: 'Consent', givenBy: 'Given by', shareScope: 'Share scope', notes: 'Notes', id: 'Id', createdAt: 'Created',
+  updatedAt: 'Updated', audio: 'Audio file', pcmSha256: 'PCM SHA-256', channels: 'Channels', bitDepth: 'Bit depth', format: 'Format', software: 'Software', app: 'App',
+  version: 'Version', featVersion: 'Analysis version', chandas: 'Chandas', family: 'Family', perPada: 'Syllables per pāda', padas: 'Pādas', syllables: 'Syllables in the text',
+  expectedSyllables: 'Syllables the metre expects', exact: 'Exact', form: 'Form', weights: 'Laghu / guru', confidence: 'Confidence', verse: 'Gītā verse', chapter: 'Chapter',
+  at: 'Computed', migrated: 'From before details existed', folder: 'Folder', file: 'File', duration: 'Duration (s)', name: 'Name',
+};
+const metaPopup = $('#meta-popup');
+const metaLabel = (k) => META_LABELS[k] || k;
+function metaValue(k, v) {
+  if (v === null || v === undefined || v === '') return { text: '—', cls: 'none' };
+  if (typeof v === 'boolean') return { text: v ? 'yes' : 'no' };
+  if (typeof v === 'number') return { text: Number.isInteger(v) ? String(v) : String(Math.round(v * 100) / 100) };
+  if (typeof v === 'string') {
+    if (/^\d{4}-\d{2}-\d{2}T/.test(v)) return { text: fmtDate(v), title: v };
+    if (k === 'pcmSha256') return { text: `${v.slice(0, 16)}…`, title: v, cls: 'mono' };
+    if (k === 'profileId') { const who = profileById(v); return { text: who ? who.name : v }; }
+    if (v.length > 160) return { text: `${v.slice(0, 160)}…`, title: v };
+    return { text: v };
+  }
+  if (Array.isArray(v)) return { text: v.length ? v.map((x) => (typeof x === 'object' ? JSON.stringify(x) : String(x))).join(', ') : '—', cls: v.length ? '' : 'none' };
+  return { text: JSON.stringify(v), cls: 'mono' };
+}
+function renderMetaPopup(r) {
+  $('#meta-popup-name').textContent = r.name;
+  const body = $('#meta-popup-body');
+  body.innerHTML = '';
+  const section = (title, obj) => {
+    const h = document.createElement('h4');
+    h.textContent = title;
+    body.appendChild(h);
+    const dl = document.createElement('dl');
+    for (const [k, v] of Object.entries(obj)) {
+      const dt = document.createElement('dt'); dt.textContent = metaLabel(k); dt.title = k;
+      const dd = document.createElement('dd');
+      const { text, title, cls } = metaValue(k, v);
+      dd.textContent = text; if (title) dd.title = title; if (cls) dd.className = cls;
+      dl.appendChild(dt); dl.appendChild(dd);
+    }
+    body.appendChild(dl);
+  };
+  section('The file', { folder: r.folder || '(top level)', file: r.file, duration: r.duration, sampleRate: r.sampleRate, source: r.source, createdAt: r.createdAt });
+  const meta = r.meta;
+  if (!meta) { section('Details', { notes: 'No details file yet.' }); return; }
+  const scalars = {};
+  const objects = [];
+  for (const [k, v] of Object.entries(meta)) {
+    if (k === 'name') continue; // the heading
+    if (v && typeof v === 'object' && !Array.isArray(v)) objects.push([k, v]); else scalars[k] = v;
+  }
+  section('Details', scalars);
+  for (const [k, v] of objects) section(metaLabel(k), k === 'chandas' && v.family ? { ...v, chandas: chandasLabel(v) } : v);
+}
+function showMetaPopup(r, x, y) {
+  renderMetaPopup(r);
+  setHidden(metaPopup, false);
+  metaPopup.style.left = '0px';
+  metaPopup.style.top = '0px';
+  const w = metaPopup.offsetWidth;
+  const h = metaPopup.offsetHeight;
+  metaPopup.style.left = `${Math.max(8, Math.min(x, window.innerWidth - w - 8))}px`;
+  metaPopup.style.top = `${Math.max(8, Math.min(y, window.innerHeight - h - 8))}px`;
+  $('#meta-popup-body').scrollTop = 0;
+  metaPopup.focus();
+}
+function hideMetaPopup() { if (!metaPopup.hidden) setHidden(metaPopup, true); }
+metaPopup.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); hideMetaPopup(); } });
+metaPopup.addEventListener('focusout', (e) => { if (!metaPopup.contains(e.relatedTarget)) hideMetaPopup(); });
+document.addEventListener('mousedown', (e) => { if (!metaPopup.hidden && !metaPopup.contains(e.target)) hideMetaPopup(); });
+$('#meta-popup-close').addEventListener('click', hideMetaPopup);
+
 const syncLib = () => { $$('.lib-item .btn-play').forEach((b) => b.classList.toggle('playing', libPlayer.playing && b.closest('.lib-item').dataset.id === libPlayingId)); };
 for (const ev of ['play', 'pause', 'ended']) libPlayer.addEventListener(ev, syncLib);
 
@@ -3637,6 +3720,7 @@ async function refreshLibrary() {
     const li = document.createElement('li');
     li.className = 'lib-item';
     li.dataset.id = r.id;
+    li.addEventListener('contextmenu', (e) => { e.preventDefault(); showMetaPopup(r, e.clientX, e.clientY); }); // everything saved about it
     li.innerHTML = `
       <div class="lib-top">
         <button class="btn-play small" type="button" aria-label="Play">
