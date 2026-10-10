@@ -593,9 +593,10 @@ defaults for the chosen learner; and the "Ignore tolerances" switch that turns e
 within/outside verdict off, leaving scores and grades), **Speech recognition** (the language the words are
 heard in, the model, and whether transcripts are made automatically — the same controls
 that sit beside every transcript panel), and **Sloka text** (whether the slokas' text is
-shown during Self Evaluation and while reciting a quiz, both on by default; whether the text
-hides while recording (off by default: on, it goes when you start recording and returns when
-you stop, the name and Previous / Next staying); the language the
+shown during Self Evaluation and while reciting a quiz, both on by default; whether the
+Transcript block is hidden in the results (off by default: on, the sloka's words and yours,
+the words-heard line and "Play both together" are left out, in Self Evaluation and quizzes,
+while the words are still heard and scored); the language the
 sloka's text is shown in — the speech-recognition language unless chosen, with the text typed
 in that language preferred, else the transcript in it — while recognition keeps its own
 language; the chandas hint; and whether an anuṣṭubh sloka is written in two lines or four). Beside them, "Why these defaults" explains how the

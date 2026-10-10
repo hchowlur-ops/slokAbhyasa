@@ -1891,7 +1891,6 @@ $('#practice-rec').addEventListener('click', async () => {
     practiceUI.setRecording(false);
     setListBusy(false);
     updateRecLabel();
-    renderSlokaTexts(); // the text returns
     basePlayer.pause();
     if (!raw || raw.duration < 0.5) { toast('That was too short. Try again.', 'error'); return; }
     const { take, info, changed, removedStart = 0 } = trimTake(raw, $('#practice-trim').checked);
@@ -1914,7 +1913,6 @@ $('#practice-rec').addEventListener('click', async () => {
       recSegments = { from: 0, parts: [] };
       recTextIndex = currentTextIndex(slokaTextItems());
       recNote('');
-      renderSlokaTexts(); // the text may hide while recording
       if ($('#practice-playalong').checked && $('#practice-headphones').checked) {
         basePlayer.seek(0);
         basePlayer.play();
@@ -2318,16 +2316,17 @@ let textLanguage = (() => { try { const v = localStorage.getItem(TEXT_LANGUAGE_K
     renderSlokaTexts();
   });
 }
-// Hide the sloka's text while recording (recite from memory); the name and the pages stay.
-const HIDE_TEXT_REC_KEY = 'tutor-hide-text-recording';
-let hideTextRec = (() => { try { return localStorage.getItem(HIDE_TEXT_REC_KEY) === '1'; } catch { return false; } })();
+// Hide the Transcript block of the results (the sloka's words and yours) in Self Evaluation
+// and quizzes; the words are still heard and scored.
+const HIDE_TRANSCRIPT_KEY = 'tutor-hide-transcript';
+let hideTranscript = (() => { try { return localStorage.getItem(HIDE_TRANSCRIPT_KEY) === '1'; } catch { return false; } })();
 {
-  const cb = $('#settings-hide-text-recording');
-  cb.checked = hideTextRec;
+  const cb = $('#settings-hide-transcript');
+  cb.checked = hideTranscript;
   cb.addEventListener('change', () => {
-    hideTextRec = cb.checked;
-    try { if (hideTextRec) localStorage.setItem(HIDE_TEXT_REC_KEY, '1'); else localStorage.removeItem(HIDE_TEXT_REC_KEY); } catch { /* ignore */ }
-    renderSlokaTexts();
+    hideTranscript = cb.checked;
+    try { if (hideTranscript) localStorage.setItem(HIDE_TRANSCRIPT_KEY, '1'); else localStorage.removeItem(HIDE_TRANSCRIPT_KEY); } catch { /* ignore */ }
+    setHidden($('#transcript'), hideTranscript);
   });
 }
 const slokaTextOf = (base) => {
@@ -2410,7 +2409,6 @@ async function renderSlokaTexts() {
   for (const sel of ['#practice-texts-play', '#practice-texts-speed', '#practice-text-time']) setHidden($(sel), !playShown());
   const body = $('#practice-text-body');
   const hintEl = $('#practice-text-chandas');
-  if (recordingNow() && hideTextRec) { setHidden(body, true); setHidden(hintEl, true); return; } // from memory: the name and the pages stay
   setHidden(body, false);
   const show = (base) => {
     const text = slokaTextOf(base);
@@ -3368,6 +3366,7 @@ function renderResult(res) {
   practice.selected = null;
   setHidden($('#practice-results'), false);
   setHidden($('#report-overall'), !!practice.quiz); // the quiz block carries the overall instead
+  setHidden($('#transcript'), hideTranscript); // the words, when wanted on screen
   renderTiles(res, practice.activeId);
   const notes = $('#result-notes');
   notes.innerHTML = '';
