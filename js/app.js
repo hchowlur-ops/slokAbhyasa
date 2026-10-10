@@ -2267,7 +2267,7 @@ async function renderSlokaTexts() {
   setHidden(host, i < 0);
   if (i < 0) return;
   const token = ++slokaTextsToken;
-  $('#practice-texts-title').textContent = practice.quiz ? 'The slokas of this quiz' : items.length > 1 ? 'The ticked slokas' : 'The sloka';
+  $('#practice-texts-title').textContent = practice.quiz ? 'The slokas of this quiz' : items.length > 1 ? 'The selected slokas' : 'The sloka';
   const withText = textShown();
   setHidden($('#practice-text'), !withText);
   setHidden($('#practice-text-names'), withText);
