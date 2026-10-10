@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { syllabify, comparePhonology } from '../js/phon.js';
-import { gitaVerse, gitaFamily, syllableWeights, identifyChandas, padaBreaks, layoutSloka, chandasLabel, chandasForRecord, INDRAVAJRA, UPENDRAVAJRA } from '../js/chandas.js';
+import { withDandas } from '../js/textdiff.js';
+import { gitaVerse, gitaFamily, syllableWeights, identifyChandas, padaBreaks, layoutSloka, linesFor, chandasLabel, chandasForRecord, INDRAVAJRA, UPENDRAVAJRA } from '../js/chandas.js';
 
 // 18.66 (anuṣṭubh) and 2.5 (upajāti), as printed
 const V18_66 = 'सर्वधर्मान्परित्यज्य मामेकं शरणं व्रज । अहं त्वा सर्वपापेभ्यो मोक्षयिष्यामि मा शुचः ॥';
@@ -75,6 +76,12 @@ test('padaBreaks and layoutSloka: lines at the word boundaries nearest the pāda
   const u = layoutSloka(V2_5.replace(/[।॥]/g, ' ').replace(/\s+/g, ' '), { perPada: 11, lines: 4 }).split('\n');
   assert.equal(u.length, 4);
   assert.deepEqual(u.map((l) => syllabify(l).length), [11, 11, 11, 11]);
+  // the triṣṭubh family is always in four lines, whatever is preferred; an anuṣṭubh follows the preference
+  assert.deepEqual([linesFor(11, 2), linesFor(11, 4), linesFor(8, 2), linesFor(8, 4), linesFor(null, 4)], [4, 4, 2, 4, 4]);
+  assert.equal(layoutSloka(V2_5.replace(/[।॥]/g, ' ').replace(/\s+/g, ' '), { perPada: 11, lines: 2 }).split('\n').length, 4);
+  assert.equal(layoutSloka(V18_66.replace(/[।॥]/g, ' ').replace(/\s+/g, ' '), { lines: 2 }).split('\n').length, 2);
+  // the daṇḍas go by pādas: । after the second, ॥ after the fourth, in two lines or four
+  assert.equal(withDandas(layoutSloka(V18_66.replace(/[।॥]/g, ' ').replace(/\s+/g, ' '), { lines: 4 })), 'सर्वधर्मान्परित्यज्य\nमामेकं शरणं व्रज ।\nअहं त्वा सर्वपापेभ्यो\nमोक्षयिष्यामि मा शुचः ॥');
 });
 
 test('labels and a record', () => {

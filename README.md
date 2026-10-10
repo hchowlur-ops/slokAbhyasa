@@ -395,9 +395,11 @@ The chandas is used in three places. A **hint** under the sloka in Self Evaluati
 quizzes ("Anuṣṭubh · 4 pādas of 8 syllables (32) · pathyā"; the pattern in its tooltip),
 also with the names when the text is hidden — "Show a hint of the chandas" in Settings
 switches it off. A transcript, which has no line breaks, is **written out in its lines** —
-two (the half-verses) or four (the pādas), chosen in Settings — broken between words at the
-boundary nearest the pāda count, so Whisper's spacing can put a break a syllable off but
-never inside a word; text typed in lines is left as typed. And the results' sounds-and-
+an anuṣṭubh in two (the half-verses) or four (the pādas), chosen in Settings; the triṣṭubh
+family always in its four pādas — broken between words at the boundary nearest the pāda
+count, so Whisper's spacing can put a break a syllable off but never inside a word; text
+typed in lines is left as typed. The daṇḍas go by pādas either way: । closes the second
+pāda and ॥ the fourth. And the results' sounds-and-
 syllables breakdown counts the **syllables heard pāda by pāda** ("pāda 3: 7 of 8 (1
 missing)"), so a dropped syllable is placed in its pāda.
 
@@ -568,7 +570,7 @@ within/outside verdict off, leaving scores and grades), **Speech recognition** (
 heard in, the model, and whether transcripts are made automatically — the same controls
 that sit beside every transcript panel), and **Sloka text** (whether the slokas' text is
 shown during Self Evaluation and while reciting a quiz, both on by default; the chandas hint;
-and whether a sloka is written in two lines or four). Beside them, "Why these defaults" explains how the
+and whether an anuṣṭubh sloka is written in two lines or four). Beside them, "Why these defaults" explains how the
 weights and tolerances are tuned for Sanskrit śloka recitation and lists the references
 (reproduced under "References" below). Under both columns a short note, "Whisper · how the
 words are heard", says that the model is downloaded once and runs on this computer, that

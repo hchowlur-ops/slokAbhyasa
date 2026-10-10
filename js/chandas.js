@@ -128,12 +128,18 @@ export function padaBreaks(words, perPada, lines = 2) {
   return breaks;
 }
 
-// The text written out in its lines (two by default), unless it already has lines.
+// How many lines a sloka is written in: the triṣṭubh family always in its four pādas; an
+// anuṣṭubh in two (the half-verses) or four, as preferred. The daṇḍas go by pādas either
+// way: । after the second pāda, ॥ after the fourth.
+export const linesFor = (perPada, preferred = 2) => (perPada === 11 ? 4 : preferred === 4 ? 4 : 2);
+
+// The text written out in its lines (see linesFor), unless it already has lines.
 export function layoutSloka(text, { perPada = null, lines = 2 } = {}) {
   const src = String(text || '');
   if (src.split(/\r?\n/).filter((l) => l.trim()).length > 1) return src;
   const words = src.trim().split(/\s+/).filter(Boolean);
-  const breaks = padaBreaks(words, perPada || identifyChandas(src).perPada, lines);
+  const pp = perPada || identifyChandas(src).perPada;
+  const breaks = padaBreaks(words, pp, linesFor(pp, lines));
   if (!breaks.length) return src.trim();
   const out = [];
   let start = 0;
