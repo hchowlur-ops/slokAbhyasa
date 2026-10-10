@@ -1926,7 +1926,7 @@ async function analyseAttempt() {
     // The words are needed soon (word diff, quiz pronunciation): for a take that is
     // transcribed whole, the speech worker starts on them now, while the analysis worker
     // compares the take. (A longer take is transcribed part by part once the parts are known.)
-    if ((sttSettings.auto || practice.quiz) && take.duration <= TAKE_WHOLE_MAX_SEC) transcribeTakePart(null, false).catch(() => {});
+    if ((sttSettings.auto || practice.quiz) && take.duration <= TAKE_WHOLE_MAX_SEC && practice.selection.length === 1) transcribeTakePart(null, false).catch(() => {}); // several slokas: each stretch once it is found
     practice.heard = await analyzer.features(take.samples, take.sampleRate, (p) => practiceProgress.set(p * 0.6), { warps: true });
     practice.options = {
       ignoreKey: $('#practice-ignorekey').checked,
@@ -3651,10 +3651,13 @@ function resetTranscriptUI() {
 const TAKE_WHOLE_MAX_SEC = 30;
 const TAKE_PART_PAD_SEC = 0.3;
 
-// The stretch of the take a report's transcript should cover: null for the whole take.
+// The stretch of the take a report's transcript should cover: the part where the sloka was
+// found whenever the take holds more than this sloka (a quiz or an evaluation of several, a
+// long take), null for the whole take. A report's "Yours" then shows that sloka's words
+// alone, and Whisper, which loses its way in a long chant, gets a single sloka's worth.
 function heardPartOf(res) {
   const take = practice.take;
-  if (!take || !res || take.duration <= TAKE_WHOLE_MAX_SEC || !res.match || res.match.located !== 'heard') return null;
+  if (!take || !res || !res.match || res.match.located !== 'heard') return null;
   return res.matched.heard;
 }
 const partKey = (win) => (win ? `${win[0].toFixed(1)}-${win[1].toFixed(1)}` : 'all');

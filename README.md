@@ -420,9 +420,11 @@ the visarga (full credit, nothing "added"). The fold is guided by the side that 
 ः, so a genuine final -ह (इह, देह, सह) is never folded away and a visarga you really
 dropped is still a slip; the breakdown line says how many were read this way. Likewise a
 nasal before a stop of its own place is the anusvāra (सङ्ग and संग are one word), which
-Whisper always writes as ं. A take longer than 30 s is transcribed
-stretch by stretch, each stretch being where a sloka was found in it: Whisper loses its way
-in a long chant, but transcribes a single sloka's worth well.
+Whisper always writes as ं. A take that holds more than one sloka — a quiz or
+an evaluation of several, or a take much longer than the sloka — is transcribed stretch by
+stretch, each stretch being where a sloka was found in it, so a sloka's "Yours" shows that
+sloka's words alone; Whisper loses its way in a long chant, but transcribes a single sloka's
+worth well.
 
 Languages: **English, Sanskrit (Devanagari), Kannada, Telugu**. Models: Fast (whisper-base,
 about 75 MB), Better (whisper-small, about 250 MB), Best (whisper-large-v3-turbo, about
