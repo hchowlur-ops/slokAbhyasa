@@ -1259,7 +1259,64 @@ const practiceUI = bindRecorderUI({
   idleText: 'Tap to start recording', recordingText: 'Recording… tap to stop',
 });
 practiceUI.elapsed = () => (practiceRecorder ? practiceRecorder.elapsed : 0);
-const practiceProgress = progressUI('practice-progress');
+// ---------- Evaluating…: the results from the moment a recording stops until the open report is ready ----------
+// Shown in place of the report body (and of the quiz block) from the stop of a recording
+// until the open sloka's results are in: its comparison, its words when they are expected
+// (automatic transcription, a quiz, or words already heard for this take) and, in a quiz,
+// the score. A report opened with Previous / Next whose words are still on their way shows
+// it again until they come. The block mirrors whichever progress is running — the
+// comparison's (step 2's bar, folded away by then) or the speech worker's (in the Transcript
+// block, under the folded Analysis) — so the Stop of a quiz's listening is at hand there too.
+let evaluating = false;
+const evalProgress = progressUI('evaluating-progress');
+const evalSources = { compare: null, words: null };
+let evalShown = null;
+function renderEvalProgress() {
+  const src = evalSources.compare || evalSources.words;
+  if (!src) { evalProgress.hide(); evalShown = null; $('#evaluating-sub').textContent = 'the results of this sloka are on their way'; return; }
+  if (evalShown !== src) { evalProgress.show(src.text || ' ', src.stop); evalShown = src; }
+  evalProgress.set(src.p, src.text);
+  $('#evaluating-sub').textContent = '';
+}
+// a progress bar whose state the Evaluating block mirrors
+function mirrored(ui, key) {
+  return {
+    show(text, stopFn) { ui.show(text, stopFn); evalSources[key] = { p: 0, text: text || '', stop: stopFn || null }; renderEvalProgress(); },
+    set(p, text) { ui.set(p, text); const src = evalSources[key]; if (src) { src.p = p; if (text) src.text = text; renderEvalProgress(); } },
+    hide() { ui.hide(); evalSources[key] = null; renderEvalProgress(); },
+  };
+}
+const practiceProgress = mirrored(progressUI('practice-progress'), 'compare');
+function setEvaluating(on) {
+  evaluating = !!on;
+  setHidden($('#evaluating'), !evaluating);
+  if (evaluating) renderEvalProgress();
+  const r = practice.results.get(practice.activeId);
+  setHidden($('#report-body'), evaluating || !practice.result || !isReport(r));
+  setHidden($('#quiz-score'), evaluating || !(practice.quiz && practice.quizAttempt));
+}
+// the open report's words are in the take's cache: on screen in a moment
+const wordsCached = (r) => practice.heardTranscripts.has(partKey(heardPartOf(r)));
+// Whether more is on its way for the open report: a quiz's score, or its words, expected
+// and not on screen yet.
+function moreComing(r) {
+  if (!isReport(r)) return false;
+  if (practice.quiz && (quizScoring || !practice.quizAttempt)) return true;
+  if (sttPractice.heard || !(sttSettings.auto || practice.heardTranscripts.size)) return false;
+  return !!sttBothInflight || wordsCached(r);
+}
+// Evaluating… ends when nothing more is on its way for the open report; a report whose
+// words are cached but not on screen gets them first.
+function settleEvaluating() {
+  if (!evaluating) return;
+  const r = practice.results.get(practice.activeId);
+  if (!practice.result || !isReport(r)) { setEvaluating(false); return; }
+  if (practice.quiz && (quizScoring || !practice.quizAttempt)) return; // the score is coming
+  if (sttPractice.heard || !(sttSettings.auto || practice.heardTranscripts.size)) { setEvaluating(false); return; } // on screen, or no words wanted
+  if (sttBothInflight) return; // the words are coming
+  if (wordsCached(r)) { transcribeBoth(false); return; }
+  setEvaluating(false); // nothing more is coming: the report shows without its words
+}
 const drawBaseWave = bindWave($('#practice-base-wave'), basePlayer, () => practice.base && practice.base.samples, $('#practice-base-cur'), $('#practice-base-dur'));
 bindPlayButton($('#practice-base-play'), basePlayer);
 bindPlayButton($('#res-play-base'), basePlayer);
@@ -1901,6 +1958,7 @@ $('#practice-rec').addEventListener('click', async () => {
     take.segments = segments && segments.parts.length ? segments.parts.map((p) => ({ ...p, from: p.from - removedStart, to: p.to - removedStart })) : null;
     practice.take = take;
     await heardPlayer.load(take.blob);
+    showEvaluating(); // the results card, with Evaluating… in it, from now until the sloka's report is in
     await analyseAttempt();
   } else {
     if (!practice.base) return;
@@ -1961,12 +2019,11 @@ async function analyseAttempt() {
     setHidden($('#practice-base'), !previewShown());
     if (pool.includes(practice.activeId) && practice.base) showActiveReport();
     else await setActiveBase(pool[0]);
-    focusResults(); // steps 1 and 2 fold away; the report is what remains
-    $('#practice-results').scrollIntoView({ behavior: 'smooth', block: 'start' });
     if (practice.quiz) scoreQuizAttempt();
     else saveSession(); // a Self Evaluation / Teach take is kept for the Reports dashboard
     transcribeAllParts(); // the other reports' words, in the background
   } catch (err) {
+    hideResults(); // Evaluating… goes with the results card
     toast(err.message, 'error', 7000);
   } finally {
     practiceProgress.hide();
@@ -2224,6 +2281,7 @@ function showActiveReport() {
     setHidden($('#report-error'), false);
     setHidden($('#report-body'), true);
     resetTranscriptUI();
+    setEvaluating(false); // nothing is coming for it
     return;
   }
   setHidden($('#report-error'), true);
@@ -2231,6 +2289,10 @@ function showActiveReport() {
   renderResult(r);
   renderQuizScore();
   if (sttSettings.auto || practice.heardTranscripts.size) transcribeBoth(false);
+  // its words (or the quiz's score) still on their way: Evaluating… until they come (the
+  // body, just shown, hides again under it)
+  if (evaluating || moreComing(r)) setEvaluating(true);
+  settleEvaluating();
 }
 
 // ======================================================================
@@ -2602,6 +2664,7 @@ async function scoreQuizAttempt() {
   quizScoring = true;
   updateRecLabel();
   renderQuizScore();
+  setEvaluating(true); // until the score and the open sloka's words are in
   const live = () => practice.quiz === quiz && practice.take === take && practice.quizAttempt === attempt;
   const prog = practiceProgress;
   // Stop skips the rest of the listening: the attempt is scored without pronunciation.
@@ -2686,7 +2749,7 @@ async function scoreQuizAttempt() {
     if (live()) { attempt.error = err.message; toast(`The quiz attempt could not be saved: ${err.message}`, 'error', 8000); }
   } finally {
     if (live() || practice.quizAttempt === null) { quizScoring = false; prog.hide(); updateRecLabel(); }
-    if (live()) renderQuizScore();
+    if (live()) { renderQuizScore(); settleEvaluating(); }
   }
 }
 
@@ -2695,7 +2758,7 @@ function renderQuizScore() {
   const a = practice.quizAttempt;
   const card = $('#quiz-score');
   if (!quiz || !a) { setHidden(card, true); return; }
-  setHidden(card, false);
+  setHidden(card, evaluating); // Evaluating… stands in for it until the score is in
   $('#quiz-score-name').textContent = quiz.name;
   const status = $('#quiz-score-status');
   const tol = attemptTolerance(a);
@@ -3285,6 +3348,16 @@ for (const sel of FOLDING_STEPS) {
   head.addEventListener('click', (e) => { if (e.target.closest('button, input, select, a, label')) return; toggle(); });
   head.addEventListener('keydown', (e) => { if (e.target === head && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggle(); } });
 }
+// The results card from the moment a recording stops: Evaluating… in it and the steps
+// folded away, until the open sloka's report is in.
+function showEvaluating() {
+  setHidden($('#practice-results'), false);
+  renderReportBrowser(); // no reports yet
+  setHidden($('#report-error'), true);
+  setEvaluating(true);
+  focusResults();
+  $('#practice-results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
 function focusResults() {
   const take = practice.take;
   $('#practice-step2-summary').textContent = take ? `Recorded ${fmtTime(take.duration)} · open to record again` : '';
@@ -3301,6 +3374,7 @@ function hideResults() {
   stopDuet();
   practice.result = null;
   practice.selected = null;
+  setEvaluating(false);
   practice.results.clear();
   practice.pairContrast.clear();
   practice.wordSims.clear();
@@ -3807,7 +3881,7 @@ async function refreshLibrary() {
 // ======================================================================
 
 const sttPractice = { base: null, heard: null };
-const sttProgress = progressUI('stt-progress');
+const sttProgress = mirrored(progressUI('stt-progress'), 'words'); // the take's words; the Evaluating block shows it too
 buildSttControls($('#stt-controls'));
 // the same controls on the Settings page, with the Automatic switch
 buildSttControls($('#settings-stt-controls'));
@@ -3983,6 +4057,8 @@ function transcribeBoth(force) {
       sttBothInflight = null;
       // another report was opened while this ran: do the same for the one now on screen
       if (practice.activeId !== id && practice.result && (sttSettings.auto || practice.heardTranscripts.size)) transcribeBoth(false);
+      // no words for this report (stopped, or failed): it shows without them
+      else if (current() && !sttPractice.heard && !(practice.quiz && (quizScoring || !practice.quizAttempt))) setEvaluating(false);
     }
   })();
   return sttBothInflight;
@@ -4086,6 +4162,7 @@ function renderTranscriptDiff() {
     ? `${Math.round(sm.similarity * 100)}% of the sloka's ${sttPractice.base.typed ? 'typed text' : 'text'} heard (${sm.matched} of ${ai.length} words) · ${sm.missing} missing · ${sm.extra} extra or different · ${sttLanguageLabel(sttPractice.base.language)}`
     : 'Nothing was recognised in the sloka. Try another language or model.';
   setHidden($('#stt-out'), false);
+  settleEvaluating(); // the open report's words are on screen
 }
 
 // Library › what a sloka's sidecar says, in a glance: who, how judged, text, voice.

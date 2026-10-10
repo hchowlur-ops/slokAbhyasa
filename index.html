@@ -374,8 +374,21 @@
             <span class="report-flag" id="report-flag" hidden></span>
           </div>
           <p class="report-error" id="report-error" hidden></p>
+          <!-- from the stop of a recording until the open sloka's results are in: its comparison, its words, a quiz's score -->
+          <div class="evaluating" id="evaluating" role="status" aria-live="polite" hidden>
+            <div class="evaluating-head">
+              <span class="spinner" aria-hidden="true"></span>
+              <strong>Evaluating…</strong>
+              <span class="muted small" id="evaluating-sub"></span>
+            </div>
+            <div class="progress" id="evaluating-progress" hidden>
+              <div class="progress-bar"><div class="progress-fill" id="evaluating-progress-fill"></div></div>
+              <span class="muted small" id="evaluating-progress-label"></span>
+              <button class="btn btn-sm btn-ghost progress-stop" id="evaluating-progress-stop" type="button" hidden>Stop</button>
+            </div>
+          </div>
           <div id="report-body">
-          <!-- the overall, in the middle; the words under it; everything else under Analysis -->
+          <!-- the overall, in the middle; both together under it; the words and everything else under Analysis -->
           <div class="result-overall" id="report-overall">
             <div class="score score-main">
               <div class="ring" id="score-ring" style="--pct: 0"><span class="mono ring-val" id="score-overall">–</span></div>
@@ -385,7 +398,31 @@
               <div class="score-verdict" id="score-verdict"></div>
             </div>
           </div>
+          <!-- both together, right under the overall -->
+          <div class="result-duet" id="result-duet">
+            <div class="playback-row" id="res-playback">
+              <button class="btn btn-both" id="res-play-both" type="button" title="The sloka in the left ear and your recording in the right, both from the start of the part that was compared, at the same speed">
+                <svg class="ico-play" viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
+                <svg class="ico-pause" viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>
+                <span>Play both together</span>
+                <span class="muted small">sloka left · yours right</span>
+              </button>
+              <div class="speed inline">
+                <span class="muted small">Speed</span>
+                <input type="range" class="slider" id="res-speed" min="0.5" max="2" step="0.05" value="1" aria-label="Playback speed" />
+                <span class="mono speed-val" id="res-speed-val">1.00×</span>
+              </div>
+            </div>
+          </div>
 
+          <details class="analysis" id="analysis">
+            <summary>
+              <svg class="step-caret" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7.4 8.6 12 13.2l4.6-4.6L18 10l-6 6-6-6z"/></svg>
+              <span class="analysis-title">Analysis</span>
+              <span class="muted small" id="analysis-sub">the words heard, category scores, the chart, every deviation</span>
+            </summary>
+            <div class="analysis-body">
+          <!-- the words first, then the scores, the chart and the deviations -->
           <div class="transcript" id="transcript">
             <div class="dev-head-row">
               <h3>Transcript</h3>
@@ -425,33 +462,12 @@
                 <div class="stt-text" id="stt-heard" data-empty="what SlokAbhyasa heard, once transcribed"></div>
               </div>
             </div>
-            <!-- the summary sentence (empty, so hidden, until the words are in), then both together -->
+            <!-- the summary sentence (empty, so hidden, until the words are in) -->
             <p class="stt-summary" id="stt-summary"></p>
-            <div class="playback-row" id="res-playback">
-              <button class="btn btn-both" id="res-play-both" type="button" title="The sloka in the left ear and your recording in the right, both from the start of the part that was compared, at the same speed">
-                <svg class="ico-play" viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
-                <svg class="ico-pause" viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>
-                <span>Play both together</span>
-                <span class="muted small">sloka left · yours right</span>
-              </button>
-              <div class="speed inline">
-                <span class="muted small">Speed</span>
-                <input type="range" class="slider" id="res-speed" min="0.5" max="2" step="0.05" value="1" aria-label="Playback speed" />
-                <span class="mono speed-val" id="res-speed-val">1.00×</span>
-              </div>
-            </div>
             <div id="stt-out" hidden>
               <details class="phon-report" id="stt-phon" hidden></details>
             </div>
           </div>
-
-          <details class="analysis" id="analysis">
-            <summary>
-              <svg class="step-caret" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7.4 8.6 12 13.2l4.6-4.6L18 10l-6 6-6-6z"/></svg>
-              <span class="analysis-title">Analysis</span>
-              <span class="muted small" id="analysis-sub">category scores, the chart, every deviation</span>
-            </summary>
-            <div class="analysis-body">
           <div class="scores" id="scores">
             <div class="score" data-cat="phoneme" title="The right sounds: place of articulation (t/ṭ, s/ś/ṣ), voicing (k/g), aspiration (k/kh), nasals and anusvāra, visarga, double consonants — from the words heard against the sloka's text">
               <div class="score-val mono" id="score-phoneme">–</div>

@@ -178,7 +178,11 @@ slokas you had ticked there.
    they appear, steps 1 and 2 fold up into their heads — "1 sloka ticked", "Recorded 0:21 ·
    open to record again" — so the report is what you see; click a head to open that step
    again (to tick another sloka, say), and "Record again" opens both. The same happens in
-   Teach and in a quiz.
+   Teach and in a quiz. From the moment you stop, the results card says **Evaluating…**,
+   with the progress of the listening, the comparison and, in a quiz, the scoring, until
+   the open sloka's report is in — its scores and, when the words are transcribed, its
+   transcript; a report opened with Previous / Next whose words are still on their way
+   shows it again until they come.
    * The **overall score**, in the middle: a ring with the weighted mean of the seven
      categories (see "What is scored" below — phonemes 30, vowel length 25, syllables 15,
      emphasis 10, pitch contour 10, phrasing 5, timing 5 by default; the **Settings** page
@@ -186,14 +190,16 @@ slokas you had ticked there.
      practice below. Only the categories that could be judged count; the overall is
      recomputed when the word scores arrive with the transcript. The ring also carries the
      verdict for the whole report (**within tolerance** or not, see below).
-   * The **transcript** of the sloka and of your attempt, directly under the overall, with
-     the words that differ highlighted (see "Transcripts" below). Each row has a **play
-     button** by its label — "Sloka ▶" plays the sloka, "Yours ▶" plays your recording — and
-     under the rows **"Play both together"** plays the two at once, the sloka in the left
-     ear and yours in the right, from the start of the part that was compared and at the
-     same speed, so the difference is heard rather than read (headphones make the two
-     sides distinct). The speed slider beside it applies to all three.
-   * **Analysis**, folded under the transcript; open it for the detail:
+   * **"Play both together"**, directly under the overall, plays the sloka and your attempt
+     at once, the sloka in the left ear and yours in the right, from the start of the part
+     that was compared and at the same speed, so the difference is heard rather than read
+     (headphones make the two sides distinct). The speed slider beside it applies to every
+     play button of the report.
+   * **Analysis**, folded under that; open it for the detail:
+     - the **transcript** of the sloka and of your attempt, with the words that differ
+       highlighted (see "Transcripts" below). Each row has a **play button** by its label —
+       "Sloka ▶" plays the sloka, "Yours ▶" plays your recording; "Transcribe again" reruns
+       the words with another language or model;
      - the seven **category tiles**, each with its score, what it rests on and whether it
        is within tolerance; a category that cannot be judged for this report (no
        transcript yet, pitch shown for interest only for recited text) is collapsed under
@@ -323,7 +329,7 @@ tolerance fields stay visible but greyed until the switch is off again.
   as `<name>.transcript.json`. You need not wait for it before saving.
 * **Self Evaluation** – as soon as you choose a sloka its text appears at the top of the page
   (transcribed on the spot if it has none yet). After each attempt your words are transcribed
-  and compared, in the Transcript block directly under the scores: sloka words that were not
+  and compared, in the Transcript block at the top of the Analysis fold: sloka words that were not
   heard are highlighted in red there and at the top; extra or different words in your attempt
   are highlighted in amber. Click any phrase to hear it; the small "i" by "Yours" opens
   this legend as an overlay. "Transcribe again" reruns with another language or model.
@@ -517,8 +523,9 @@ because every category is measured and stored whatever you choose. The **table**
 ring gives, per sloka, every category with ✓ / ✗ marks, the overall with its grade, and
 whether it was correct, then the shares within tolerance and the average scores; the open
 sloka's row is highlighted, and clicking another row opens that sloka's words and analysis.
-The **Trend** over the attempts folds away beneath the table. Below all that come the
-transcript and the Analysis fold exactly as in Self Evaluation, for the open sloka; its
+The **Trend** over the attempts folds away beneath the table. Below all that come "Play
+both together" and the Analysis fold (the transcript at its top) exactly as in Self
+Evaluation, for the open sloka; its
 category tiles mark the categories the quiz does not score, and a sloka's overall is the
 same number in the table and in its tiles. The word categories need the speech model; if it
 cannot run, they are left out of the verdict and of the overall, and the block says so.
@@ -594,9 +601,10 @@ within/outside verdict off, leaving scores and grades), **Speech recognition** (
 heard in, the model, and whether transcripts are made automatically — the same controls
 that sit beside every transcript panel), and **Sloka text** (whether the slokas' text is
 shown during Self Evaluation and while reciting a quiz, both on by default; whether the
-Transcript block is hidden in the results (off by default: on, the sloka's words and yours,
-the words-heard line and "Play both together" are left out, in Self Evaluation and quizzes,
-while the words are still heard and scored); the language the
+Transcript block is hidden in the results (off by default: on, the sloka's words and yours
+and the words-heard line, at the top of the Analysis fold, are left out, in Self Evaluation
+and quizzes, "Play both together" staying under the overall, while the words are still heard
+and scored); the language the
 sloka's text is shown in — the speech-recognition language unless chosen, with the text typed
 in that language preferred, else the transcript in it — while recognition keeps its own
 language; the chandas hint; and whether an anuṣṭubh sloka is written in two lines or four). Beside them, "Why these defaults" explains how the

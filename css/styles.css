@@ -560,7 +560,7 @@ canvas { display: block; }
 .scores { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); grid-auto-flow: row dense; gap: 12px; align-items: stretch; margin-bottom: 12px; }
 .unjudged .scores { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
 /* the overall, in the middle of the report, above the words */
-.result-overall { display: flex; justify-content: center; margin: 2px 0 18px; }
+.result-overall { display: flex; justify-content: center; margin: 2px 0 12px; }
 .result-overall .score-main { width: min(100%, 480px); padding: 8px 12px 10px; }
 .result-overall .ring { width: 150px; height: 150px; }
 .result-overall .ring::before { inset: 13px; }
@@ -659,6 +659,7 @@ canvas { display: block; }
 .transcript-panel.top { border-left: 4px solid var(--accent); }
 .tp-title, .stt-label { letter-spacing: .1em; }
 .transcript .dev-head-row { margin-top: 0; }
+.analysis-body .transcript { margin: 0 0 18px; }
 .transcript .stt-text { background: var(--surface); }
 .transcript > p.muted:last-child { margin-bottom: 0; }
 .stt-controls { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
@@ -693,8 +694,9 @@ canvas { display: block; }
 .info-pop p:last-child { margin: 0; }
 .btn-play.play-heard { background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--heard) 70%, #fff), var(--heard) 45%, color-mix(in srgb, var(--heard) 80%, #000)); box-shadow: 0 10px 24px -8px color-mix(in srgb, var(--heard) 80%, transparent), inset 0 1px 0 rgba(255, 255, 255, .25); }
 #transcript .stt-text:empty::before { content: attr(data-empty); color: var(--muted); font-size: 0.9rem; font-style: italic; }
-#res-playback { margin: 10px 0 10px; padding-top: 10px; border-top: 1px dashed var(--border); }
-.stt-summary + #res-playback { margin-top: 6px; }
+/* both together, right under the overall (at the top of the report in a quiz, whose block carries the overall) */
+.result-duet { display: flex; justify-content: center; margin: 0 0 18px; }
+#res-playback { margin: 0; justify-content: center; }
 .btn-both { gap: 8px; }
 .btn-both .muted { font-weight: 500; }
 .btn-both.playing { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-strong); }
@@ -863,6 +865,14 @@ canvas { display: block; }
 .report-flag.bad { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
 .report-flag.warn { background: color-mix(in srgb, var(--timing) 18%, transparent); color: var(--timing); }
 .report-flag.info { background: var(--accent-soft); color: var(--accent-strong); }
+/* Evaluating…: in place of the report from the stop of a recording until the open sloka's results are in */
+.evaluating { display: flex; flex-direction: column; gap: 10px; margin: 2px 0 18px; padding: 18px 20px; border-radius: 14px; background: var(--surface-2); border: 1px solid var(--border); border-left: 4px solid var(--accent); }
+.evaluating-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.evaluating-head strong { font-family: var(--display); font-size: 1.25rem; color: var(--indigo); }
+.evaluating .spinner { flex: none; width: 22px; height: 22px; border-radius: 50%; border: 3px solid var(--border); border-top-color: var(--accent); animation: spin .9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.evaluating .progress { margin-top: 0; }
+@media (prefers-reduced-motion: reduce) { .evaluating .spinner { animation: none; border-top-color: var(--border); } }
 .report-error { padding: 12px 14px; border-radius: 10px; background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); margin: 0 0 12px; }
 .w-dim { opacity: .38; }
 .lib-pick { width: 18px; height: 18px; accent-color: var(--accent); margin: 0; flex: none; cursor: pointer; }
