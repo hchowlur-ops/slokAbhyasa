@@ -179,15 +179,50 @@ export function windowedTokens(t, win, fullDuration) {
 // ॥ after the last line, । after the first of two or the second of four (| and || for
 // romanised text). Returns the non-empty lines (their own trailing daṇḍas dropped) and the
 // mark each gets, by line index.
+// A speaker's attribution opening a śloka — "अर्जुन उवाच", "श्रीभगवानुवाच", "sañjaya
+// uvāca" — in any script, Whisper's spellings included ("श्री भगवानु वाच्छ"): it is not part
+// of the śloka, so it is not counted in its metre and is written on a line of its own.
+const UVACA = /uvac+h?a$/;
+const uvacaKey = (words) => phoneticKey(words.join(''));
+// How many of the words open with the attribution: the words up to and including the one
+// that completes uvāca, among the first three; 0 when there is none (or nothing follows).
+export function uvacaWords(words) {
+  const n = Math.min(3, words.length - 1);
+  for (let e = 0; e < n; e++) {
+    const key = uvacaKey(words.slice(0, e + 1));
+    if (key.length >= 5 && UVACA.test(key)) return e + 1;
+  }
+  return 0;
+}
+// Whether a whole line is the attribution.
+export function isUvacaLine(line) {
+  const words = String(line || '').trim().split(/\s+/).filter(Boolean);
+  if (!words.length || words.length > 3) return false;
+  const key = uvacaKey(words);
+  return key.length >= 5 && UVACA.test(key);
+}
+// The attribution and the śloka proper, as text; the body keeps its own line breaks.
+export function splitUvaca(text) {
+  const src = String(text || '');
+  const ms = [...src.matchAll(/\S+/g)];
+  const k = uvacaWords(ms.map((m) => m[0]));
+  if (!k) return { prefix: '', body: src };
+  const end = ms[k - 1].index + ms[k - 1][0].length;
+  return { prefix: src.slice(0, end).trim(), body: src.slice(end).trim() };
+}
+
 export function dandaMarks(text) {
   const src = String(text || '');
   const lines = src.split(/\r?\n/).map((l) => l.trim().replace(/[\s।॥|]+$/u, '')).filter(Boolean);
   const latin = !/[\u0900-\u0DFF]/.test(src);
   const marks = new Map();
   if (!lines.length) return { lines, marks };
+  // an attribution on the first line carries no daṇḍa and is not a pāda line
+  const skip = lines.length > 1 && isUvacaLine(lines[0]) ? 1 : 0;
+  const n = lines.length - skip;
   marks.set(lines.length - 1, latin ? '||' : '॥');
-  if (lines.length === 2) marks.set(0, latin ? '|' : '।');
-  else if (lines.length === 4) marks.set(1, latin ? '|' : '।');
+  if (n === 2) marks.set(skip, latin ? '|' : '।');
+  else if (n === 4) marks.set(skip + 1, latin ? '|' : '।');
   return { lines, marks };
 }
 

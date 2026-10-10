@@ -16,9 +16,9 @@ import { trimSilence } from './dsp/trim.js';
 import { Transcriber, STT_LANGUAGES, STT_LANGUAGE_CODES, STT_TIERS, sttLanguageLabel, sttLanguageTag, sttTierLabel, isStopped } from './stt.js';
 import { normalizeStore, putInStore, pickTranscript, availableLanguages } from './transcripts.js';
 import { transliterateTranscript } from './translit.js';
-import { identifyChandas, layoutSloka, padaBreaks, linesFor, chandasLabel, chandasPattern, gitaVerse, gitaFamily } from './chandas.js';
+import { identifyChandas, layoutSloka, padaBreaks, linesFor, uvacaOffset, chandasLabel, chandasPattern, gitaVerse, gitaFamily } from './chandas.js';
 import { periodRange, shiftPeriod, inRange, isoDate, slokaRows, summarize, KIND_LABEL } from './reports.js';
-import { diffWords, diffSummary, compareWords, tokenizeTranscript, windowedTokens, tokenize, dandaMarks, withDandas } from './textdiff.js';
+import { diffWords, diffSummary, compareWords, tokenizeTranscript, windowedTokens, tokenize, dandaMarks, withDandas, uvacaWords } from './textdiff.js';
 import { AGE_GROUPS, VOICE_TYPES, STYLE_MODES, DEFAULT_STYLE_MODE, presetsFor, ADULT_PRESET, compareModeFor, speakerLabel, ageGroupLabel, styleMode, voiceStats, deriveText } from './meta.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -523,9 +523,12 @@ function renderTranscriptText(host, t, toks, flagged, cls, play, dimmed = null, 
       lines.forEach((l, li) => { acc += counts[li]; lineEnd.set(acc - 1, { mark: marks.get(li) || '', last: li === lines.length - 1 }); });
     } else if (lines.length) {
       // one line: broken at the pāda or half-verse boundaries by the metre, between words
+      const words = toks.map((tok) => tok.word);
+      const skip = uvacaWords(words); // "arjuna uvāca": a line of its own, no daṇḍa, not a pāda
       const pp = t.perPada || identifyChandas(t.text).perPada;
-      const breaks = padaBreaks(toks.map((tok) => tok.word), pp, linesFor(pp, slokaLines)); // the triṣṭubh family always in four
+      const breaks = padaBreaks(words.slice(skip), pp, linesFor(pp, slokaLines)).map((b) => b + skip); // the triṣṭubh family always in four
       const n = breaks.length + 1;
+      if (skip) lineEnd.set(skip - 1, { mark: '', last: false });
       const latin = !/[\u0900-\u0DFF]/.test(t.text);
       const markOf = (li) => (li === n - 1 ? (latin ? '||' : '॥') : (n === 2 && li === 0) || (n === 4 && li === 1) ? (latin ? '|' : '।') : '');
       breaks.forEach((b, li) => lineEnd.set(b, { mark: markOf(li), last: false }));
@@ -3747,7 +3750,8 @@ function windowedDiff(res, baseT, heardT, baseDuration, takeDuration) {
   // the same words, as text, for the akṣara-and-phoneme comparison
   // pāda by pāda when the whole text was compared (the metre is read from the text itself)
   const perPada = ai.length === A.toks.length ? identifyChandas(baseT.text).perPada : null;
-  const phonology = ai.length ? comparePhonology(ai.map((i) => A.toks[i].word).join(' '), bi.map((i) => B.toks[i].word).join(' '), { perPada }) : null;
+  const offset = perPada ? uvacaOffset(baseT.text) : 0; // the pādas start after "arjuna uvāca"
+  const phonology = ai.length ? comparePhonology(ai.map((i) => A.toks[i].word).join(' '), bi.map((i) => B.toks[i].word).join(' '), { perPada, offset }) : null;
   return { A, B, ai, bi, delA, insB, dimA, dimB, summary: cmp.summary, phonology };
 }
 

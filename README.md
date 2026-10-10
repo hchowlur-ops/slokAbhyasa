@@ -399,7 +399,10 @@ an anuṣṭubh in two (the half-verses) or four (the pādas), chosen in Setting
 family always in its four pādas — broken between words at the boundary nearest the pāda
 count, so Whisper's spacing can put a break a syllable off but never inside a word; text
 typed in lines is left as typed. The daṇḍas go by pādas either way: । closes the second
-pāda and ॥ the fourth. And the results' sounds-and-
+pāda and ॥ the fourth. A speaker's attribution opening the text — "अर्जुन उवाच",
+"श्रीभगवानुवाच", in any script and in Whisper's spellings — is not part of the śloka: it is
+left out of the count, written on a line of its own without a daṇḍa, and the pāda counts
+start after it. And the results' sounds-and-
 syllables breakdown counts the **syllables heard pāda by pāda** ("pāda 3: 7 of 8 (1
 missing)"), so a dropped syllable is placed in its pāda.
 

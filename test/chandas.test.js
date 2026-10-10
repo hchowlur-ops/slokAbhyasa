@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { syllabify, comparePhonology } from '../js/phon.js';
 import { withDandas } from '../js/textdiff.js';
-import { gitaVerse, gitaFamily, syllableWeights, identifyChandas, padaBreaks, layoutSloka, linesFor, chandasLabel, chandasForRecord, INDRAVAJRA, UPENDRAVAJRA } from '../js/chandas.js';
+import { gitaVerse, gitaFamily, syllableWeights, identifyChandas, padaBreaks, layoutSloka, linesFor, uvacaOffset, chandasLabel, chandasForRecord, INDRAVAJRA, UPENDRAVAJRA } from '../js/chandas.js';
 
 // 18.66 (anuṣṭubh) and 2.5 (upajāti), as printed
 const V18_66 = 'सर्वधर्मान्परित्यज्य मामेकं शरणं व्रज । अहं त्वा सर्वपापेभ्यो मोक्षयिष्यामि मा शुचः ॥';
@@ -112,4 +112,24 @@ test('comparePhonology counts the syllables heard pāda by pāda', () => {
   assert.equal(extra.padas.length, 4);
   assert.equal(extra.padas[3].ref, 9);
   assert.equal(comparePhonology(ref, ref).padas, null);
+});
+
+test('an "uvāca" opening is left out of the metre, laid on its own line, and skipped by the pāda counts', () => {
+  const plain = V12_1.replace(/[।॥]/g, ' ').replace(/\s+/g, ' ').trim();
+  const withUvaca = 'अर्जुन उवाच ' + plain;
+  const ch = identifyChandas(withUvaca);
+  assert.deepEqual([ch.family, ch.syllables, ch.exact, ch.form], ['anushtubh', 32, true, 'pathyā']);
+  assert.equal(uvacaOffset(withUvaca), 6, 'a-rju-na u-vā-ca');
+  assert.equal(uvacaOffset(plain), 0);
+  const laid = layoutSloka(withUvaca).split('\n');
+  assert.equal(laid.length, 3);
+  assert.equal(laid[0], 'अर्जुन उवाच');
+  assert.equal(withDandas(layoutSloka(withUvaca)), 'अर्जुन उवाच\nएवं सततयुक्ता ये भक्तास्त्वां पर्युपासते ।\nये चाप्यक्षरमव्यक्तं तेषां के योगवित्तमाः ॥');
+  assert.equal(layoutSloka(withUvaca, { lines: 4 }).split('\n').length, 5);
+  const rec = chandasForRecord({ name: 'CH12-01', meta: null, store: { current: 'sanskrit', languages: { sanskrit: { text: withUvaca } } } });
+  assert.deepEqual([rec.syllables, rec.exact], [32, true]);
+  // the pāda counts start after it
+  const c = comparePhonology(withUvaca, withUvaca, { perPada: 8, offset: uvacaOffset(withUvaca) });
+  assert.deepEqual(c.padas.map((p) => p.ref), [8, 8, 8, 8]);
+  assert.deepEqual(c.padas.map((p) => p.heard), [8, 8, 8, 8]);
 });

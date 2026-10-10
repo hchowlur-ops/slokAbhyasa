@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { tokenize, diffWords, diffSummary, compareWords, phoneticKey, tokenizeTranscript, windowedTokens, dandaMarks, withDandas } from '../js/textdiff.js';
+import { tokenize, diffWords, diffSummary, compareWords, phoneticKey, tokenizeTranscript, windowedTokens, dandaMarks, withDandas, uvacaWords, isUvacaLine, splitUvaca } from '../js/textdiff.js';
 
 test('phoneticKey: Devanagari, Kannada and Latin spellings of one sound share a key', () => {
   assert.equal(phoneticKey('नमः'), 'namah');
@@ -112,4 +112,27 @@ test('a displayed śloka gets its daṇḍas: ॥ at the end, । after the firs
   assert.equal(withDandas('sarvadharmān parityajya\nmām ekaṃ śaraṇaṃ vraja'), 'sarvadharmān parityajya |\nmām ekaṃ śaraṇaṃ vraja ||');
   assert.equal(withDandas('क\nख\nग'), 'क\nख\nग ॥', 'three lines: only the final mark');
   assert.equal(withDandas(''), '');
+});
+
+test('"arjuna uvāca" opening a śloka is recognised in any script and spelling', () => {
+  assert.equal(uvacaWords(['अर्जुन', 'उवाच', 'एवं']), 2);
+  assert.equal(uvacaWords(['श्री', 'भगवान्', 'उवाच', 'मय्यावेश्य']), 3);
+  assert.equal(uvacaWords(['श्रीभगवानुवाच', 'मय्यावेश्य']), 1);
+  assert.equal(uvacaWords(['श्री', 'भगवानु', 'वाच्छ', 'मैया']), 3, "Whisper's spelling");
+  assert.equal(uvacaWords(['सञ्जय', 'उवाच।', 'तं']), 2);
+  assert.equal(uvacaWords(['arjuna', 'uvāca', 'evaṃ']), 2);
+  assert.equal(uvacaWords(['ಅರ್ಜುನ', 'ಉವಾಚ', 'ಏವಂ']), 2);
+  assert.equal(uvacaWords(['శ్రీభగవానువాచ', 'x']), 1);
+  assert.equal(uvacaWords(['सर्वधर्मान्परित्यज्य', 'मामेकं', 'शरणं', 'व्रज']), 0);
+  assert.equal(uvacaWords(['अर्जुन', 'उवाच']), 0, 'nothing follows: not an opening');
+  assert.equal(uvacaWords(['एवं', 'सततयुक्ता', 'ये', 'भक्तास्त्वां', 'उवाच', 'x']), 0, 'only among the first three words');
+  assert.equal(isUvacaLine('अर्जुन उवाच'), true);
+  assert.equal(isUvacaLine('श्री भगवानु वाच्छ'), true);
+  assert.equal(isUvacaLine('एवं सततयुक्ता ये'), false);
+  assert.deepEqual(splitUvaca('अर्जुन उवाच एवं सततयुक्ता'), { prefix: 'अर्जुन उवाच', body: 'एवं सततयुक्ता' });
+  assert.deepEqual(splitUvaca('श्रीभगवानुवाच\nमय्यावेश्य मनो ये\nमां नित्ययुक्ता'), { prefix: 'श्रीभगवानुवाच', body: 'मय्यावेश्य मनो ये\nमां नित्ययुक्ता' });
+  assert.deepEqual(splitUvaca('एवं सततयुक्ता'), { prefix: '', body: 'एवं सततयुक्ता' });
+  // the daṇḍas skip the attribution's line
+  assert.equal(withDandas('अर्जुन उवाच\nएवं सततयुक्ता ये भक्तास्त्वां पर्युपासते\nये चाप्यक्षरमव्यक्तं तेषां के योगवित्तमाः'), 'अर्जुन उवाच\nएवं सततयुक्ता ये भक्तास्त्वां पर्युपासते ।\nये चाप्यक्षरमव्यक्तं तेषां के योगवित्तमाः ॥');
+  assert.equal(withDandas('अर्जुन उवाच\nक\nख\nग\nघ'), 'अर्जुन उवाच\nक\nख ।\nग\nघ ॥');
 });

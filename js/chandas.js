@@ -5,6 +5,7 @@
 // shared by the app, the server and tools/chandas.mjs.
 
 import { syllabify } from './phon.js';
+import { splitUvaca } from './textdiff.js';
 
 // The Bhagavad Gītā's ślokas that are not in anuṣṭubh (all in the triṣṭubh family), by
 // chapter: ranges of verses. Everything else in the Gītā is anuṣṭubh.
@@ -50,7 +51,7 @@ export function syllableWeights(aksharas) {
 //   form: anuṣṭubh — 'pathyā', 'vipulā' or 'irregular'; triṣṭubh — the pādas' kinds, I / U
 //   (indravajrā / upendravajrā) or ? for one that fits neither, as "IUUI".
 export function identifyChandas(text, { expected = null } = {}) {
-  const A = syllabify(text);
+  const A = syllabify(splitUvaca(text).body); // "arjuna uvāca" is not part of the śloka
   const n = A.length;
   const weights = syllableWeights(A).join('');
   let family = expected && FAMILIES[expected] ? expected : null;
@@ -135,17 +136,24 @@ export const linesFor = (perPada, preferred = 2) => (perPada === 11 ? 4 : prefer
 
 // The text written out in its lines (see linesFor), unless it already has lines.
 export function layoutSloka(text, { perPada = null, lines = 2 } = {}) {
-  const src = String(text || '');
-  if (src.split(/\r?\n/).filter((l) => l.trim()).length > 1) return src;
-  const words = src.trim().split(/\s+/).filter(Boolean);
-  const pp = perPada || identifyChandas(src).perPada;
+  const { prefix, body } = splitUvaca(String(text || '')); // the attribution on a line of its own
+  const withPrefix = (laid) => (prefix ? `${prefix}\n${laid}` : laid);
+  if (body.split(/\r?\n/).filter((l) => l.trim()).length > 1) return withPrefix(body);
+  const words = body.trim().split(/\s+/).filter(Boolean);
+  const pp = perPada || identifyChandas(body).perPada;
   const breaks = padaBreaks(words, pp, linesFor(pp, lines));
-  if (!breaks.length) return src.trim();
+  if (!breaks.length) return withPrefix(body.trim());
   const out = [];
   let start = 0;
   for (const b of breaks) { out.push(words.slice(start, b + 1).join(' ')); start = b + 1; }
   out.push(words.slice(start).join(' '));
-  return out.join('\n');
+  return withPrefix(out.join('\n'));
+}
+
+// The akṣaras of an attribution opening the text: what the pāda counts skip.
+export function uvacaOffset(text) {
+  const { prefix } = splitUvaca(text);
+  return prefix ? syllabify(prefix).length : 0;
 }
 
 // One line about a chandas, for a hint or a tag.

@@ -208,8 +208,9 @@ export const ERROR_LABEL = {
 //   phonemes   – consonants, marks and vowel identity in the akṣaras that aligned
 //   vowels     – vowel length in the akṣaras whose vowel was the right one
 //   padas      – with `perPada` (8 for anuṣṭubh, 11 for the triṣṭubh family), per pāda of
-//                the text: its akṣaras and how many were heard, missing, added, replaced
-export function comparePhonology(refText, heardText, { perPada = null } = {}) {
+//                the text from `offset` on: its akṣaras and how many were heard, missing,
+//                added, replaced
+export function comparePhonology(refText, heardText, { perPada = null, offset = 0 } = {}) {
   const R = syllabify(refText);
   const H = syllabify(heardText);
   if (!R.length) return null;
@@ -223,9 +224,10 @@ export function comparePhonology(refText, heardText, { perPada = null } = {}) {
   const examples = [];
   const aligned = [];
   // four pādas; a text with syllables beyond the metre's count keeps them in the fourth
-  const padas = perPada ? Array.from({ length: Math.max(1, Math.min(4, Math.ceil(refCount / perPada))) }, () => ({ ref: 0, heard: 0, missing: 0, added: 0, replaced: 0 })) : null;
+  // four pādas, counted from `offset` (the akṣaras of an "arjuna uvāca" opening the text)
+  const padas = perPada ? Array.from({ length: Math.max(1, Math.min(4, Math.ceil(Math.max(1, refCount - offset) / perPada))) }, () => ({ ref: 0, heard: 0, missing: 0, added: 0, replaced: 0 })) : null;
   let lastRef = 0; // the pāda an added akṣara belongs to: that of the text's akṣara before it
-  const pada = (r) => (padas ? padas[Math.min(padas.length - 1, Math.floor(r / perPada))] : null);
+  const pada = (r) => (padas && r >= offset ? padas[Math.min(padas.length - 1, Math.floor((r - offset) / perPada))] : null);
   for (const p of pairs) {
     if (p.r >= 0) lastRef = p.r;
     const pd = pada(lastRef);
