@@ -146,10 +146,14 @@ dozens of slokas each stays manageable:
   whole library. Teach is a single choice, so it shows radio buttons and no folder checkbox.
 * Clicking a ticked sloka's name previews it; clicking an unticked one ticks it.
 
-Under the picker the pages share the same **perform block**: the previewed sloka's name,
-its text, a waveform, a **Play** button, the speed chips (½× … 2×, pitch kept) and the
-slider, and then the record button. Only the title changes: "Play it, then recite it back"
-in Teach, "Perform it" in Self Evaluation, "Recite from memory" in a quiz.
+Under the picker comes the **perform block** and then the record button. In Teach it is
+the preview of the chosen sloka: its text, a waveform, a **Play** button, the speed chips
+(½× … 2×, pitch kept) and the slider. In Self Evaluation and in a quiz it is the **sloka
+panel**: one sloka in view with its name, a play button and the speed chips (a quiz shows
+these only once the recording is in) and its text, and Previous / Next to page through
+several — the sloka in view is the active one, the one the play button plays and whose
+report opens first. The step's title says which: "Play it, then recite it back", "Perform
+it", "Recite with the text shown" or "Recite from memory".
 
 ### Teach
 Learning one sloka at a time. Open a folder and choose one sloka; it appears in the perform
@@ -163,12 +167,13 @@ slokas you had ticked there.
 
 ### Self Evaluation
 1. Tick one or more slokas in the picker (a whole folder with its checkbox if you like).
-   Click a name or a chip to preview it and listen at any speed.
+   Click a name or a chip to bring that sloka into the panel under step 2 and listen to it
+   at any speed.
 2. Record your attempt once. If you wear headphones you can have the previewed sloka play
-   while you record. The one recording is compared with every ticked sloka. With two or more
-   ticked, their texts are listed in a scrolling panel above the record button; "Show the
-   slokas' text during Self Evaluation" in Settings turns that off, and the preview's text
-   panel with it.
+   while you record. The one recording is compared with every ticked sloka. The panel above
+   the record button shows the sloka in view — Previous / Next with several ticked — with
+   its text; "Show the slokas' text during Self Evaluation" in Settings leaves the text out
+   and keeps the name and the play button.
 3. Read the results (one report per sloka, see "Several slokas at once" below). As soon as
    they appear, steps 1 and 2 fold up into their heads — "1 sloka ticked", "Recorded 0:21 ·
    open to record again" — so the report is what you see; click a head to open that step
@@ -440,9 +445,11 @@ A memory test drawn from your library.
    recordings stay hidden, "play the sloka while I record" is off, and you recite everything
    in one recording, in any order. By default the step is titled **"Recite with the text
    shown"** and each sloka's text (the text typed in its details, else its transcript in the
-   chosen language) is listed in a scrolling panel above the record button. Switch "Show the
-   slokas' text while reciting a quiz" off in Settings and the step becomes **"Recite from
-   memory"** with nothing shown. Then the
+   chosen language) is shown in the panel above the record button, one sloka in view with
+   Previous / Next. Switch "Show the slokas' text while reciting a quiz" off in Settings and
+   the step becomes **"Recite from memory"** with only the names shown. A running quiz is the
+   **Quiz** page: the sidebar keeps "Quiz" lit and the title reads Quiz; "Leave quiz" returns
+   to the list of quizzes, and opening Self Evaluation from the sidebar leaves the quiz too. Then the
    results open laid out as in Self Evaluation, with the quiz's own block on top.
 
 **The scores.** Each sloka is scored in the seven categories of "What is scored" (phonemes,

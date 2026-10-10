@@ -164,15 +164,15 @@ function applyTheme(t) { document.documentElement.dataset.theme = t; }
 
 // ---------- shared UI bindings ----------
 
-function bindSpeed({ slider, valueEl, chips, onChange }) {
+function bindSpeed({ slider = null, valueEl = null, chips = null, onChange }) {
   const apply = (r, silent = false) => {
     r = Math.round(r * 20) / 20;
-    slider.value = String(r);
-    valueEl.textContent = `${r.toFixed(2)}×`;
+    if (slider) slider.value = String(r);
+    if (valueEl) valueEl.textContent = `${r.toFixed(2)}×`;
     if (chips) $$('.chip', chips).forEach((c) => c.classList.toggle('active', Math.abs(Number(c.dataset.speed) - r) < 0.001));
     if (!silent) onChange(r);
   };
-  slider.addEventListener('input', () => apply(Number(slider.value)));
+  if (slider) slider.addEventListener('input', () => apply(Number(slider.value)));
   if (chips) chips.addEventListener('click', (e) => { const c = e.target.closest('.chip[data-speed]'); if (c) apply(Number(c.dataset.speed)); });
   return apply;
 }
@@ -265,13 +265,19 @@ function progressUI(target) {
 const VIEWS = ['home', 'learn', 'teach', 'evaluate', 'quiz', 'reports', 'library', 'settings', 'about'];
 function showView(name) {
   if (!VIEWS.includes(name)) name = 'home';
-  const section = name === 'teach' ? 'evaluate' : name; // Teach is Self Evaluation for one sloka at a time
+  // Teach, Self Evaluation and a running quiz share one section. Each keeps its own entry
+  // in the sidebar and its own title: a quiz that is running is the Quiz page (the list of
+  // quizzes is the Quiz page when none is), and opening Self Evaluation leaves the quiz.
+  if (name === 'evaluate' && practice.quiz) leaveQuiz(true);
+  const running = name === 'quiz' && !!practice.quiz;
+  const section = name === 'teach' || running ? 'evaluate' : name;
   $$('.view').forEach((v) => v.classList.toggle('active', v.id === `view-${section}`));
   $$('.nav-btn').forEach((b) => b.classList.toggle('active', b.dataset.view === name));
   if (location.hash !== `#${name}`) history.replaceState(null, '', `#${name}`);
   if (name === 'library') refreshLibrary();
   if (name === 'evaluate' || name === 'teach') { setTeachMode(name === 'teach'); refreshPracticeSelect(); }
-  if (name === 'quiz') refreshQuizView();
+  if (name === 'quiz' && !running) refreshQuizView();
+  if (running) renderModeChrome();
   if (name === 'reports') refreshReports();
   if (name === 'learn') refreshLearnFolders();
   redrawAll();
@@ -1268,11 +1274,13 @@ const practicePanel = createTranscriptPanel($('#practice-transcript'), {
 
 const applyPracticeSpeed = bindSpeed({ slider: $('#practice-speed'), valueEl: $('#practice-speed-val'), chips: $('#practice-speed-chips'), onChange: (r) => setPracticeSpeed(r) });
 const applyResSpeed = bindSpeed({ slider: $('#res-speed'), valueEl: $('#res-speed-val'), onChange: (r) => setPracticeSpeed(r) });
+const applyTextsSpeed = bindSpeed({ chips: $('#practice-texts-speed'), onChange: (r) => setPracticeSpeed(r) });
 function setPracticeSpeed(r) {
   basePlayer.rate = r;
   heardPlayer.rate = r;
   applyPracticeSpeed(r, true);
   applyResSpeed(r, true);
+  applyTextsSpeed(r, true);
 }
 
 $('#practice-headphones').addEventListener('change', (e) => {
@@ -1693,16 +1701,18 @@ function setTeachMode(on) {
 }
 function renderModeChrome() {
   const teach = practice.teach;
-  $('#practice-title').textContent = teach ? 'Teach' : 'Self Evaluation';
+  const quiz = practice.quiz;
+  $('#practice-title').textContent = teach ? 'Teach' : quiz ? 'Quiz' : 'Self Evaluation';
   $('.subtitle', $('#view-evaluate')).textContent = teach
     ? 'Learn one sloka at a time: play it at any speed, then let SlokAbhyasa listen to you and show exactly where you drifted.'
-    : 'Pick one or more slokas, perform once, and browse a report for each: exactly where you drifted, and where recordings conflict.';
-  $('#practice-step1-title').textContent = teach ? 'Choose a sloka' : 'Choose one or more slokas';
+    : quiz ? `${quiz.name}: recite its slokas in one recording, in any order. Every attempt is saved and scored; "Leave quiz" returns to the list of quizzes.`
+      : 'Pick one or more slokas, perform once, and browse a report for each: exactly where you drifted, and where recordings conflict.';
+  $('#practice-step1-title').textContent = teach ? 'Choose a sloka' : quiz ? 'This quiz' : 'Choose one or more slokas';
+  setHidden($('#practice-base'), !previewShown());
   $('#practice-base-role').textContent = teach ? 'Learning' : practice.quiz ? 'Quiz' : 'Previewing';
   setHidden($('#teach-hint'), !teach || !(libraryCache || []).length);
   setHidden($('#practice-list-hint'), teach || !!practice.quiz || !(libraryCache || []).length);
   $('#practice-step2-title').textContent = teach ? 'Play it, then recite it back' : practice.quiz ? (quizTextOn ? 'Recite with the text shown' : 'Recite from memory') : 'Perform it';
-  setHidden($('#practice-transcript'), !teach && !practice.quiz && !evalTextOn); // no sloka text in Self Evaluation when switched off
 }
 
 // The picker shows the same selection the app holds: ticks, chips, the previewed sloka.
@@ -1810,7 +1820,7 @@ async function setActiveBase(id) {
     await basePlayer.load(base.blob);
     if (token !== activeToken) return;
     practice.base = base;
-    setHidden($('#practice-base'), quizHidesBase());
+    setHidden($('#practice-base'), !previewShown());
     drawBaseWave();
     practicePanel.reset();
     practicePanel.setSource(() => ({ samples: base.samples, sampleRate: base.sampleRate, what: `“${base.record.name}”` }), id);
@@ -1918,7 +1928,7 @@ async function analyseAttempt() {
     // open the previewed sloka's report if it matches the take, otherwise the first one that does
     const matching = good.filter((id) => practice.results.get(id).match.ok);
     const pool = matching.length ? matching : good;
-    if (practice.base) setHidden($('#practice-base'), false); // a quiz keeps the sloka hidden only until now
+    setHidden($('#practice-base'), !previewShown());
     if (pool.includes(practice.activeId) && practice.base) showActiveReport();
     else await setActiveBase(pool[0]);
     focusResults(); // steps 1 and 2 fold away; the report is what remains
@@ -2196,7 +2206,9 @@ function showActiveReport() {
 // ======================================================================
 
 let quizScoring = false;
-const quizHidesBase = () => !!practice.quiz && !practice.take;
+// The preview (waveform, play, speed, the transcript panel) is Teach's; Self Evaluation and a
+// quiz show the chosen sloka in the text panel instead.
+const previewShown = () => !!practice.teach && !!practice.base;
 
 // ---------- the slokas' text during a quiz ----------
 // On by default: each chosen sloka's text (typed in its details, else its transcript in the
@@ -2228,48 +2240,66 @@ const slokaTextOf = (base) => {
   if (meta && meta.text && meta.text.body && meta.text.origin !== 'transcript') return meta.text.body;
   return base.transcript && base.transcript.text ? base.transcript.text : '';
 };
-// Which slokas the text panel lists: a quiz's, until the take is in; in Self Evaluation the
-// ticked ones when there are two or more (one is in the preview already); never in Teach.
+// The slokas the panel pages through: a quiz's, else the ticked ones; never in Teach, which
+// has the preview. One is in view at a time: its name, a play button (not before a quiz's
+// take: the recordings stay hidden), the speed, and its text when the setting allows. Outside
+// a quiz's wait the sloka in view is the active one, whose recording the play button plays
+// and whose report opens first, so Previous / Next change the active sloka.
 function slokaTextItems() {
-  if (practice.quiz) {
-    if (!quizTextOn || practice.take) return [];
-    const lib = new Set((libraryCache || []).map((r) => r.id));
-    return practice.quiz.items.filter((it) => lib.has(it.id));
-  }
-  if (practice.teach || !evalTextOn || practice.selection.length < 2) return [];
+  if (practice.teach) return [];
   const byId = new Map((libraryCache || []).map((r) => [r.id, r]));
+  if (practice.quiz) return practice.quiz.items.filter((it) => byId.has(it.id));
   return practice.selection.filter((id) => byId.has(id)).map((id) => ({ id, name: byId.get(id).name, folder: byId.get(id).folder || '' }));
+}
+let quizTextIndex = 0; // the page before a quiz's take, when no sloka is active for playing
+const textShown = () => (practice.quiz ? (practice.take ? true : quizTextOn) : evalTextOn);
+const playShown = () => !practice.quiz || !!practice.take;
+function currentTextIndex(items) {
+  if (!items.length) return -1;
+  if (practice.quiz && !practice.take) return Math.max(0, Math.min(items.length - 1, quizTextIndex));
+  const i = items.findIndex((it) => it.id === practice.activeId);
+  return i < 0 ? 0 : i;
 }
 let slokaTextsToken = 0;
 async function renderSlokaTexts() {
   const host = $('#practice-texts');
   const items = slokaTextItems();
-  setHidden(host, !items.length);
-  if (!items.length) { $('#practice-texts-list').innerHTML = ''; return; }
+  const i = currentTextIndex(items);
+  setHidden(host, i < 0);
+  if (i < 0) return;
+  const it = items[i];
   const token = ++slokaTextsToken;
-  $('#practice-texts-title').textContent = practice.quiz ? 'The text' : 'The text of the ticked slokas';
-  $('#practice-texts-count').textContent = `${items.length} sloka${items.length === 1 ? '' : 's'}${items.length > 1 ? ' · scroll for the rest' : ''}`;
-  const list = $('#practice-texts-list');
-  list.innerHTML = '';
-  for (const it of items) {
-    const entry = document.createElement('div');
-    entry.className = 'quiz-text';
-    entry.dataset.id = it.id;
-    entry.innerHTML = '<div class="quiz-text-name"></div><div class="stt-text quiz-text-body muted">Loading…</div>';
-    $('.quiz-text-name', entry).textContent = it.folder ? `${it.name} · ${it.folder}` : it.name;
-    list.appendChild(entry);
-  }
-  list.scrollTop = 0;
-  await Promise.all(items.map(async (it) => {
-    let text = '';
-    try { text = slokaTextOf(await ensureBase(it.id)); } catch { text = ''; }
-    if (token !== slokaTextsToken) return;
-    const el = $(`.quiz-text[data-id="${it.id}"] .quiz-text-body`, list);
-    if (!el) return;
-    el.textContent = text ? withDandas(text) : 'No text yet: transcribe this sloka, or type its text under Details in the Library.';
-    el.classList.toggle('muted', !text);
-  }));
+  $('#practice-texts-title').textContent = practice.quiz ? 'The slokas of this quiz' : items.length > 1 ? 'The ticked slokas' : 'The sloka';
+  $('#practice-texts-pos').textContent = items.length > 1 ? `${i + 1} of ${items.length}` : '';
+  for (const sel of ['#practice-texts-prev', '#practice-texts-next']) setHidden($(sel), items.length < 2);
+  $('#practice-texts-prev').disabled = i <= 0;
+  $('#practice-texts-next').disabled = i >= items.length - 1;
+  $('#practice-text-name').textContent = it.folder ? `${it.name} · ${it.folder}` : it.name;
+  for (const sel of ['#practice-texts-play', '#practice-texts-speed', '#practice-text-time']) setHidden($(sel), !playShown());
+  const body = $('#practice-text-body');
+  setHidden(body, !textShown());
+  if (!textShown()) return;
+  body.textContent = 'Loading…';
+  body.classList.add('muted');
+  let text = '';
+  try { text = slokaTextOf(await ensureBase(it.id)); } catch { text = ''; }
+  if (token !== slokaTextsToken) return;
+  body.textContent = text ? withDandas(text) : 'No text yet: transcribe this sloka, or type its text under Details in the Library.';
+  body.classList.toggle('muted', !text);
 }
+function stepText(delta) {
+  const items = slokaTextItems();
+  const j = currentTextIndex(items) + delta;
+  if (j < 0 || j >= items.length) return;
+  if (practice.quiz && !practice.take) { quizTextIndex = j; renderSlokaTexts(); return; }
+  setActiveBase(items[j].id);
+}
+$('#practice-texts-prev').addEventListener('click', () => stepText(-1));
+$('#practice-texts-next').addEventListener('click', () => stepText(1));
+bindPlayButton($('#practice-texts-play'), basePlayer);
+const textTime = () => { $('#practice-text-time').textContent = basePlayer.loaded && basePlayer.duration ? `${fmtTime(basePlayer.currentTime)} / ${fmtTime(basePlayer.duration)}` : ''; };
+basePlayer.addEventListener('tick', textTime);
+basePlayer.addEventListener('loaded', textTime);
 sttLanguageListeners.add(() => renderSlokaTexts()); // the text follows the language
 
 // Opens a quiz: its slokas become the selection, the checklist gives way to the quiz box.
@@ -2286,7 +2316,8 @@ async function enterQuiz(quiz) {
   $('#practice-playalong').checked = false;
   $('#practice-playalong').disabled = true;
   if (practice.teach) { practice.teach = false; renderModeChrome(); }
-  showView('evaluate');
+  quizTextIndex = 0;
+  showView('quiz');
   await refreshPracticeSelect();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -2299,10 +2330,10 @@ function leaveQuiz(restore = true) {
   hideResults();
   $('#practice-playalong').disabled = !$('#practice-headphones').checked;
   renderQuizBox();
-  if (practice.base) setHidden($('#practice-base'), false);
+  setHidden($('#practice-base'), !previewShown());
   if (restore) setSelection(practice.selectionBeforeQuiz || savedSelection());
 }
-$('#quiz-leave').addEventListener('click', () => leaveQuiz(true));
+$('#quiz-leave').addEventListener('click', () => { leaveQuiz(true); showView('quiz'); });
 
 function renderQuizBox() {
   const q = practice.quiz;

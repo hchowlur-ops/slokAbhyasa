@@ -255,15 +255,35 @@
               </div>
             </div>
           </div>
-          <p class="muted small" id="practice-base-none">Choose a sloka above to preview it here.</p>
-          <!-- the text of every chosen sloka, in a scrolling list: a quiz, or Self Evaluation with several ticked -->
+          <p class="muted small" id="practice-base-none">Choose a sloka above; it appears here with its text.</p>
+          <!-- the chosen slokas, one in view: its name, a play button (not before a quiz's take),
+               the speed, its text; Previous / Next page through several. Self Evaluation and a quiz
+               use this in place of the preview, which only Teach keeps. -->
           <div class="quiz-texts" id="practice-texts" hidden>
             <div class="quiz-texts-head">
-              <span class="tp-title" id="practice-texts-title">The text</span>
+              <span class="tp-title" id="practice-texts-title">The sloka</span>
               <div class="grow"></div>
-              <span class="muted small" id="practice-texts-count"></span>
+              <button class="btn btn-sm btn-ghost" id="practice-texts-prev" type="button" aria-label="Previous sloka">‹ Previous</button>
+              <span class="mono muted small" id="practice-texts-pos"></span>
+              <button class="btn btn-sm btn-ghost" id="practice-texts-next" type="button" aria-label="Next sloka">Next ›</button>
             </div>
-            <div class="quiz-texts-list" id="practice-texts-list" tabindex="0" aria-label="The slokas' text; scroll for the rest"></div>
+            <div class="quiz-text" id="practice-text">
+              <div class="quiz-text-top">
+                <button class="btn-play small" id="practice-texts-play" type="button" aria-label="Play this sloka" title="Play this sloka"><svg class="ico-play" viewBox="0 0 24 24"><path fill="currentColor" d="M8 5v14l11-7z"/></svg><svg class="ico-pause" viewBox="0 0 24 24"><path fill="currentColor" d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg></button>
+                <span class="quiz-text-name" id="practice-text-name"></span>
+                <span class="mono muted small" id="practice-text-time"></span>
+                <div class="grow"></div>
+                <div class="chips speed-chips" id="practice-texts-speed" aria-label="Playback speed">
+                  <button class="chip" type="button" data-speed="0.5" title="Half speed">½×</button>
+                  <button class="chip" type="button" data-speed="0.75">¾×</button>
+                  <button class="chip active" type="button" data-speed="1">1×</button>
+                  <button class="chip" type="button" data-speed="1.25">1¼×</button>
+                  <button class="chip" type="button" data-speed="1.5">1½×</button>
+                  <button class="chip" type="button" data-speed="2" title="Double speed">2×</button>
+                </div>
+              </div>
+              <div class="stt-text quiz-text-body" id="practice-text-body"></div>
+            </div>
           </div>
           <div class="rec-stage">
             <div class="rec-controls">
@@ -594,9 +614,9 @@
       <div class="card settings-card">
         <h2>Sloka text</h2>
         <label class="toggle"><input type="checkbox" id="settings-eval-text" /><span>Show the slokas' text during Self Evaluation</span></label>
-        <p class="muted small">With two or more slokas ticked, their texts are listed in a scrolling panel above the record button, and the previewed sloka's text stays in its panel. Switched off, no sloka text is shown in Self Evaluation at all.</p>
+        <p class="muted small">The chosen sloka is shown above the record button with its name, a play button and its text; with several ticked, Previous / Next page through them. Switched off, the text is left out and only the name and the play button remain.</p>
         <label class="toggle"><input type="checkbox" id="settings-quiz-text" /><span>Show the slokas' text while reciting a quiz</span></label>
-        <p class="muted small" id="settings-quiz-text-note">The text of every chosen sloka (the text typed in its details, else its transcript in the chosen language) is listed in a scrolling panel above the record button, and the step is titled "Recite with the text shown". Switched off, the step is "Recite from memory" and nothing is shown. The slokas' recordings stay hidden either way until you have recorded.</p>
+        <p class="muted small" id="settings-quiz-text-note">Each chosen sloka's text (the text typed in its details, else its transcript in the chosen language) is shown above the record button, one sloka in view with Previous / Next, and the step is titled "Recite with the text shown". Switched off, the step is "Recite from memory" and only the names are shown. The slokas' recordings stay hidden either way until you have recorded.</p>
       </div>
       </div>
 
