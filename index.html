@@ -353,6 +353,7 @@
               <div class="quiz-trend" id="quiz-trend"></div>
             </details>
           </div>
+          <!-- several slokas: one report at a time, Previous / Next; the rows of all of them folded -->
           <div class="reports" id="reports" hidden>
             <div class="reports-head">
               <h3 id="reports-title">Reports</h3>
@@ -361,8 +362,11 @@
               <span class="mono muted small" id="report-pos"></span>
               <button class="btn btn-sm" id="report-next" type="button">Next ›</button>
             </div>
-            <div class="report-map" id="report-map" role="tablist" aria-label="Reports, one per sloka"></div>
-            <p class="muted small">Each bar is your recording from start to end. The shaded stretch is where that sloka was found in it, and the coloured marks are conflicts of the kinds chosen below. Click a row to open its report.</p>
+            <details class="reports-fold" id="reports-fold">
+              <summary><svg class="step-caret" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7.4 8.6 12 13.2l4.6-4.6L18 10l-6 6-6-6z"/></svg><span class="analysis-title">All the reports</span><span class="muted small" id="reports-fold-sub"></span></summary>
+              <div class="report-map" id="report-map" role="tablist" aria-label="Reports, one per sloka"></div>
+              <p class="muted small">Each bar is your recording from start to end. The shaded stretch is where that sloka was found in it, and the coloured marks are conflicts of the kinds chosen under Analysis. Click a row to open its report.</p>
+            </details>
           </div>
           <div class="report-title-row" id="report-title-row" hidden>
             <h3 id="report-name"></h3>

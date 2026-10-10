@@ -204,13 +204,17 @@ slokas you had ticked there.
      - the **list of deviations**, each with a "Sloka" and a "Yours" button that plays just
        that moment (with a little padding).
 
-**Several slokas at once.** With more than one sloka ticked, the results start with a
-list of reports. Each row shows the sloka's name, a bar that stands for your recording from
-start to end with the stretch where that sloka was found shaded, coloured marks for the
-conflicts inside it, the overall score and the number of conflicts. Click a row, or use
-Previous / Next, to open that sloka's full report; the preview at the top of the page
-switches with it, so "Play the sloka" and the sloka text always belong to the open report.
-Tick another sloka after a take and it is compared straight away, without recording again.
+**Several slokas at once.** With more than one sloka ticked, the results show **one report
+at a time**: Previous / Next step through them ("1 / 3"), and "All the reports", folded
+under the buttons, lists them — each row with the sloka's name, a bar that stands for your
+recording from start to end with the stretch where that sloka was found shaded, coloured
+marks for the conflicts inside it, the overall score and the number of conflicts; click a
+row to open that report. The sloka panel above switches with the open report, so its play
+button and text always belong to it. Once the take is compared, the **words of every
+report are transcribed in the background**, in turn, the open one first (each sloka's own
+stretch of the recording), and their word scores filled in as they arrive — so Next opens a
+report with its words ready, and the session's scores cover every sloka. Tick another sloka
+after a take and it is compared straight away, without recording again.
 You can also tick slokas in the Library and press "Self Evaluation with selected".
 
 *Different lengths.* A sloka does not have to be as long as your recording. When one is

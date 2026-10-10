@@ -1955,6 +1955,7 @@ async function analyseAttempt() {
     $('#practice-results').scrollIntoView({ behavior: 'smooth', block: 'start' });
     if (practice.quiz) scoreQuizAttempt();
     else saveSession(); // a Self Evaluation / Teach take is kept for the Reports dashboard
+    transcribeAllParts(); // the other reports' words, in the background
   } catch (err) {
     toast(err.message, 'error', 7000);
   } finally {
@@ -2176,7 +2177,8 @@ function renderReportBrowser() {
     map.appendChild(row);
   }
   const idx = ids.indexOf(practice.activeId);
-  $('#reports-title').textContent = `Reports · ${ids.length} slokas`;
+  $('#reports-title').textContent = `Reports · ${ids.length} slokas · one at a time`;
+  $('#reports-fold-sub').textContent = `${ids.length} rows · where each sloka was found in your recording, and its conflicts`;
   $('#report-pos').textContent = idx >= 0 ? `${idx + 1} / ${ids.length}` : '';
   $('#report-name').textContent = practice.activeId ? nameOf(practice.activeId) : '';
   const chip = $('#report-flag');
@@ -3695,6 +3697,41 @@ async function transcribeTakePart(win, force) {
     .finally(() => { if (practice.heardJobs.get(key) === job) { practice.heardJobs.delete(key); if (!practice.heardJobs.size) sttProgress.hide(); } });
   practice.heardJobs.set(key, job);
   return job.promise;
+}
+// Every report's words in the background once the take is compared: each sloka's stretch of
+// the take is transcribed in turn, the open report's first, and its word scores computed as
+// they arrive, so a report opens with its words ready and a session's scores cover every
+// sloka. A quiz scores its words in its own pass; with transcription not automatic, nothing
+// runs until asked.
+async function transcribeAllParts() {
+  if (practice.quiz || !sttSettings.auto) return;
+  const take = practice.take;
+  const ids = reportIds().filter((id) => isReport(practice.results.get(id)));
+  if (ids.length < 2) return; // one report: it transcribes itself when it opens
+  const order = [practice.activeId, ...ids].filter((id, i, a) => ids.includes(id) && a.indexOf(id) === i);
+  for (const id of order) {
+    if (practice.take !== take) return;
+    if (practice.wordSims.has(id)) continue;
+    const res = practice.results.get(id);
+    try {
+      const heardT = await transcribeTakePart(heardPartOf(res), false);
+      if (practice.take !== take || !heardT) return;
+      const base = await ensureBase(id);
+      const ref = typedReference(base, res) || base.transcript;
+      if (!ref) continue; // the sloka has no words yet: its report transcribes it when opened
+      const ws = wordSimilarity(res, ref, heardT, base.duration, take.duration);
+      if (practice.take !== take || !ws) continue;
+      if (!practice.wordSims.has(id)) {
+        practice.wordSims.set(id, ws.similarity);
+        if (ws.phonology) practice.phonology.set(id, ws.phonology);
+      }
+      refreshVerdicts();
+      syncSession();
+    } catch (err) {
+      if (isStopped(err)) return;
+      // the report says why when it is opened
+    }
+  }
 }
 function stopTakeTranscriptions() {
   for (const job of practice.heardJobs.values()) job.ctrl.abort();
