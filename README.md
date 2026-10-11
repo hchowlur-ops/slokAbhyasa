@@ -105,6 +105,10 @@ is remembered.
 
 Silence (and stray clicks) at the start and end of a take are trimmed automatically before
 saving; untick "Trim silence at the start and end" to keep a recording as it was captured.
+The trimmer reads the room from the lead and the tail of the take (before the first and
+after the last loud moment, less the microphone's settling and a breath), so a steady room
+noise is never taken for sound; the cut keeps 120 ms before the first sound and 220 ms after
+the last.
 A short lead-in (about a tenth of a second) and the natural decay at the end are kept.
 
 Saving also analyses the recording once and caches the result next to the WAV, so evaluating
@@ -656,6 +660,7 @@ the browser:
 ```
 node tools/trim-library.mjs            # trim in place
 node tools/trim-library.mjs --dry-run  # only report what would change
+node tools/trim-library.mjs CH01-01    # one sloka, by name (or part of it) or id
 ```
 
 "Transcribe all" queues every sloka that has no transcript yet; the work runs in the

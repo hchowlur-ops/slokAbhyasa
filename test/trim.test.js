@@ -57,6 +57,16 @@ test('trim: works in a noisier room (-45 dBFS floor)', () => {
   assert.ok(near(t.removedEnd, 2.0 - 0.22, 0.08), `removedEnd ${t.removedEnd}`);
 });
 
+test('trim: a steady room (-48 dBFS) after a quieter settling of the microphone is not sound', () => {
+  // the lead of a real take: 100 ms while the microphone settles far below the room, then
+  // 2.6 s of room noise, then the chant; the room must not pass for sound
+  const x = concat(noise(100, -75, 3), noise(2600, -48, 3), tone(220, 1500, { amp: 0.1 }), noise(800, -48, 3));
+  const t = trimSilence(x, SR);
+  assert.ok(t.changed);
+  assert.ok(near(t.removedStart, 2.7 - 0.12, 0.08), `removedStart ${t.removedStart}`);
+  assert.ok(near(t.removedEnd, 0.8 - 0.22, 0.08), `removedEnd ${t.removedEnd}`);
+});
+
 test('trim: trimming twice changes nothing the second time', () => {
   const x = concat(quiet(1200), tone(220, 800), quiet(900));
   const once = trimSilence(x, SR);

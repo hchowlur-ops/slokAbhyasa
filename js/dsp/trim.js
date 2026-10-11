@@ -1,7 +1,7 @@
 // Trim silence (and isolated clicks such as the record button) from the start
 // and end of a recording. Works at any sample rate; pure, no DOM.
 
-import { fillGaps, dropShort } from './util.js';
+import { fillGaps, dropShort, percentile } from './util.js';
 import { activityThreshold } from './activity.js';
 
 export const TRIM_DEFAULTS = {
@@ -12,6 +12,10 @@ export const TRIM_DEFAULTS = {
   gapMs: 120,        // silences shorter than this inside sound are bridged
   blipMs: 150,       // an isolated sound at an edge shorter than this...
   blipGapMs: 300,    // ...followed/preceded by at least this much silence is ignored
+  settleMs: 150,     // the first and last stretch of a take, where a microphone is still settling: not the room
+  breathMs: 300,     // just before the first sound and after the last: a breath, not the room either
+  aboveRoomDb: 8,    // sound must rise this much above the room to count
+  roomMinMs: 400,    // how much lead or tail is needed to read the room from it
 };
 
 // Frame-level activity: 20 ms window, 10 ms hop, adaptive threshold with hysteresis.
@@ -29,7 +33,23 @@ export function findActiveRegion(samples, sampleRate, options = {}) {
     for (let i = 0; i < win && s0 + i < len; i++) { const v = samples[s0 + i]; s += v * v; c++; }
     db[k] = 20 * Math.log10(Math.sqrt(s / Math.max(1, c)) + 1e-9);
   }
-  const { floor, peak, thr } = activityThreshold(db, { samples, sampleRate, frameStart: (k) => k * hop, winFrames: 30, aboveFloor: 8, maxBelowPeak: 40 });
+  const { floor, peak, thr: thr0 } = activityThreshold(db, { samples, sampleRate, frameStart: (k) => k * hop, winFrames: 30, aboveFloor: 8, maxBelowPeak: 40 });
+  const f = (ms) => Math.max(1, Math.round(ms / 10));
+  // The room: the lead and the tail of the take — before the first and after the last loud
+  // frame (within 20 dB of the peak), less the settling of the microphone and a breath —
+  // say what the room sounds like better than the single quietest 300 ms (a microphone
+  // still settling, a momentary dip), which a steady room noise can sit well above and
+  // then pass for sound. The threshold stays above the room, and well below the peak.
+  let thr = thr0;
+  const loud = peak - 20;
+  let first = 0;
+  while (first < n && db[first] < loud) first++;
+  let last = n - 1;
+  while (last >= 0 && db[last] < loud) last--;
+  const room = [];
+  for (let k = f(o.settleMs); k < first - f(o.breathMs); k++) room.push(db[k]);
+  for (let k = last + f(o.breathMs) + 1; k < n - f(o.settleMs); k++) room.push(db[k]);
+  if (first <= last && room.length >= f(o.roomMinMs)) thr = Math.max(thr0, Math.min(percentile(room, 0.5) + o.aboveRoomDb, peak - 12));
   const mask = new Uint8Array(n);
   let on = 0;
   for (let k = 0; k < n; k++) {
@@ -37,7 +57,6 @@ export function findActiveRegion(samples, sampleRate, options = {}) {
     else if (on && db[k] < thr - 3) on = 0;
     mask[k] = on;
   }
-  const f = (ms) => Math.max(1, Math.round(ms / 10));
   fillGaps(mask, f(o.gapMs));
   dropShort(mask, f(o.minRunMs));
 

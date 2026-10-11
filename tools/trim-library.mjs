@@ -3,6 +3,7 @@
 //
 //   node tools/trim-library.mjs            trim in place, update index.json, drop stale analysis caches
 //   node tools/trim-library.mjs --dry-run  only report what would change
+//   node tools/trim-library.mjs CH01-01    one sloka, by name (or part of it) or id
 //
 // The untouched original of each changed file is copied to library/backup (first time only).
 // Stop the server (or avoid saving slokas) while this runs.
@@ -19,12 +20,15 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const LIB = path.join(resolveDataDir(ROOT), 'library');
 const INDEX = path.join(LIB, 'index.json');
 const dry = process.argv.includes('--dry-run');
+const want = process.argv.slice(2).find((a) => !a.startsWith('--'));
 
 let list;
 try { list = JSON.parse(await fsp.readFile(INDEX, 'utf8')); } catch { console.log(`No ${INDEX} found, nothing to do.`); process.exit(0); }
 
+const records = want ? list.filter((r) => r.id === want || r.name.toLowerCase().includes(want.toLowerCase())) : list;
+if (want && !records.length) { console.error(`No sloka matches "${want}".`); process.exit(1); }
 let changed = 0;
-for (const rec of list) {
+for (const rec of records) {
   const p = path.join(LIB, rec.file);
   let bytes;
   try { bytes = await fsp.readFile(p); } catch { console.log(`${rec.name}: file missing (${rec.file}), skipped`); continue; }

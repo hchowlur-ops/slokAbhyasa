@@ -840,7 +840,8 @@ const learnerListeners = new Set(); // re-rendered when the learner or the peopl
 async function renderLearnerSelect() {
   const profiles = await getProfiles();
   if (learnerId && !profileById(learnerId)) learnerId = '';
-  fillSelect($('#learner-select'), [{ value: '', label: profiles.length ? 'Anyone · adult defaults' : 'No one yet · adult defaults' }, ...profiles.map((p) => ({ value: p.id, label: profileLabel(p) }))], learnerId);
+  // names alone: the voice and age behind a name are the People dialog's business
+  fillSelect($('#learner-select'), [{ value: '', label: profiles.length ? 'Anyone' : 'No one yet' }, ...profiles.map((p) => ({ value: p.id, label: p.name }))], learnerId);
   for (const fn of learnerListeners) fn();
 }
 $('#learner-select').addEventListener('change', (e) => {
@@ -920,7 +921,7 @@ function buildMetaFields(host, { compact = false } = {}) {
   host.innerHTML = `
     <label class="field"><span>Recorded by</span><select data-f="speaker"></select></label>
     <label class="field"><span>How it is judged</span><select data-f="style"></select></label>
-    <label class="field"><span>Tradition or school <em class="muted">(optional)</em></span><input type="text" data-f="tradition" maxlength="80" placeholder="e.g. Śṛṅgeri" autocomplete="off" /></label>
+    <label class="field" title="The lineage whose way of reciting this recording follows — a maṭha, a guru or a school (Śṛṅgeri, Kāñcī, Uḍupi, a teacher's name). Kept with the recording as a note for whoever learns from it; it does not change how anything is scored."><span>Tradition or school <em class="muted">(optional)</em></span><input type="text" data-f="tradition" maxlength="80" placeholder="e.g. Śṛṅgeri, Kāñcī, a guru's name" autocomplete="off" /></label>
     <label class="field wide"><span>Text of the sloka <em class="muted">(optional · the words as they should be recited; used to judge pronunciation)</em></span><textarea data-f="text" rows="${compact ? 3 : 4}" spellcheck="false" placeholder="Type or paste the text, one pāda or line per row…"></textarea></label>
     <span class="derived" data-f="derived"></span>`;
   const speakerSel = $('[data-f="speaker"]', host);
@@ -2259,11 +2260,7 @@ function renderReportBrowser() {
   $('#reports-title').textContent = `Reports · ${ids.length} slokas · one at a time`;
   $('#reports-fold-sub').textContent = `${ids.length} rows · where each sloka was found in your recording, and its conflicts`;
   $('#report-pos').textContent = idx >= 0 ? `${idx + 1} / ${ids.length}` : '';
-  $('#report-name').textContent = practice.activeId ? nameOf(practice.activeId) : '';
-  const chip = $('#report-flag');
-  const flag = practice.activeId ? reportFlag(practice.activeId) : null;
-  setHidden(chip, !flag);
-  if (flag) { chip.textContent = flag.text; chip.className = `report-flag ${flag.level}`; }
+  $('#report-name').textContent = practice.activeId ? nameOf(practice.activeId) : ''; // the name alone: the verdict is the ring's and the rows' to tell
 }
 // The preview above the results changes height with the sloka, so keep the reports in view.
 async function openReport(id) {

@@ -861,10 +861,6 @@ canvas { display: block; }
 .rr-flag.warn { color: var(--timing); }
 .report-title-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
 .report-title-row h3 { margin: 0; font-size: 1.15rem; }
-.report-flag { padding: 3px 10px; border-radius: 999px; font-size: 0.8rem; font-weight: 600; }
-.report-flag.bad { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
-.report-flag.warn { background: color-mix(in srgb, var(--timing) 18%, transparent); color: var(--timing); }
-.report-flag.info { background: var(--accent-soft); color: var(--accent-strong); }
 /* Evaluating…: in place of the report from the stop of a recording until the open sloka's results are in */
 .evaluating { display: flex; flex-direction: column; gap: 10px; margin: 2px 0 18px; padding: 18px 20px; border-radius: 14px; background: var(--surface-2); border: 1px solid var(--border); border-left: 4px solid var(--accent); }
 .evaluating-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
