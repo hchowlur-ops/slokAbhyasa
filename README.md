@@ -595,8 +595,9 @@ updated as more slokas are ticked or pronunciation scores arrive).
   not recited as 0).
 * **By folder** — choose a folder (its subfolders count) and the same period, and every
   assessment of every sloka in it is listed on a single line: when, the sloka, where it was
-  assessed (Quiz · name, Self Evaluation, Teach), content, pronunciation, timing, pitch,
-  dynamics, and the overall with its grade at the end. **Group by sloka** gathers the lines
+  assessed (Quiz · name, Self Evaluation, Teach), the seven categories (phonemes, vowel
+  length, syllables, emphasis, pitch contour, phrasing, timing), and the overall with its
+  grade at the end. **Group by sloka** gathers the lines
   under each sloka with its number of assessments and best score. Click a line to open that
   session's results.
 
@@ -740,7 +741,7 @@ that follows the sloka's — each measured relative to the speaker:
 | Phonemes | 30 | the words heard | In the akṣaras that align with the text, the consonants, nasals and vowel identities: a sound one feature off (aspiration k/kh, voicing k/g, place t/ṭ or s/ś/ṣ, nasality) earns half credit and is named; a missing visarga, a single for a double consonant, a sound missing or added count against it. |
 | Vowel length | 25 | the words heard | Among the akṣaras whose vowel is the right one, how many have the right length (a/ā, i/ī, u/ū; e, o, ai, au are long). |
 | Syllables | 15 | the words heard | Akṣaras of the text missing, added, or replaced by something else altogether. |
-| Emphasis | 10 | the sound | Where the prominence falls: loudness relative to the recording's own peak and pitch movement away from its own median, summed, smoothed over 150 ms and standardised per recording, then correlated along the alignment (0.7 and above scores 100). |
+| Emphasis | 10 | the sound | Where the prominence falls: loudness relative to the recording's own peak and pitch movement away from its own median, summed, smoothed over 7 frames (140 ms) and standardised per recording, then correlated along the alignment (0.7 and above scores 100). |
 | Pitch contour | 10 | the sound | The rise and fall after the overall key difference is removed and octave slips folded away — never the voice range. For recited text (style "Sloka or stotra, recited") it is shown for interest and not judged. |
 | Phrasing | 5 | the sound | Where the pauses fall: a pause of 150 ms or more in the sloka should have one in the take within 300 ms of the aligned moment, and the take should add none (F-measure; pauses are stretches 25 dB under the recording's peak, or under its activity threshold in a noisy room). |
 | Timing | 5 | the sound | Pauses the sloka does not have, skipped and added material; with "Judge the speed of recitation", rushed or dragged stretches and the overall tempo too. |
