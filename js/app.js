@@ -2753,8 +2753,7 @@ function renderQuizScore() {
   $('#quiz-score-name').textContent = quiz.name;
   const status = $('#quiz-score-status');
   const tol = attemptTolerance(a);
-  const who = a.learner && speakerLabel(a.learner);
-  status.textContent = a.error ? `Not saved: ${a.error}` : !a.saved ? 'Scoring…' : `Attempt ${quiz.attempts.length} · saved ${fmtDate(a.at)}${a.sttAvailable ? '' : ' · pronunciation not available'}${who ? ` · judged as ${who}` : ''}`;
+  status.textContent = a.error ? `Not saved: ${a.error}` : !a.saved ? 'Scoring…' : `Attempt ${quiz.attempts.length} · saved ${fmtDate(a.at)}${a.sttAvailable ? '' : ' · pronunciation not available'}`;
   const corr = a.saved || a.error ? correctness(a.items, quiz.categories, tol) : null;
   const pct = corr ? corr.pct : null;
   const tolText = (c) => (tol ? `tolerance ${tol[c]} %` : 'no tolerance');
@@ -3038,11 +3037,9 @@ function renderReportsDetail(a) {
   if (!a) { setHidden(box, true); return; }
   setHidden(box, false);
   $('#reports-detail-title').textContent = a.kind === 'quiz' ? `Quiz · ${a.name} · attempt ${a.attempt}` : `${KIND_LABEL[a.kind]} · ${fmtWhen(a.at)}`;
-  const who = a.learner && speakerLabel(a.learner);
   const subs = [fmtWhen(a.at)];
   if (a.takeDuration) subs.push(`${fmtTime(a.takeDuration)} recording`);
   if (a.kind === 'quiz') subs.push(`scored on ${a.categories.map(catLabel).join(' + ')}`);
-  if (who) subs.push(`judged as ${who}`);
   $('#reports-detail-sub').textContent = subs.join(' · ');
   const listen = $('#reports-detail-listen');
   setHidden(listen, !a.audio);
