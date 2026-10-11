@@ -389,10 +389,14 @@ acoustic analysis, and the app stays usable meanwhile:
   browser's cache.
 
 **Correcting the text.** Recognition of chants is approximate, so the Library's transcript
-panel (and Learn's, before a sloka is saved) has an "Edit" button; the text is edited in
-Devanagari, whatever script it is shown in. The editor shows one line per timed phrase;
-keep the same number of lines and the click-to-play timings survive your corrections.
-Saving writes two files next to the recording in `library/`:
+panel (and Learn's, before a sloka is saved) has an "Edit" button. Since few people have an
+Indic keyboard, the editor shows the text in **romanised Sanskrit (IAST)**, letter for
+letter — ā ī ū ṛ, ś ṣ, ṭ ḍ ṇ, ṃ for the anusvāra, ḥ for the visarga, ’ for the avagraha,
+"ch" for छ and "c" for च — and reads it back into Devanagari when you save (aa, ii, uu and
+sh are accepted as well); Kannada, Telugu and IAST then follow from the Devanagari, as
+everywhere else. The editor shows one line per timed phrase; keep the same number of lines
+and the click-to-play timings survive your corrections. Saving writes two files next to
+the recording in `library/`:
 
 * `<name>.txt` – the plain text, one phrase per line. Edit it in any text editor if you
   prefer; when it is newer than the JSON, SlokAbhyasa uses it the next time the sloka is

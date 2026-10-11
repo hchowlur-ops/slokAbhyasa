@@ -15,6 +15,7 @@ import { mixToMono } from './dsp/resample.js';
 import { trimSilence } from './dsp/trim.js';
 import { Transcriber, STT_LANGUAGES, STT_LANGUAGE_CODES, STT_TIERS, sttLanguageLabel, sttLanguageTag, sttTierLabel, isStopped } from './stt.js';
 import { segments as scriptSegments, wordSegments, toDeva, weightMark } from './lipi.js';
+import { scriptToLatin, latinToScript } from './translit.js';
 import { normalizeStore, putInStore, pickTranscript, availableLanguages } from './transcripts.js';
 import { transliterateTranscript } from './translit.js';
 import { identifyChandas, layoutSloka, padaBreaks, linesFor, uvacaOffset, chandasLabel, chandasPattern, gitaVerse, gitaFamily } from './chandas.js';
@@ -599,7 +600,7 @@ function createTranscriptPanel(host, { editable = false, play = null, onChange =
     <div class="progress" hidden><div class="progress-bar"><div class="progress-fill"></div></div><span class="muted small">Starting…</span><button class="btn btn-sm btn-ghost progress-stop" type="button" hidden>Stop</button></div>
     <div class="stt-text" data-role="text" hidden></div>
     <textarea class="stt-edit" data-role="edit" rows="4" hidden spellcheck="false"></textarea>
-    <div class="muted small" data-role="edit-hint" hidden>One line per phrase. Keep the same number of lines to keep the click-to-play timings. The text is also saved as a .txt file next to the recording.</div>
+    <div class="muted small" data-role="edit-hint" hidden>The text is shown in romanised Sanskrit (IAST) to edit — type it the same way: ā ī ū ṛ for the long vowels (or aa ii uu), ś ṣ (or sh), ṭ ḍ ṇ, ṃ for the anusvāra, ḥ for the visarga, ’ for the avagraha, "ch" for छ and "c" for च. It is written in Devanagari when you save, and Kannada, Telugu and IAST follow from that. One line per phrase; keep the same number of lines to keep the click-to-play timings.</div>
     <div class="muted small" data-role="status">No transcript yet.</div>`;
   $('.tp-title', host).textContent = title;
   buildSttControls($('.stt-controls', host));
@@ -645,6 +646,10 @@ function createTranscriptPanel(host, { editable = false, play = null, onChange =
   };
   // Editing works line by line: each timed phrase is one line, so corrections keep their timings.
   const editText = (t) => (t.chunks && t.chunks.length ? t.chunks.map((c) => c.text).join('\n') : t.text);
+  // The editor shows romanised Sanskrit (IAST), letter for letter, since few have an Indic
+  // keyboard; what is saved is the Devanagari read back from it.
+  const toEditor = (deva) => scriptToLatin(deva);
+  const fromEditor = (latin) => latinToScript(latin, 'Deva', { reading: 'exact' });
   const applyEdit = (t, value) => {
     const lines = value.split('\n').map((s) => s.trim()).filter(Boolean);
     const keepTimings = t.chunks && t.chunks.length && lines.length === t.chunks.length;
@@ -731,7 +736,7 @@ function createTranscriptPanel(host, { editable = false, play = null, onChange =
   runBtn.addEventListener('click', () => panel.transcribe());
   sttLanguageListeners.add(() => render()); // the text follows the script it is shown in
   editBtn.addEventListener('click', () => {
-    editEl.value = editText(transcript);
+    editEl.value = toEditor(editText(transcript));
     editEl.rows = Math.min(12, Math.max(3, editEl.value.split('\n').length + 1));
     setHidden(editEl, false);
     render();
@@ -739,7 +744,7 @@ function createTranscriptPanel(host, { editable = false, play = null, onChange =
   });
   cancelBtn.addEventListener('click', () => { setHidden(editEl, true); render(); });
   saveBtn.addEventListener('click', async () => {
-    const value = editEl.value;
+    const value = fromEditor(editEl.value);
     setHidden(editEl, true);
     if (transcript && value.trim() !== editText(transcript).trim()) {
       transcript = applyEdit(transcript, value);

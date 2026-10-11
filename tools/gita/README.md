@@ -45,7 +45,7 @@ Telugu Wikisource text to be a copyrighted book pasted in); the Kannada and Telu
   the last speaker line as the text itself does.
 - Keeps each half-verse as one line (`deva`, `iast`); the triṣṭubh verses have four.
 - Files numbered past a chapter's verse count are its colophon (`colophons`).
-- Applies `overrides.json` and strips the one editorial "(or …)" note.
+- Applies `overrides.json` and strips the source's editorial variant notes, "(or …)" and "(var …)".
 - Records the metre of each verse from the app's own table (`gitaFamily` in
   `js/chandas.js`) and counts the verses whose syllables do not fit it exactly (the manifest
   keeps the number; the fetch log lists them).

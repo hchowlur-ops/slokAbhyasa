@@ -1,10 +1,10 @@
 Bhagavad Gītā — Sanskrit text (Devanagari and IAST) and chapter names
 Source: https://github.com/vedicscriptures/vedicscriptures.github.io (commit 5a3fb5a00b1e92c1f0bd51c31e962d3670b4f4d3), by Vedic Scriptures (Pt. Prashant Tripathi), MIT licence (see LICENSE).
 The Sanskrit verses themselves are an ancient text in the public domain. The source's translations and
-commentaries, which are third-party copyrighted works, were not taken. Eight typos were corrected and one
-editorial note removed by SlokAbhyasa's fetch tool (tools/gita/overrides.json).
+commentaries, which are third-party copyrighted works, were not taken. Eight typos were corrected and the
+editorial variant notes removed by SlokAbhyasa's fetch tool (tools/gita/overrides.json).
 
 English translation: Annie Besant (1905), "The Bhagavad-Gîtâ" (public domain), aligned verse by verse in the
 CANONCITE corpus by pralia-labs (huggingface.co/datasets/pralia-labs/canoncite (corpora/bhagavad_gita/corpus_index.jsonl, commit e759f0a52fcccd2c062acd1546779b038115ac90; alignment and metadata CC BY 4.0)); the alignment and metadata are CC BY 4.0,
 https://creativecommons.org/licenses/by/4.0/ — attribution to pralia-labs/canoncite is required.
-Fetched 2026-10-11T13:02:37.057Z by tools/gita/fetch.mjs.
+Fetched 2026-10-11T18:07:03.510Z by tools/gita/fetch.mjs.
