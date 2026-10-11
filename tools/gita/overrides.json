@@ -1,0 +1,10 @@
+{
+  "_about": "Typos in the source text (vedicscriptures), found by a three-way comparison with gita/gita and Sanskrit Wikisource on 2026-10-11; each entry is [wrong, right] applied to that verse's lines. 1.19's editorial note \"(or …)\" is stripped by the normaliser.",
+  "8.12": [["मूध्न्यार्धायात्मनः", "मूर्ध्न्याधायात्मनः"]],
+  "8.24": [["अग्निर्जोतिरहः", "अग्निर्ज्योतिरहः"]],
+  "12.6": [["मत्परः", "मत्पराः"]],
+  "15.17": [["त्युधाहृतः", "त्युदाहृतः"]],
+  "16.19": [["क्रुरान्", "क्रूरान्"]],
+  "17.11": [["अफलाङ्क्षिभिर्", "अफलाकाङ्क्षिभिर्"]],
+  "18.60": [["वशोपि", "वशोऽपि"]]
+}

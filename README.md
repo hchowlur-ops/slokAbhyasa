@@ -660,6 +660,21 @@ node tools/trim-library.mjs --dry-run  # only report what would change
 "Transcribe all" queues every sloka that has no transcript yet; the work runs in the
 background (see "Transcripts") and the sidebar shows its progress.
 
+## The Bhagavad Gītā reference dataset
+
+`reference/gita/` holds the 701 verses of the Gītā (the numbering most editions use, where
+13.1 is "arjuna uvāca / prakṛtiṃ puruṣaṃ…") as a normalised `verses.json`: for each verse
+its id (`2.47`), chapter and verse, the speaker, the speaker line when the text carries one,
+the Devanagari half-verses as lines with their daṇḍas, the IAST likewise, the metre, and an
+English translation (Annie Besant, 1905, public domain); plus the chapter names and the 18
+colophons. `manifest.json` names the source, the commit it was taken from, the licence and
+the file's hash; `LICENSE` and `ATTRIBUTION.txt` travel with it. The folder is independent
+of the app and of your data: `node tools/gita/fetch.mjs` makes or updates it (`--check`
+validates it), and it ships inside the package. Source: the Sanskrit fields of the Vedic
+Scriptures dataset (MIT; the text itself is public domain) with eight typos corrected; the
+survey behind the choice and the licence findings are described in `tools/gita/README.md`.
+The app does not read it yet: the redesign of Learn around it is planned.
+
 ## How the comparison works
 
 Both recordings are resampled to 16 kHz and described every 20 ms by loudness, an activity

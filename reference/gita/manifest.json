@@ -1,0 +1,52 @@
+{
+  "id": "gita",
+  "name": "Bhagavad Gītā — Sanskrit mūla",
+  "schema": 1,
+  "source": {
+    "repo": "vedicscriptures/vedicscriptures.github.io",
+    "commit": "5a3fb5a00b1e92c1f0bd51c31e962d3670b4f4d3",
+    "homepage": "https://github.com/vedicscriptures/vedicscriptures.github.io",
+    "fetchedAt": "2026-10-11T13:02:37.057Z",
+    "files": {
+      "chapters": "chapters/index.json",
+      "verses": "slok/<chapter>/<verse>/index.json"
+    }
+  },
+  "licence": "MIT",
+  "licenceFile": "LICENSE",
+  "attribution": "Vedic Scriptures (Pt. Prashant Tripathi), github.com/vedicscriptures — MIT; the Sanskrit text is public domain",
+  "translations": {
+    "en": {
+      "language": "en",
+      "translator": "Annie Besant (1905)",
+      "licence": "public domain",
+      "via": "huggingface.co/datasets/pralia-labs/canoncite (corpora/bhagavad_gita/corpus_index.jsonl, commit e759f0a52fcccd2c062acd1546779b038115ac90; alignment and metadata CC BY 4.0)",
+      "verses": 700
+    }
+  },
+  "counts": {
+    "chapters": 18,
+    "verses": 701,
+    "colophons": 18
+  },
+  "checks": {
+    "countMismatch": [],
+    "metreMismatch": 11,
+    "overridesNotFound": []
+  },
+  "overrides": [
+    "8.12",
+    "8.24",
+    "12.6",
+    "15.17",
+    "16.19",
+    "17.11",
+    "18.60"
+  ],
+  "files": {
+    "verses.json": {
+      "bytes": 546313,
+      "sha256": "07f7874bfe719bfd7168cb60720c9cea2721b3d4625176ac008cb2d1566ea4a3"
+    }
+  }
+}
