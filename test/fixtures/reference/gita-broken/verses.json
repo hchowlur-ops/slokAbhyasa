@@ -1,0 +1,40 @@
+{
+  "schemaVersion": "1.0.0",
+  "dataset": "gita",
+  "version": "0.0.1",
+  "chapters": [
+    { "chapter": 1, "verses": 1, "name": { "deva": "अर्जुनविषादयोग" } },
+    { "chapter": 2, "verses": 1, "name": { "deva": "साङ्ख्ययोग" } },
+    { "chapter": 12, "verses": 5, "name": { "deva": "भक्तियोग" } }
+  ],
+  "verses": [
+    { "id": "1.21", "kind": "verse", "chapter": 1, "verse": 21, "verseEnd": null,
+      "speaker": { "who": "arjuna", "deva": "अर्जुन उवाच", "iast": "arjuna uvāca" },
+      "deva": ["हृषीकेशं तदा वाक्यमिदमाह महीपते ।", "सेनयोरुभयोर्मध्ये रथं स्थापय मेऽच्युत ॥"],
+      "metre": { "family": "anushtubh", "name": "anuṣṭubh" }, "translations": {} },
+    { "id": "1.21-22", "kind": "combined", "chapter": 1, "verse": 21, "verseEnd": 22,
+      "speaker": { "who": "arjuna", "deva": "अर्जुन उवाच", "iast": "arjuna uvāca" },
+      "deva": ["हृषीकेशं तदा वाक्यमिदमाह महीपते ।", "सेनयोरुभयोर्मध्ये रथं स्थापय मेऽच्युत ॥"],
+      "metre": null, "translations": {} },
+    { "id": "2.5", "kind": "verse", "chapter": 2, "verse": 5, "verseEnd": null,
+      "speaker": { "who": "arjuna", "deva": null, "iast": null },
+      "deva": ["अर्जुन उवाच ।", "गुरूनहत्वा हि महानुभावान्", "श्रेयो भोक्तुं भैक्ष्यमपीह लोके ।"],
+      "metre": { "family": "trishtubh", "name": "triṣṭubh" }, "translations": {} },
+    { "id": "12.3", "kind": "verse", "chapter": 12, "verse": 3, "verseEnd": null,
+      "speaker": { "who": "krishna", "deva": null, "iast": null },
+      "deva": ["ये त्वक्षरमनिर्देश्यमव्यक्तं पर्युपासते ।", "सर्वत्रगमचिन्त्यं च कूटस्थमचलं ध्रुवम् ॥"],
+      "metre": { "family": "anushtubh", "name": "anuṣṭubh" }, "translations": {} },
+    { "id": "12.3", "kind": "verse", "chapter": 12, "verse": 3, "verseEnd": null,
+      "speaker": { "who": "krishna", "deva": null, "iast": null },
+      "deva": ["ये त्वक्षरमनिर्देश्यमव्यक्तं पर्युपासते ।", "सर्वत्रगमचिन्त्यं च कूटस्थमचलं ध्रुवम् ॥"],
+      "metre": { "family": "anushtubh", "name": "anuṣṭubh" }, "translations": {} },
+    { "id": "12.colophon", "kind": "verse", "chapter": 12, "verse": null, "verseEnd": null,
+      "speaker": null,
+      "deva": ["ॐ तत्सदिति … द्वादशोऽध्यायः ॥"],
+      "metre": null, "translations": {} },
+    { "id": "9.9", "kind": "verse", "chapter": 9, "verse": 9, "verseEnd": null,
+      "speaker": { "who": "krishna", "deva": null, "iast": null },
+      "deva": ["न च मां तानि कर्माणि निबध्नन्ति धनञ्जय ।", "उदासीनवदासीनमसक्तं तेषु कर्मसु ॥"],
+      "metre": { "family": "anushtubh", "name": "anuṣṭubh" }, "translations": {} }
+  ]
+}

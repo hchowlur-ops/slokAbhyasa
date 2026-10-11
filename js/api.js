@@ -226,3 +226,26 @@ export async function listAssessments() {
   const res = await check(await fetch('/api/assessments'));
   return res.json();
 }
+
+// ---------- the reference datasets (read-only) ----------
+const refUrl = (ds, sub = '') => `/api/reference/${encodeURIComponent(ds)}${sub}`;
+export async function listReference() {
+  const res = await check(await fetch('/api/reference'));
+  return res.json();
+}
+export async function getReference(ds) {
+  const res = await check(await fetch(refUrl(ds)));
+  return res.json();
+}
+export async function getChapter(ds, n) {
+  const res = await check(await fetch(refUrl(ds, `/chapters/${n}`)));
+  return res.json();
+}
+export async function getVerse(ds, id) {
+  const res = await check(await fetch(refUrl(ds, `/verses/${encodeURIComponent(id)}`)));
+  return res.json();
+}
+export async function getCoverage(ds) {
+  const res = await check(await fetch(refUrl(ds, '/coverage')));
+  return res.json();
+}

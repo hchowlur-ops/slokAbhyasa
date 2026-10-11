@@ -34,3 +34,13 @@ export function resolveDataDir(root) {
   const fromFile = typeof cfg.data === 'string' && expand(root, cfg.data);
   return fromFile || root;
 }
+
+// Where reference datasets (reference/<id>/manifest.json) are looked for: the data folder
+// first, so one dropped there wins and survives an app upgrade, then the app's own copy.
+export function resolveReferenceDirs(root) {
+  const data = resolveDataDir(root);
+  const dirs = [path.join(data, 'reference')];
+  const own = path.join(root, 'reference');
+  if (path.resolve(own) !== path.resolve(dirs[0])) dirs.push(own);
+  return dirs;
+}

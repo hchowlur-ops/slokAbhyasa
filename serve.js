@@ -19,7 +19,9 @@ import { trimSilence } from './js/dsp/trim.js';
 import { decodeWav, encodeWavBytes } from './js/wav.js';
 import { cleanFolder, parseBaselineFilename, nameFromSlug, parseWavHeader, RESERVED_FOLDERS } from './js/libutil.js';
 import { normalizeCategories, normalizeTolerance, normalizeWeights, recordTolerance, correctness, attemptOverall, gradeOf } from './js/quizscore.js';
-import { resolveDataDir } from './datadir.js';
+import { resolveDataDir, resolveReferenceDirs } from './datadir.js';
+import { initReference, datasets as referenceList, dataset as referenceDataset, verse as referenceVerse, chapter as referenceChapter, coverage as referenceCoverage } from './reference.js';
+import { parseVerseId } from './js/verses.js';
 import { readMeta, writeMeta, removeMeta, moveMeta, ensureMeta, sanitizeMeta, audioInfo, withBext, bextDescription, readProfiles, writeProfiles, sanitizeProfile } from './meta-store.js';
 import { normalizeStore, pickTranscript, putInStore, removeFromStore, shiftStore, transcriptToText, applyTextEdit, publicStore } from './js/transcripts.js';
 import { transliterateTranscript } from './js/translit.js';
@@ -33,6 +35,8 @@ const INDEX = path.join(LIB, 'index.json');
 const QUIZZES = path.join(DATA, 'quizzes');
 const SESSIONS = path.join(DATA, 'sessions');
 const PROFILES = path.join(DATA, 'profiles.json');
+const REFERENCE_DIRS = resolveReferenceDirs(ROOT);
+initReference(REFERENCE_DIRS);
 const HOST = '127.0.0.1';
 const PORT = Number(process.env.PORT) || 8787;
 const MAX_UPLOAD = 512 * 1024 * 1024; // 512 MB
@@ -694,6 +698,45 @@ async function handleProfiles(req, res, parts) {
   return sendJson(res, 405, { error: 'Method not allowed' });
 }
 
+// ---------- the reference datasets (read-only) ----------
+// GET /api/reference                         → every dataset found, errors included
+// GET /api/reference/:ds                     → manifest + chapters + coverage
+// GET /api/reference/:ds/chapters/:n         → the chapter's entries, each with its recordings
+// GET /api/reference/:ds/verses/:id          → one entry ("1.21-22" composed from its parts)
+// GET /api/reference/:ds/coverage            → how much of the dataset has a recording
+// Records are linked to verses by `verse: { dataset, id }` in the index (not written yet:
+// the link is the next phase), so the recordings and the coverage are empty until then.
+async function handleReference(req, res, parts) {
+  if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+  const [, , dsId, sub, arg] = parts;
+  if (!dsId) return sendJson(res, 200, referenceList().map(({ dir, ...d }) => d));
+  const ds = referenceDataset(decodeURIComponent(dsId));
+  if (!ds) return sendJson(res, 404, { error: `No reference dataset "${dsId}"` });
+  if (ds.errors.length) return sendJson(res, 409, { error: 'The dataset has errors and is not served', errors: ds.errors });
+  const index = await readIndex();
+  if (!sub) return sendJson(res, 200, { ...ds.manifest, chapters: ds.data.chapters, coverage: referenceCoverage(ds, index), warnings: ds.warnings });
+  if (sub === 'coverage') return sendJson(res, 200, referenceCoverage(ds, index));
+  if (sub === 'chapters' && arg) {
+    const ch = referenceChapter(ds, Number(arg));
+    if (!ch) return sendJson(res, 404, { error: `No chapter ${arg}` });
+    const linked = index.filter((r) => r.verse && r.verse.dataset === ds.id && r.verse.id);
+    const covers = (rec, id) => {
+      if (rec.verse.id === id) return true;
+      const p = parseVerseId(rec.verse.id);
+      const q = parseVerseId(id);
+      return !!(p && q && p.kind === 'combined' && q.kind === 'verse' && q.chapter === p.chapter && q.verse >= p.verse && q.verse <= p.verseEnd);
+    };
+    const entries = ch.entries.map((e) => ({ ...e, recordings: linked.filter((r) => covers(r, e.id)).map((r) => publicRecord(r)) }));
+    return sendJson(res, 200, { ...ch, entries });
+  }
+  if (sub === 'verses' && arg) {
+    const v = referenceVerse(ds, decodeURIComponent(arg));
+    if (!v) return sendJson(res, 404, { error: `No verse "${arg}"` });
+    return sendJson(res, 200, v);
+  }
+  return sendJson(res, 404, { error: 'Not found' });
+}
+
 async function handleApi(req, res, url) {
   const parts = url.pathname.split('/').filter(Boolean); // ['api','baselines',id?,sub?]
   if (parts[1] === 'quizzes') return handleQuizzes(req, res, parts);
@@ -701,6 +744,7 @@ async function handleApi(req, res, url) {
   if (parts[1] === 'assessments') return handleAssessments(req, res);
   if (parts[1] === 'folders') return handleFolders(req, res);
   if (parts[1] === 'profiles') return handleProfiles(req, res, parts);
+  if (parts[1] === 'reference') return handleReference(req, res, parts);
   if (parts[1] !== 'baselines') return sendJson(res, 404, { error: 'Not found' });
   const id = parts[2];
   const sub = parts[3];

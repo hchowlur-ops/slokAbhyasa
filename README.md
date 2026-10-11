@@ -671,10 +671,15 @@ English translation (Annie Besant, 1905, public domain); plus the chapter names 
 colophons. `manifest.json` names the source, the commit it was taken from, the licence and
 the file's hash; `LICENSE` and `ATTRIBUTION.txt` travel with it. The folder is independent
 of the app and of your data: `node tools/gita/fetch.mjs` makes or updates it (`--check`
-validates it), and it ships inside the package. Source: the Sanskrit fields of the Vedic
-Scriptures dataset (MIT; the text itself is public domain) with eight typos corrected; the
-survey behind the choice and the licence findings are described in `tools/gita/README.md`.
-The app does not read it yet: the redesign of Learn around it is planned.
+validates it, `node tools/reference-check.mjs` checks any dataset folder verse by verse),
+and it ships inside the package. A copy placed in `<data>/reference/gita/` (your data
+folder) takes precedence over the app's own, so it survives an upgrade. Source: the
+Sanskrit fields of the Vedic Scriptures dataset (MIT; the text itself is public domain)
+with eight typos corrected; the survey behind the choice and the licence findings are
+described in `tools/gita/README.md`. The server serves it read-only under `/api/reference`
+(the datasets found, a dataset with its chapters and coverage, a chapter's entries with
+their recordings, one verse — a combined id such as `1.21-22` composed from its parts); no
+page reads it yet: the redesign of Learn around it is planned.
 
 ## How the comparison works
 
