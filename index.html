@@ -285,6 +285,7 @@
               </div>
               <div class="chandas-hint" id="practice-text-chandas" hidden></div>
               <div class="stt-text quiz-text-body" id="practice-text-body"></div>
+              <div class="muted small mark-legend" id="practice-text-legend" hidden>Above each akṣara: ◡ laghu (light) · — guru (heavy)</div>
             </div>
           </div>
           <div class="rec-stage">
@@ -457,6 +458,7 @@
                     <p>Click any phrase to hear it.</p>
                     <p><span class="w-del">Highlighted</span> sloka words were not heard in your attempt; <span class="w-ins">highlighted</span> words in yours are extra or different.</p>
                     <p><span class="w-dim">Greyed</span> words lie outside the part that was compared.</p>
+                    <p>The words are heard as Sanskrit; shown in Kannada, Telugu or romanised, each akṣara carries its weight above: ◡ laghu (light), — guru (heavy).</p>
                   </div>
                 </div>
                 <div class="stt-text" id="stt-heard" data-empty="what SlokAbhyasa heard, once transcribed"></div>
@@ -627,7 +629,7 @@
 
       <div class="card settings-card">
         <h2>Speech recognition</h2>
-        <p class="muted small">The language the words are heard in, the model, and whether transcripts are made without being asked. The same settings appear beside every transcript panel. Saved slokas are transcribed in every supported language in the background, so changing the language later shows that transcript at once.</p>
+        <p class="muted small">The words are always heard as Sanskrit (Devanagari); Kannada, Telugu and romanised text are written from that. Here: the model, and whether transcripts are made without being asked. The same settings appear beside every transcript panel.</p>
         <div class="settings-row">
           <div class="stt-controls" id="settings-stt-controls"></div>
           <label class="toggle"><input type="checkbox" id="settings-stt-auto" /><span>Transcribe automatically (Learn, Self Evaluation, quizzes)</span></label>
@@ -639,14 +641,14 @@
         <label class="toggle"><input type="checkbox" id="settings-eval-text" /><span>Show the slokas' text during Self Evaluation</span></label>
         <p class="muted small">The chosen sloka is shown above the record button with its name, a play button and its text; with several ticked, Previous / Next page through them. Switched off, the panel lists only the names of the ticked slokas (four, the rest in a tooltip).</p>
         <label class="toggle"><input type="checkbox" id="settings-quiz-text" /><span>Show the slokas' text while reciting a quiz</span></label>
-        <p class="muted small" id="settings-quiz-text-note">Each chosen sloka's text (the text typed in its details, else its transcript in the chosen language) is shown above the record button, one sloka in view with Previous / Next, and the step is titled "Recite with the text shown". Switched off, the step is "Recite from memory" and only the names are listed (four, the rest in a tooltip). The slokas' recordings stay hidden either way until you have recorded.</p>
+        <p class="muted small" id="settings-quiz-text-note">Each chosen sloka's text (the text typed in its details, else its transcript, in the script chosen below) is shown above the record button, one sloka in view with Previous / Next, and the step is titled "Recite with the text shown". Switched off, the step is "Recite from memory" and only the names are listed (four, the rest in a tooltip). The slokas' recordings stay hidden either way until you have recorded.</p>
         <label class="toggle"><input type="checkbox" id="settings-hide-transcript" /><span>Hide the transcript in the results</span></label>
         <p class="muted small">The Transcript block under the overall score — the sloka's words and yours, the words-heard line, "Play both together" — is left out of the results in Self Evaluation and quizzes. The words are still heard and scored; the Analysis fold keeps the scores.</p>
         <div class="settings-row text-lang-row">
           <label class="field inline"><span>Show the sloka's text in</span>
-            <select id="settings-text-language"><option value="">the speech-recognition language</option></select>
+            <select id="settings-text-language"><option value="">Sanskrit · संस्कृतम् (as heard)</option></select>
           </label>
-          <span class="muted small">The text shown in the sloka panel of Self Evaluation and quizzes: the text typed in that language in the sloka's details, else its transcript in that language, else what the sloka has. Speech recognition itself, and so the words compared, keep the language chosen under Speech recognition.</span>
+          <span class="muted small">The script of every text shown — the sloka panel, the transcript panels, the rows of a report. The words are always heard as Sanskrit; Kannada, Telugu and romanised (IAST) text are written from it, akṣara by akṣara, each akṣara with its weight above: ◡ laghu (light), — guru (heavy). The text typed in a sloka's details may be in any of the four.</span>
         </div>
         <div class="settings-row chandas-row">
           <label class="toggle"><input type="checkbox" id="settings-chandas-hint" /><span>Show a hint of the chandas (metre)</span></label>
@@ -779,7 +781,7 @@
         </button>
         <button class="btn btn-sm" id="library-transcribe-all" type="button" title="Transcribe every sloka in each supported language it lacks, in the background; your own transcriptions always go first">
           <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12.87 15.07l-2.54-2.51.03-.03A17.52 17.52 0 0 0 14.07 6H17V4h-7V2H8v2H1v2h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2l-4.5-12zm-2.62 7l1.62-4.33L19.12 17h-3.24z"/></svg>
-          <span>Transcribe all in every language</span>
+          <span>Transcribe all</span>
         </button>
         <span class="muted small">Originals are kept in <code>library/backup</code>. Right-click a sloka for everything saved about it.</span>
         <div class="progress" id="library-progress" hidden>

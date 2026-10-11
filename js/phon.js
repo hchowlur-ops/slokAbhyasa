@@ -27,8 +27,10 @@ const blockOf = (cp) => { const b = cp & ~0x7f; return BASES.includes(b) ? b : n
 const cons = (off) => { const c = CONS[off]; return c ? { ph: c[0], place: c[1], voiced: !!c[2], asp: !!c[3], kind: c[4] || 'stop' } : null; };
 
 // Text → akṣaras: [{ onset: [cons], vowel: { v, long } | null, marks: ['ṃ'|'ḥ'], coda: [cons],
-// word, text }]. A consonant with a virama joins the next akṣara's onset; at a word's end
-// it closes the last akṣara (coda). Latin words are read as IAST / ASCII romanisation.
+// word, text, src, from, to }]. A consonant with a virama joins the next akṣara's onset; at
+// a word's end it closes the last akṣara (coda). `src` is the stretch of the word the akṣara
+// was read from (chars from..to), so a text can be written out akṣara by akṣara. Latin
+// words are read as IAST / ASCII romanisation.
 export function syllabify(text) {
   const out = [];
   let src = String(text || '').normalize('NFC');
@@ -36,17 +38,22 @@ export function syllabify(text) {
   const words = src.split(/[^\p{L}\p{M}]+/u).filter(Boolean);
   words.forEach((word, wi) => {
     let onset = [];
+    let onsetFrom = null; // where the consonants waiting for their akṣara begin
     let cur = null;
+    const first = out.length;
     const close = () => { if (cur) { out.push(cur); cur = null; } };
+    const lastOfWord = () => cur || (out.length > first ? out[out.length - 1] : null);
     const chars = Array.from(word);
     for (let i = 0; i < chars.length; i++) {
       const cp = chars[i].codePointAt(0);
       const base = blockOf(cp);
-      if (base === null) continue; // a stray Latin letter or mark inside an Indic word
+      if (base === null) { const t = lastOfWord(); if (t) t.to = i + 1; continue; } // a stray Latin letter or mark inside an Indic word
       const off = cp - base;
-      if (off === 0x50) { close(); out.push({ onset: [], vowel: { v: 'o', long: true }, marks: ['ṃ'], coda: [], word: wi, text: chars[i] }); continue; } // ॐ
+      if (off === 0x50) { close(); out.push({ onset: [], vowel: { v: 'o', long: true }, marks: ['ṃ'], coda: [], word: wi, text: '', from: onsetFrom ?? i, to: i + 1 }); onset = []; onsetFrom = null; continue; } // ॐ
       if (CONS[off]) {
         const c = cons(off);
+        const ci = i;
+        if (onsetFrom === null) onsetFrom = i;
         const next = i + 1 < chars.length ? chars[i + 1].codePointAt(0) - base : -1;
         if (next === 0x4d) { close(); onset.push(c); i++; continue; } // virama: the cluster goes on
         if (next === 0x3c) { i++; } // nukta: ignored
@@ -56,26 +63,33 @@ export function syllabify(text) {
         if (VOWEL_SIGN[n2]) { vowel = { v: VOWEL_SIGN[n2][0], long: !!VOWEL_SIGN[n2][1] }; i++; }
         // सङ्ग and संग are one pronunciation: a nasal opening a cluster before a stop of its
         // own place is the anusvāra of the akṣara before (Whisper writes the anusvāra form)
-        const prev = out.length && out[out.length - 1].word === wi ? out[out.length - 1] : null;
+        const prev = out.length > first ? out[out.length - 1] : null;
+        let from = onsetFrom;
         if (prev && onset.length && onset[0].kind === 'nasal' && c.kind === 'stop' && onset[0].place === c.place && onset.length === 1) {
           if (!prev.marks.includes('ṃ')) prev.marks.push('ṃ');
+          prev.to = ci; // the nasal and its virama belong to the akṣara before
           onset = [];
+          from = ci;
         }
-        cur = { onset: [...onset, c], vowel, marks: [], coda: [], word: wi, text: '' };
+        cur = { onset: [...onset, c], vowel, marks: [], coda: [], word: wi, text: '', from, to: i + 1 };
         onset = [];
+        onsetFrom = null;
         continue;
       }
-      if (VOWEL_IND[off]) { close(); cur = { onset: onset.splice(0), vowel: { v: VOWEL_IND[off][0], long: !!VOWEL_IND[off][1] }, marks: [], coda: [], word: wi, text: '' }; continue; }
-      if (off === 0x02 || off === 0x01) { if (cur) cur.marks.push('ṃ'); continue; }
-      if (off === 0x03) { if (cur) cur.marks.push('ḥ'); continue; }
-      // virama without a consonant before it, avagraha, nukta, digits: ignored
+      if (VOWEL_IND[off]) { close(); cur = { onset: onset.splice(0), vowel: { v: VOWEL_IND[off][0], long: !!VOWEL_IND[off][1] }, marks: [], coda: [], word: wi, text: '', from: onsetFrom ?? i, to: i + 1 }; onsetFrom = null; continue; }
+      if (off === 0x02 || off === 0x01) { if (cur) { cur.marks.push('ṃ'); cur.to = i + 1; } continue; }
+      if (off === 0x03) { if (cur) { cur.marks.push('ḥ'); cur.to = i + 1; } continue; }
+      // a virama without a consonant before it, an avagraha, digits: kept with the akṣara before
+      { const t = lastOfWord(); if (t) t.to = i + 1; }
     }
     close();
     if (onset.length) {
       // consonants left at the word's end (a final virama): the coda of the last akṣara of this word
-      const last = out.length && out[out.length - 1].word === wi ? out[out.length - 1] : null;
-      if (last) last.coda.push(...onset); else out.push({ onset, vowel: null, marks: [], coda: [], word: wi, text: '' });
+      const last = out.length > first ? out[out.length - 1] : null;
+      if (last) { last.coda.push(...onset); last.to = chars.length; }
+      else out.push({ onset, vowel: null, marks: [], coda: [], word: wi, text: '', from: onsetFrom ?? 0, to: chars.length });
     }
+    for (let k = first; k < out.length; k++) out[k].src = chars.slice(out[k].from, out[k].to).join('');
   });
   for (const a of out) a.text = aksharaText(a);
   return out;

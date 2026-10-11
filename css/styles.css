@@ -968,6 +968,11 @@ canvas { display: block; }
 .quiz-texts-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .quiz-text { min-width: 0; }
 .quiz-text-names { font-weight: 600; font-size: 1.05rem; line-height: 1.6; cursor: default; }
+/* akṣaras shown in another script than Sanskrit carry their weight above: ◡ laghu, — guru */
+ruby { ruby-position: over; ruby-align: center; }
+rt { font-size: 0.5em; line-height: 1; font-weight: 600; color: var(--gold-deep); user-select: none; }
+:root[data-theme="dark"] rt { color: var(--gold); }
+.mark-legend { margin: 6px 0 0; }
 .chandas-hint { margin: -2px 0 8px; font-size: 0.85rem; font-weight: 600; letter-spacing: .02em; color: var(--gold-deep); cursor: help; }
 :root[data-theme="dark"] .chandas-hint { color: var(--gold); }
 .phon-padas { margin-top: 4px; }

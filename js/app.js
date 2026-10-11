@@ -14,6 +14,7 @@ import { comparePhonology, ERROR_LABEL } from './phon.js';
 import { mixToMono } from './dsp/resample.js';
 import { trimSilence } from './dsp/trim.js';
 import { Transcriber, STT_LANGUAGES, STT_LANGUAGE_CODES, STT_TIERS, sttLanguageLabel, sttLanguageTag, sttTierLabel, isStopped } from './stt.js';
+import { segments as scriptSegments, wordSegments, toDeva, weightMark } from './lipi.js';
 import { normalizeStore, putInStore, pickTranscript, availableLanguages } from './transcripts.js';
 import { transliterateTranscript } from './translit.js';
 import { identifyChandas, layoutSloka, padaBreaks, linesFor, uvacaOffset, chandasLabel, chandasPattern, gitaVerse, gitaFamily } from './chandas.js';
@@ -301,15 +302,36 @@ const sttSettings = (() => {
   const d = { language: 'sanskrit', tier: null, auto: true, autoV: 2, cpuTiers: [] };
   let s = d;
   try { s = { ...d, ...JSON.parse(localStorage.getItem(STT_KEY) || '{}') }; } catch { /* defaults */ }
-  if (!STT_LANGUAGES.some((l) => l.code === s.language)) s.language = d.language;
+  s.language = 'sanskrit'; // the words are always heard as Sanskrit; other languages are written from it
   if (s.tier && s.tier !== 'tiny' && !STT_TIERS.some((t) => t.id === s.tier)) s.tier = null;
   if (s.autoV !== 2) { s.auto = true; s.autoV = 2; }
   s.auto = s.auto !== false;
   if (!Array.isArray(s.cpuTiers)) s.cpuTiers = [];
   return s;
 })();
-// Called with the new language when the speech-to-text language is changed anywhere.
+// Called when the language the text is shown in changes anywhere.
 const sttLanguageListeners = new Set();
+// The language the text is shown in: Sanskrit as heard, or Kannada, Telugu or romanised
+// (IAST) written from it, akṣara by akṣara, with laghu ◡ / guru — above each akṣara.
+const TEXT_LANGUAGE_KEY = 'tutor-text-language';
+let textLanguage = (() => { try { const v = localStorage.getItem(TEXT_LANGUAGE_KEY) || ''; return STT_LANGUAGE_CODES.includes(v) && v !== 'sanskrit' ? v : ''; } catch { return ''; } })();
+const displayLanguage = () => textLanguage || 'sanskrit';
+const marksShown = () => displayLanguage() !== 'sanskrit';
+{
+  const sel = $('#settings-text-language');
+  const labels = { english: 'English · romanised (IAST)' };
+  for (const l of STT_LANGUAGES) { if (l.code === 'sanskrit') continue; const o = document.createElement('option'); o.value = l.code; o.textContent = labels[l.code] || l.label; sel.appendChild(o); }
+  sel.value = textLanguage;
+  sel.addEventListener('change', () => {
+    textLanguage = STT_LANGUAGE_CODES.includes(sel.value) && sel.value !== 'sanskrit' ? sel.value : '';
+    try { if (textLanguage) localStorage.setItem(TEXT_LANGUAGE_KEY, textLanguage); else localStorage.removeItem(TEXT_LANGUAGE_KEY); } catch { /* ignore */ }
+    for (const fn of sttLanguageListeners) fn(displayLanguage());
+  });
+}
+const escapeHtml = (x) => String(x).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+// Text in the chosen script: in a language other than Sanskrit every akṣara carries its weight
+const segmentsHtml = (segs) => segs.map((sg) => (sg.sep != null ? escapeHtml(sg.sep) : sg.weight ? `<ruby>${escapeHtml(sg.text)}<rt>${weightMark(sg.weight)}</rt></ruby>` : escapeHtml(sg.text))).join('');
+const scriptHtml = (text, language = displayLanguage()) => String(text || '').split('\n').map((line) => segmentsHtml(scriptSegments(line, language))).join('<br>');
 // The transcript of a sloka in the language chosen for speech to text (none if it has not
 // been transcribed in that language yet).
 const transcriptIn = (store, language = sttSettings.language) => pickTranscript(store, language);
@@ -344,12 +366,10 @@ function buildSttControls(host) {
       sttSettings[key] = sel.value;
       saveStt();
       syncSttControls();
-      if (key === 'language') for (const fn of sttLanguageListeners) fn(sel.value);
     });
     return sel;
   };
   const set = {
-    lang: mk('Language', STT_LANGUAGES.map((l) => ({ value: l.code, label: l.label })), 'language'),
     tier: mk('Model', STT_TIERS.map((t) => ({ value: t.id, label: t.label, title: t.hint })), 'tier'),
   };
   sttControlSets.add(set);
@@ -359,8 +379,7 @@ function buildSttControls(host) {
 async function syncSttControls() {
   const tier = await sttTier();
   for (const s of sttControlSets) {
-    if (!s.lang.isConnected) { sttControlSets.delete(s); continue; }
-    s.lang.value = sttSettings.language;
+    if (!s.tier.isConnected) { sttControlSets.delete(s); continue; }
     s.tier.value = tier;
   }
 }
@@ -401,12 +420,11 @@ async function runTranscription(samples, sampleRate, progress, what, signal, { l
   return transliterateTranscript(result);
 }
 
-// ---------- background transcription: every saved sloka in every language ----------
+// ---------- background transcription: every saved sloka that has no words yet ----------
 // After a sloka is saved (and for the whole library on request) its recording is
-// transcribed in each supported language it lacks, in the speech worker at background
-// priority: anything a person is waiting for goes first, and a running background job
-// gives way. Results are stored beside the existing ones without changing which language
-// the .txt follows, and never over a transcript someone corrected.
+// transcribed, in Sanskrit, in the speech worker at background priority: anything a person
+// is waiting for goes first, and a running background job gives way. A transcript that is
+// there already (least of all one someone corrected) is never replaced.
 
 const bgQueue = []; // { rec, getAudio: async () => ({ samples, sampleRate }), languages }
 let bgRun = null; // { ctrl } while the queue is being worked through
@@ -422,10 +440,9 @@ const notifyTranscripts = (id, store) => {
 };
 const langName = (code) => sttLanguageLabel(code).split(' · ')[0];
 
-// The supported languages a store lacks, the chosen one first.
+// What a store lacks: the Sanskrit transcript, when there is none.
 function missingLanguages(store) {
-  const have = new Set(availableLanguages(store));
-  return [sttSettings.language, ...STT_LANGUAGE_CODES].filter((c, i, a) => !have.has(c) && a.indexOf(c) === i);
+  return availableLanguages(store).includes('sanskrit') ? [] : ['sanskrit'];
 }
 
 function queueBackgroundTranscription(rec, getAudio, languages) {
@@ -484,8 +501,8 @@ function runBackgroundQueue() {
 }
 $('#bg-status-stop').addEventListener('click', () => { if (bgRun) { bgRun.ctrl.abort(); toast('Background transcription stopped.', 'info'); } });
 
-// A saved sloka: the languages it lacks are transcribed in the background from the take
-// still in memory. `have` lists what is (or is about to be) stored already.
+// A saved sloka without words yet is transcribed in the background from the take still in
+// memory. `have` lists what is (or is about to be) stored already.
 function transcribeSavedInAllLanguages(rec, samples, sampleRate, have = []) {
   const store = { languages: Object.fromEntries(have.map((c) => [c, true])) };
   queueBackgroundTranscription(rec, async () => ({ samples, sampleRate }), missingLanguages(store));
@@ -509,7 +526,8 @@ function shiftTranscript(t, delta, duration) {
 // metre (the sloka's, so a recitation is laid out like the sloka it answers).
 function renderTranscriptText(host, t, toks, flagged, cls, play, dimmed = null, dandas = false, perPada = null) {
   host.innerHTML = '';
-  host.lang = sttLanguageTag(t.language);
+  host.lang = sttLanguageTag(displayLanguage());
+  const written = wordSegments(toks.map((tok) => tok.word), displayLanguage()); // each word in the chosen script, its akṣaras marked
   if (!toks.length) { host.textContent = t.text || 'Nothing was recognised.'; host.classList.add('muted'); return; }
   host.classList.remove('muted');
   // a śloka's lines end in daṇḍas: after the token that ends each marked line, and a line
@@ -553,7 +571,7 @@ function renderTranscriptText(host, t, toks, flagged, cls, play, dimmed = null, 
     }
     const w = document.createElement('span');
     w.className = `w${flagged.has(i) ? ` ${cls}` : ''}${dimmed && dimmed.has(i) ? ' w-dim' : ''}`;
-    w.textContent = tok.word;
+    w.innerHTML = segmentsHtml(written[i]);
     span.appendChild(w);
     const le = lineEnd.get(i);
     if (le) {
@@ -618,12 +636,12 @@ function createTranscriptPanel(host, { editable = false, play = null, onChange =
     setHidden(editHint, !editing);
     setHidden(runBtn, editing);
     runBtn.textContent = transcript ? 'Transcribe again' : 'Transcribe';
-    const alsoIn = others.length ? ` · also in ${others.map((c) => sttLanguageLabel(c).split(' · ')[0]).join(', ')}` : '';
-    if (!transcript) { statusEl.textContent = `No transcript in ${sttLanguageLabel(sttSettings.language).split(' · ')[0]} yet.${alsoIn}`; return; }
+    if (!transcript) { statusEl.textContent = 'No transcript yet.'; return; }
     renderTranscriptText(textEl, transcript, tokenizeTranscript(transcript), flagged, flagClass, play, dimmed, true);
     const how = transcript.edited ? (transcript.editedIn === 'file' ? 'edited in the text file' : 'corrected by you') : sttTierLabel(transcript.tier);
     const lang = transcript.language && transcript.language !== 'unknown' ? sttLanguageLabel(transcript.language) : 'Text';
-    statusEl.textContent = `${lang} · ${how}${transcript.createdAt ? ' · ' + fmtDate(transcript.createdAt) : ''}${alsoIn}`;
+    const shown = marksShown() ? ` · shown in ${langName(displayLanguage())}, ◡ laghu — guru` : '';
+    statusEl.textContent = `${lang} · ${how}${transcript.createdAt ? ' · ' + fmtDate(transcript.createdAt) : ''}${shown}`;
   };
   // Editing works line by line: each timed phrase is one line, so corrections keep their timings.
   const editText = (t) => (t.chunks && t.chunks.length ? t.chunks.map((c) => c.text).join('\n') : t.text);
@@ -711,7 +729,7 @@ function createTranscriptPanel(host, { editable = false, play = null, onChange =
     },
   };
   runBtn.addEventListener('click', () => panel.transcribe());
-  sttLanguageListeners.add(() => render()); // the "no transcript in …" wording follows the language
+  sttLanguageListeners.add(() => render()); // the text follows the script it is shown in
   editBtn.addEventListener('click', () => {
     editEl.value = editText(transcript);
     editEl.rows = Math.min(12, Math.max(3, editEl.value.split('\n').length + 1));
@@ -1323,7 +1341,7 @@ bindPlayButton($('#res-play-base'), basePlayer);
 bindPlayButton($('#res-play-heard'), heardPlayer);
 const practicePanel = createTranscriptPanel($('#practice-transcript'), {
   title: 'Sloka text',
-  editable: true,
+  editable: false, // the words are corrected in the Library alone
   play: (s, e) => { heardPlayer.pause(); basePlayer.playRange(s, e); },
   // a transcription that finished after another sloka was opened still belongs to its own sloka
   onStale: async (t, id) => {
@@ -1914,16 +1932,10 @@ async function setActiveBase(id) {
   }
 }
 
-// Another speech-to-text language: the loaded slokas switch to their transcript in that
-// language (transcribed on the spot when they have none and transcription is automatic),
-// and an open report's word comparison is redone in it.
-sttLanguageListeners.add((language) => {
-  for (const b of practice.bases.values()) b.transcript = transcriptIn(b.transcripts, language);
-  const base = practice.base;
-  if (!base) return;
-  practicePanel.swap(base.transcript, base.transcripts);
-  if (!base.transcript && sttSettings.auto) practicePanel.transcribe();
-  if (practice.result && (sttSettings.auto || practice.heardTranscripts.size)) transcribeBoth(false);
+// Another script to show the text in: the sloka panel and an open report's words follow.
+sttLanguageListeners.add(() => {
+  renderSlokaTexts();
+  if (practice.result && sttPractice.heard) renderTranscriptDiff();
 });
 // A transcript stored in the background reaches the loaded slokas too.
 transcriptListeners.add((id, store) => {
@@ -2363,21 +2375,6 @@ function chandasOf(record, text) {
   const v = record ? gitaVerse(record.name) : null;
   return identifyChandas(text, { expected: v ? gitaFamily(v.chapter, v.verse) : null });
 }
-// The language the sloka's text is shown in (the panel in Self Evaluation and quizzes): the
-// speech-recognition language unless one is chosen here. Recognition, and so the words
-// compared, stay in the speech-recognition language.
-const TEXT_LANGUAGE_KEY = 'tutor-text-language';
-let textLanguage = (() => { try { const v = localStorage.getItem(TEXT_LANGUAGE_KEY) || ''; return STT_LANGUAGE_CODES.includes(v) ? v : ''; } catch { return ''; } })();
-{
-  const sel = $('#settings-text-language');
-  for (const l of STT_LANGUAGES) { const o = document.createElement('option'); o.value = l.code; o.textContent = l.label; sel.appendChild(o); }
-  sel.value = textLanguage;
-  sel.addEventListener('change', () => {
-    textLanguage = STT_LANGUAGE_CODES.includes(sel.value) ? sel.value : '';
-    try { if (textLanguage) localStorage.setItem(TEXT_LANGUAGE_KEY, textLanguage); else localStorage.removeItem(TEXT_LANGUAGE_KEY); } catch { /* ignore */ }
-    renderSlokaTexts();
-  });
-}
 // Hide the Transcript block of the results (the sloka's words and yours) in Self Evaluation
 // and quizzes; the words are still heard and scored.
 const HIDE_TRANSCRIPT_KEY = 'tutor-hide-transcript';
@@ -2391,18 +2388,13 @@ let hideTranscript = (() => { try { return localStorage.getItem(HIDE_TRANSCRIPT_
     setHidden($('#transcript'), hideTranscript);
   });
 }
+// The sloka's text in Devanagari: the text typed in its details (in whatever script), else
+// its transcript. The panel writes it in the chosen script.
 const slokaTextOf = (base) => {
   const meta = base.record && base.record.meta;
   const typed = meta && meta.text && meta.text.body && meta.text.origin !== 'transcript' ? meta.text : null;
-  if (textLanguage) {
-    // a chosen language: the text typed in it, else the transcript in it, else what there is
-    const lang = (STT_LANGUAGES.find((l) => l.code === textLanguage) || {}).lang;
-    if (typed && typed.language === lang) return typed.body;
-    const t = transcriptIn(base.transcripts, textLanguage);
-    if (t && t.text) return t.text;
-  }
-  if (typed) return typed.body;
-  return base.transcript && base.transcript.text ? base.transcript.text : '';
+  const text = typed ? typed.body : base.transcript && base.transcript.text ? base.transcript.text : '';
+  return text ? toDeva(text) : '';
 };
 // The slokas the panel pages through: a quiz's, else the ticked ones; never in Teach, which
 // has the preview. One is in view at a time: its name, a play button (not before a quiz's
@@ -2479,8 +2471,10 @@ async function renderSlokaTexts() {
     hintEl.textContent = hint;
     hintEl.title = hint ? chandasPattern(ch) : '';
     setHidden(hintEl, !hint);
-    body.textContent = text ? withDandas(layoutSloka(text, { perPada: ch ? ch.perPada : null, lines: slokaLines })) : 'No text yet: transcribe this sloka, or type its text under Details in the Library.';
+    if (text) body.innerHTML = scriptHtml(withDandas(layoutSloka(text, { perPada: ch ? ch.perPada : null, lines: slokaLines })));
+    else body.textContent = 'No text yet: transcribe this sloka, or type its text under Details in the Library.';
     body.classList.toggle('muted', !text);
+    setHidden($('#practice-text-legend'), !(text && marksShown()));
   };
   const cached = practice.bases.get(it.id);
   if (cached) { show(cached); return; } // a sloka already loaded: no "Loading…" flicker when paging
@@ -4015,8 +4009,7 @@ function typedReference(base, res) {
   const win = res && res.matched && res.matched.base;
   const whole = !win || (win[0] <= 0.75 && win[1] >= base.duration - 0.75);
   if (!whole && base.transcript) return null;
-  const lang = (STT_LANGUAGES.find((l) => l.lang === text.language) || {}).code;
-  return { text: text.body, chunks: [], language: lang || (base.transcript && base.transcript.language) || sttSettings.language, typed: true };
+  return { text: toDeva(text.body), chunks: [], language: 'sanskrit', typed: true };
 }
 
 let sttBothInflight = null;
@@ -4269,7 +4262,7 @@ function libTranscriptPanel(li, r) {
   transcriptListeners.add(onStored);
 }
 
-// Library › every sloka, every language it lacks, in the background.
+// Library › every sloka without words yet, in the background.
 $('#library-transcribe-all').addEventListener('click', async () => {
   const list = await getLibrary();
   let queued = 0;
@@ -4285,7 +4278,7 @@ $('#library-transcribe-all').addEventListener('click', async () => {
     }, missing);
     queued += missing.length;
   }
-  toast(queued ? `${queued} transcription${queued === 1 ? '' : 's'} queued in the background (see the sidebar).` : 'Every sloka is already transcribed in every language.', 'info', 5000);
+  toast(queued ? `${queued} transcription${queued === 1 ? '' : 's'} queued in the background (see the sidebar).` : 'Every sloka is already transcribed.', 'info', 5000);
 });
 
 async function playLibraryRange(r, s, e) {

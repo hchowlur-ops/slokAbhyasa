@@ -334,33 +334,42 @@ tolerance fields stay visible but greyed until the switch is off again.
   and compared, in the Transcript block at the top of the Analysis fold: sloka words that were not
   heard are highlighted in red there and at the top; extra or different words in your attempt
   are highlighted in amber. Click any phrase to hear it; the small "i" by "Yours" opens
-  this legend as an overlay. "Transcribe again" reruns with another language or model.
-* **Library** – "Transcript" shows, creates or corrects the transcript of a sloka. A **right-click** on
+  this legend as an overlay. "Transcribe again" reruns with another model.
+* **Library** – "Transcript" shows, creates or corrects the transcript of a sloka: the Library
+  is the one place a sloka's words are corrected (the panels of Teach, Self Evaluation and
+  quizzes show them without an "Edit" button). A **right-click** on
   a sloka opens a popup listing everything in its details file — the file itself, who recorded
   it, the style, the text, the voice and the recording as measured, capture, edits, consent, the
   audio's hash and format, the software, the chandas — which closes when it loses focus (Esc,
   or a click elsewhere); "Details" on the card edits what can be edited.
 
-Every transcript panel has a language and model choice and an "Automatic" switch (shared
-across the app). Automatic is on by default — in Learn, Self Evaluation, Teach and quizzes —
-so transcripts are made without being asked for; turn it off if you would rather transcribe
+Every transcript panel has a model choice and an "Automatic" switch (shared across the
+app). Automatic is on by default — in Learn, Self Evaluation, Teach and quizzes — so
+transcripts are made without being asked for; turn it off if you would rather transcribe
 only on demand.
 
-**Every language, in the background.** A sloka is transcribed in the language chosen at the
-time (inline, as you watch), and then in each of the other supported languages in the
-background once it is saved, so switching the language later shows that transcript at once
-instead of waiting for a new one. The background work runs in the same speech worker at the
-lowest priority: anything you are waiting for (a transcript in Learn, your attempt in Self
-Evaluation, a quiz being scored) goes first, and a background job that is under way gives way
-and is redone afterwards. The sidebar shows what is being transcribed and how many are left,
-with a **Stop** button. A background result never replaces a transcript that already exists
-in that language, least of all one you corrected. For slokas saved before this existed, the
-Library's **Transcribe all in every language** button queues whatever is missing.
+**Always Sanskrit, then the other scripts.** The words are always heard as Sanskrit, in
+Devanagari — one transcript per sloka, one for each attempt — and the chandas rules are
+applied to that text (its metre identified, the lines laid out in pādas with their daṇḍas,
+a visarga or an anusvāra folded where Whisper spells one as a vowel or a nasal). Kannada,
+Telugu and romanised (IAST) text are then *written from the Sanskrit*, akṣara by akṣara,
+rather than transcribed separately, so the three never disagree with it; in those three
+every akṣara carries its weight in the metre above it — **◡ laghu** (light) or **— guru**
+(heavy) — the way chandas is taught. "Show the sloka's text in" under Settings › Sloka text
+chooses the script, for the sloka panel, every transcript panel and the rows of a report;
+the text typed in a sloka's details may be in any of the four and is read the same way.
+`js/lipi.js` does the writing; `js/translit.js` brings romanised, Kannada or Telugu text
+back to Devanagari first.
 
-The panel always shows the transcript in the language chosen for speech to text, and lists
-the other languages the sloka has ("also in English, Kannada, Telugu"). Change the language
-and the stored transcript swaps in (or is made on the spot when there is none and Automatic
-is on); in Self Evaluation an open report's word comparison is redone in the new language.
+A sloka saved without words (the transcription stopped, say) is transcribed in the
+background: the work runs in the same speech worker at the lowest priority — anything you
+are waiting for (a transcript in Learn, your attempt in Self Evaluation, a quiz being
+scored) goes first, and a background job that is under way gives way and is redone
+afterwards. The sidebar shows what is being transcribed and how many are left, with a
+**Stop** button. A background result never replaces a transcript that exists, least of all
+one you corrected. The Library's **Transcribe all** button queues every sloka that has
+none. Transcripts stored in other languages by earlier versions are left in place and no
+longer used.
 
 **Transcription never holds you up.** It runs in its own worker thread, alongside the
 acoustic analysis, and the app stays usable meanwhile:
@@ -375,17 +384,18 @@ acoustic analysis, and the app stays usable meanwhile:
   transcription can take a few seconds longer while the speech model is reloaded from the
   browser's cache.
 
-**Correcting the text.** Recognition of chants is approximate, so every panel (Learn,
-Self Evaluation, Library) has an "Edit" button. The editor shows one line per timed phrase; keep the
-same number of lines and the click-to-play timings survive your corrections. Saving writes two
-files next to the recording in `library/`:
+**Correcting the text.** Recognition of chants is approximate, so the Library's transcript
+panel (and Learn's, before a sloka is saved) has an "Edit" button; the text is edited in
+Devanagari, whatever script it is shown in. The editor shows one line per timed phrase;
+keep the same number of lines and the click-to-play timings survive your corrections.
+Saving writes two files next to the recording in `library/`:
 
-* `<name>.txt` – the plain text, one phrase per line, in the language the sloka was last
-  transcribed or corrected in. Edit it in any text editor if you prefer; when it is newer than
-  the JSON, SlokAbhyasa uses it (for that language) the next time the sloka is opened.
-* `<name>.transcript.json` – every language's transcript with phrase timings and model
-  (`{ current, languages: { sanskrit: …, kannada: … } }`); files from before, with a single
-  transcript, are read as one language.
+* `<name>.txt` – the plain text, one phrase per line. Edit it in any text editor if you
+  prefer; when it is newer than the JSON, SlokAbhyasa uses it the next time the sloka is
+  opened.
+* `<name>.transcript.json` – the transcript with phrase timings and model
+  (`{ current, languages: { sanskrit: … } }`; the file can still hold other languages from
+  earlier versions); files from before, with a single transcript, are read as one language.
 
 Corrected text is used as the reference when your attempts are compared.
 
@@ -453,17 +463,15 @@ stretch, each stretch being where a sloka was found in it, so a sloka's "Yours" 
 sloka's words alone; Whisper loses its way in a long chant, but transcribes a single sloka's
 worth well.
 
-Languages: **English, Sanskrit (Devanagari), Kannada, Telugu**. Models: Fast (whisper-base,
-about 75 MB), Better (whisper-small, about 250 MB), Best (whisper-large-v3-turbo, about
-750 MB, needs WebGPU). The default is Better when the browser has WebGPU, otherwise Fast.
-Whisper has no notion of a chant: asked for English or Kannada it may answer "[Sanskrit
-chants]" or "[Music]" for a Sanskrit sloka, which is simply what it heard in that language.
-It also likes to answer Kannada, Telugu or Sanskrit in Latin letters ("Arjuna uvāca evam
-satata yukta…"); such an answer is rewritten in the language's own script
-(ಅರ್ಜುನ ಉವಾಚ ಏವಂ ಸತತ ಯುಕ್ತ…) by `js/translit.js`, which reads IAST and the usual
-ASCII spellings (sh, ksh, ch, aa, ee…), keeps the romanised original as `latin`, and
-leaves corrected transcripts alone; transcripts stored before this existed are rewritten
-the next time they are read.
+The language is always **Sanskrit (Devanagari)**; Kannada, Telugu and romanised text are
+written from it (see "Transcripts"). Models: Fast (whisper-base, about 75 MB), Better
+(whisper-small, about 250 MB), Best (whisper-large-v3-turbo, about 750 MB, needs WebGPU).
+The default is Better when the browser has WebGPU, otherwise Fast. Whisper has no notion of
+a chant, and likes to answer Sanskrit in Latin letters ("Arjuna uvāca evam satata yukta…");
+such an answer is rewritten in Devanagari (अर्जुन उवाच एवं सतत युक्त…) by
+`js/translit.js`, which reads IAST and the usual ASCII spellings (sh, ksh, ch, aa, ee…),
+keeps the romanised original as `latin`, and leaves corrected transcripts alone;
+transcripts stored before this existed are rewritten the next time they are read.
 
 On WebGPU the models run with 4-bit weights and 32-bit arithmetic, never 16-bit floats:
 some GPUs (Intel Iris Xe among them) advertise fp16 but compute nonsense with it, which
@@ -501,8 +509,8 @@ A memory test drawn from your library.
 4. You land in Self Evaluation in *quiz mode*: the picked names are listed, the slokas'
    recordings stay hidden, "play the sloka while I record" is off, and you recite everything
    in one recording, in any order. By default the step is titled **"Recite with the text
-   shown"** and each sloka's text (the text typed in its details, else its transcript in the
-   chosen language) is shown in the panel above the record button, one sloka in view with
+   shown"** and each sloka's text (the text typed in its details, else its transcript, in the
+   script chosen under Settings) is shown in the panel above the record button, one sloka in view with
    Previous / Next. Switch "Show the slokas' text while reciting a quiz" off in Settings and
    the step becomes **"Recite from memory"** with only the names listed (four, the rest in
    a tooltip). A running quiz is the
@@ -599,17 +607,17 @@ Four cards, all remembered in the browser: **Weights** (what the overall score i
 see "What is scored"; "Defaults" restores the recommended 30/25/15/10/10/5/5), **Tolerance**
 (the acceptable variation per category for Self Evaluation and Teach; a quiz always uses the
 defaults for the chosen learner; and the "Ignore tolerances" switch that turns every
-within/outside verdict off, leaving scores and grades), **Speech recognition** (the language the words are
-heard in, the model, and whether transcripts are made automatically — the same controls
-that sit beside every transcript panel), and **Sloka text** (whether the slokas' text is
+within/outside verdict off, leaving scores and grades), **Speech recognition** (the model,
+and whether transcripts are made automatically — the same controls that sit beside every
+transcript panel; the words are always heard as Sanskrit), and **Sloka text** (whether the slokas' text is
 shown during Self Evaluation and while reciting a quiz, both on by default; whether the
 Transcript block is hidden in the results (off by default: on, the sloka's words and yours
 and the words-heard line, at the top of the Analysis fold, are left out, in Self Evaluation
 and quizzes, "Play both together" staying under the overall, while the words are still heard
-and scored); the language the
-sloka's text is shown in — the speech-recognition language unless chosen, with the text typed
-in that language preferred, else the transcript in it — while recognition keeps its own
-language; the chandas hint; and whether an anuṣṭubh sloka is written in two lines or four). Beside them, "Why these defaults" explains how the
+and scored); the script the
+sloka's text is shown in — Sanskrit as heard, or Kannada, Telugu or romanised (IAST) written
+from it, each akṣara then carrying ◡ laghu or — guru above it; the chandas hint; and whether
+an anuṣṭubh sloka is written in two lines or four). Beside them, "Why these defaults" explains how the
 weights and tolerances are tuned for Sanskrit śloka recitation and lists the references
 (reproduced under "References" below). Under both columns a short note, "Whisper · how the
 words are heard", says that the model is downloaded once and runs on this computer, that
@@ -649,9 +657,8 @@ node tools/trim-library.mjs            # trim in place
 node tools/trim-library.mjs --dry-run  # only report what would change
 ```
 
-"Transcribe all in every language" queues, for every sloka, each supported language it has
-no transcript in yet; the work runs in the background (see "Transcripts") and the sidebar
-shows its progress.
+"Transcribe all" queues every sloka that has no transcript yet; the work runs in the
+background (see "Transcripts") and the sidebar shows its progress.
 
 ## How the comparison works
 
@@ -806,8 +813,9 @@ js/player.js           HTMLAudioElement wrapper (speed, pitch preservation, rang
 js/recorder.js         microphone capture through an AudioWorklet
 js/analysis-worker.js  runs the DSP off the main thread
 js/stt.js, js/stt-worker.js   speech to text (Whisper via transformers.js, in a worker; background priority)
-js/transcripts.js      a sloka's transcripts, one per language (pure, shared with the server)
+js/transcripts.js      a sloka's transcripts (pure, shared with the server)
 js/translit.js         romanised Indic text back into Devanagari / Kannada / Telugu (pure, shared)
+js/lipi.js             the Sanskrit text written in Kannada, Telugu or IAST, akṣara by akṣara, with laghu / guru marks (pure)
 js/textdiff.js         word tokenisation and diff for transcripts
 js/quizscore.js        the seven categories, weights, tolerances, grades and quiz scoring (pure, Node-testable)
 js/phon.js             akṣaras and phonemes from Indic text; the recitation against the text, slip by slip (pure)
@@ -824,7 +832,7 @@ reports/               the research the presets and the details file follow
 
 Not in the repository (.gitignore), beside the code or wherever local.json points:
 library/               your slokas, in folders if you like: <name>.wav, <name>.json (details),
-                       <name>.txt (transcript), <name>.transcript.json (every language, with timings),
+                       <name>.txt (transcript), <name>.transcript.json (the transcript, with timings),
                        <name>.features.json (analysis cache), index.json; library/backup holds pre-trim originals
 profiles.json          the people (names, voice type, age group) — never inside library/
 quizzes/<id>.json, quizzes/<id>/attempt-N.wav   quizzes with their attempts, and each attempt's recording
