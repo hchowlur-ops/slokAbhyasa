@@ -160,7 +160,7 @@ it", "Recite with the text shown" or "Recite from memory".
 ### Teach
 Learning one sloka at a time. Open a folder and choose one sloka; it appears in the perform
 block, where you can play it as often as you like at any speed. Then press **Listen**,
-recite the sloka back and press it again (it reads "Stop · SlokAbhyasa is listening"
+recite the sloka back and press it again (it reads "Recording… tap to stop"
 meanwhile). SlokAbhyasa compares what it heard with the sloka and shows the same report as
 Self Evaluation: scores, chart, deviations, transcript.
 
