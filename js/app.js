@@ -17,6 +17,7 @@ import { trimSilence } from './dsp/trim.js';
 import { Transcriber, STT_LANGUAGES, STT_LANGUAGE_CODES, STT_TIERS, sttLanguageLabel, sttLanguageTag, sttTierLabel, isStopped } from './stt.js';
 import { segments as scriptSegments, wordSegments, toDeva, weightMark } from './lipi.js';
 import { scriptToLatin, latinToScript } from './translit.js';
+import { mapNameToVerse, parseVerseId, verseBody } from './verses.js';
 import { normalizeStore, putInStore, pickTranscript, availableLanguages } from './transcripts.js';
 import { transliterateTranscript } from './translit.js';
 import { identifyChandas, layoutSloka, padaBreaks, linesFor, uvacaOffset, chandasLabel, chandasPattern, gitaVerse, gitaFamily } from './chandas.js';
@@ -1156,7 +1157,7 @@ async function saveBaseline({ name, samples, sampleRate, duration, blob, source,
     throw new Error('Hardly any sound was detected. Check the microphone level and try again.');
   }
   progress.set(0.92, 'Saving to the library…');
-  const rec = await api.createBaseline({ name, blob, duration, sampleRate, source, folder });
+  const rec = await api.createBaseline({ name, blob, duration, sampleRate, source, folder, autolink: true }); // CH12-03 → Gītā 12.3, when the dataset is here
   try { await api.putFeatures(rec.id, serializeFeatures(features)); } catch { /* cache is optional */ }
   try {
     const m = meta || {};
@@ -2474,7 +2475,9 @@ async function renderSlokaTexts() {
   const it = items[i];
   $('#practice-texts-prev').disabled = i <= 0;
   $('#practice-texts-next').disabled = i >= items.length - 1;
-  $('#practice-text-name').textContent = it.folder ? `${it.name} · ${it.folder}` : it.name;
+  const linkOf = (b) => (b && b.record && b.record.meta && b.record.meta.verse ? b.record.meta.verse : null);
+  const cachedLink = linkOf(practice.bases.get(it.id));
+  $('#practice-text-name').textContent = `${it.folder ? `${it.name} · ${it.folder}` : it.name}${cachedLink ? ` · Gītā ${cachedLink.id}` : ''}`;
   for (const sel of ['#practice-texts-play', '#practice-texts-speed', '#practice-text-time']) setHidden($(sel), !playShown());
   const body = $('#practice-text-body');
   const hintEl = $('#practice-text-chandas');
@@ -2490,6 +2493,23 @@ async function renderSlokaTexts() {
     else body.textContent = 'No text yet: transcribe this sloka, or type its text under Details in the Library.';
     body.classList.toggle('muted', !text);
     setHidden($('#practice-text-legend'), !(text && marksShown()));
+    // the verse's meaning, from the dataset (and your own, in the chosen language, over it)
+    const link = linkOf(base);
+    const meaningEl = $('#practice-text-meaning');
+    setHidden(meaningEl, true);
+    if (link) {
+      $('#practice-text-name').textContent = `${it.folder ? `${it.name} · ${it.folder}` : it.name} · Gītā ${link.id}`;
+      const lang = { sanskrit: 'sa', kannada: 'kn', telugu: 'te', english: 'en' }[displayLanguage()] || 'en';
+      const showMeaning = (entry) => {
+        if (token !== slokaTextsToken || !entry) return;
+        const tr = entry.translations || {};
+        const meaning = tr[lang] || tr.en || '';
+        meaningEl.textContent = meaning;
+        setHidden(meaningEl, !meaning);
+      };
+      if (base.verseEntry) showMeaning(base.verseEntry);
+      else api.getVerse(link.dataset, link.id).then((entry) => { base.verseEntry = entry; showMeaning(entry); }).catch(() => {});
+    }
   };
   const cached = practice.bases.get(it.id);
   if (cached) { show(cached); return; } // a sloka already loaded: no "Loading…" flicker when paging
@@ -3707,6 +3727,7 @@ const META_LABELS = {
   version: 'Version', featVersion: 'Analysis version', chandas: 'Chandas', family: 'Family', perPada: 'Syllables per pāda', padas: 'Pādas', syllables: 'Syllables in the text',
   expectedSyllables: 'Syllables the metre expects', exact: 'Exact', form: 'Form', weights: 'Laghu / guru', confidence: 'Confidence', verse: 'Gītā verse', chapter: 'Chapter',
   at: 'Computed', migrated: 'From before details existed', folder: 'Folder', file: 'File', duration: 'Duration (s)', name: 'Name',
+  verse: 'Verse (reference dataset)', dataset: 'Dataset', datasetVersion: 'Dataset version', speakerLineRecited: 'Speaker line recited', textHash: 'Text hash', mappedBy: 'Linked by', pinned: 'Text pinned', kind: 'Kind',
 };
 const metaPopup = $('#meta-popup');
 const metaLabel = (k) => META_LABELS[k] || k;
@@ -4246,6 +4267,7 @@ function renderLibTags(host, r) {
   const sp = speakerOf(meta);
   const who = sp && sp.profileId ? profileById(sp.profileId) : null;
   if (who) tag(`by ${who.name}`); else if (sp) tag(speakerLabel(sp));
+  if (meta.verse) tag(`Gītā ${meta.verse.id}${r.verseCurrent === false ? ' · text differs from the dataset' : ''}`, r.verseCurrent === false ? 'warn' : 'verse', meta.verse.text && meta.verse.text.deva ? meta.verse.text.deva.join(' ') : '');
   if (meta.migrated) tag('style not set · judged as chant', 'warn');
   else tag(styleMode(meta.style && meta.style.mode).label);
   // a recording whose voice barely rises above the room blurs every comparison against it
@@ -4262,7 +4284,7 @@ function libDetailsPanel(li, r) {
   if (host) { host.hidden = !host.hidden; return; }
   host = document.createElement('div');
   host.className = 'lib-details';
-  host.innerHTML = '<div class="meta-fields"></div><dl class="lib-measured"></dl><div class="row-actions left"><button class="btn btn-sm btn-primary" type="button" data-act="save">Save details</button><span class="muted small" data-f="status"></span></div>';
+  host.innerHTML = '<div class="lib-verse"></div><div class="meta-fields"></div><dl class="lib-measured"></dl><div class="row-actions left"><button class="btn btn-sm btn-primary" type="button" data-act="save">Save details</button><span class="muted small" data-f="status"></span></div>';
   li.appendChild(host);
   const fields = buildMetaFields($('.meta-fields', host), { compact: true });
   const dl = $('.lib-measured', host);
@@ -4282,7 +4304,7 @@ function libDetailsPanel(li, r) {
     for (const [k, val] of rows) { const dt = document.createElement('dt'); dt.textContent = k; const dd = document.createElement('dd'); dd.textContent = val; dl.append(dt, dd); }
     setHidden(dl, !rows.length);
   };
-  const apply = (meta) => { fields.set(meta); showMeasured(meta); };
+  const apply = (meta) => { fields.set(meta); showMeasured(meta); renderVerseBox($('.lib-verse', host), r, meta, apply); };
   apply(r.meta);
   if (!r.meta) api.getMeta(r.id).then(apply).catch(() => {});
   $('[data-act="save"]', host).addEventListener('click', async () => {
@@ -4299,6 +4321,94 @@ function libDetailsPanel(li, r) {
       status.textContent = 'Saved.';
       toast('Details saved with the sloka.', 'success');
     } catch (err) { status.textContent = ''; toast(err.message, 'error'); }
+  });
+}
+
+// Library › Details › the verse of the reference dataset this recording is a recording of:
+// the link (made by name on save, by "Link to the Gītā", or here), the dataset's text, and
+// the verse's own customisations — a corrected text, a translation, notes — kept in the
+// app's data (<data>/reference/gita.custom.json) over the read-only dataset.
+let referenceIds = null; // the datasets the server found, once asked
+async function referenceDatasets() {
+  if (referenceIds) return referenceIds;
+  try { referenceIds = (await api.listReference()).filter((d) => !d.errors.length).map((d) => d.id); } catch { referenceIds = []; }
+  return referenceIds;
+}
+function renderVerseBox(box, r, meta, apply) {
+  box.innerHTML = '';
+  referenceDatasets().then(async (ids) => {
+    if (!ids.length) { box.hidden = true; return; }
+    box.hidden = false;
+    const link = meta && meta.verse;
+    const head = document.createElement('div');
+    head.className = 'lib-verse-head';
+    const title = document.createElement('strong');
+    const actions = document.createElement('span');
+    actions.className = 'row-actions';
+    const btn = (label, cls, fn) => { const b = document.createElement('button'); b.type = 'button'; b.className = `btn btn-sm ${cls}`; b.textContent = label; b.addEventListener('click', fn); actions.appendChild(b); return b; };
+    const relink = async () => {
+      const guess = mapNameToVerse(r.name, r.folder || '');
+      const ans = await askDialog({ title: 'Link to a verse of the Gītā', message: 'The verse this recording is a recording of, as chapter.verse (12.3), or 1.21-22 for two recited as one, or 12.colophon.', label: 'Verse', value: link ? link.id : guess ? guess.id : '', okText: 'Link' });
+      if (!ans) return;
+      const id = String(ans.text !== undefined ? ans.text : ans).trim();
+      if (!parseVerseId(id)) { toast('That is not a verse id.', 'error'); return; }
+      try { const m = await api.linkVerse(r.id, { dataset: ids[0], verseId: id }); r.meta = m; const loaded = practice.bases.get(r.id); if (loaded) loaded.record.meta = m; libraryCache = null; renderLibTags($('.lib-tags', r.li || box.closest('li')), r); apply(m); toast(`Linked to Gītā ${id}.`, 'success'); } catch (err) { toast(err.message, 'error'); }
+    };
+    if (!link) {
+      title.textContent = 'Not linked to the Gītā';
+      btn('Link…', 'btn-primary', relink);
+      head.append(title, actions);
+      box.appendChild(head);
+      const hint = document.createElement('div');
+      hint.className = 'muted small';
+      const guess = mapNameToVerse(r.name, r.folder || '');
+      hint.textContent = guess ? `The name reads as verse ${guess.id}; "Link to the Gītā" in the toolbar links every recording whose name reads this way.` : 'A name like CH12-03 would read as a verse by itself.';
+      box.appendChild(hint);
+      return;
+    }
+    const metre = link.metre && link.metre.name ? ` · ${link.metre.name}` : '';
+    title.textContent = `Gītā ${link.id}${metre}`;
+    btn('Change…', 'btn-ghost', relink);
+    btn('Unlink', 'btn-ghost', async () => { try { const m = await api.unlinkVerse(r.id); r.meta = m; r.verseCurrent = null; const loaded = practice.bases.get(r.id); if (loaded) loaded.record.meta = m; libraryCache = null; renderLibTags($('.lib-tags', box.closest('li')), r); apply(m); toast('Unlinked.', 'info'); } catch (err) { toast(err.message, 'error'); } });
+    head.append(title, actions);
+    box.appendChild(head);
+    const text = document.createElement('div');
+    text.className = 'lib-verse-text stt-text';
+    const copy = { speaker: { deva: link.text ? link.text.speaker : null }, deva: (link.text && link.text.deva) || [] }; // the sidecar's copy of the verse
+    text.innerHTML = scriptHtml(withDandas(layoutSloka(verseBody(copy, { speakerLine: link.speakerLineRecited }), { perPada: link.metre && link.metre.family === 'trishtubh' ? 11 : 8, lines: slokaLines })));
+    box.appendChild(text);
+    const sub = document.createElement('div');
+    sub.className = 'muted small';
+    sub.textContent = `From the ${link.dataset} dataset${link.datasetVersion ? ` (version ${link.datasetVersion})` : ''}, linked by ${{ name: 'its name', learn: 'Learn', migration: '"Link to the Gītā"', manual: 'hand' }[link.mappedBy] || link.mappedBy}${r.verseCurrent === false ? ' · the dataset\'s text has changed since' : ''}${meta.text && meta.text.origin === 'typed' ? ' · the text typed below is the reference for comparisons' : ' · this text is the reference for comparisons'}.`;
+    box.appendChild(sub);
+    // the verse's customisations: a translation of your own, notes
+    let entry = null;
+    try { entry = await api.getVerse(link.dataset, link.id); } catch { entry = null; }
+    const custom = (entry && entry.custom) || {};
+    const form = document.createElement('div');
+    form.className = 'lib-verse-custom';
+    form.innerHTML = `<div class="field-label">Your additions to verse ${link.id} <em class="muted">(kept in your data, shown wherever the verse is)</em></div>
+      <label class="field"><span>Meaning in your words (${langName(displayLanguage())})</span><textarea data-f="translation" rows="2" placeholder="${entry && entry.translations && entry.translations.en ? entry.translations.en.slice(0, 120) : ''}"></textarea></label>
+      <label class="field"><span>Notes on this verse</span><textarea data-f="notes" rows="2" placeholder="how it is recited, a variant reading…"></textarea></label>
+      <div class="row-actions left"><button class="btn btn-sm" type="button" data-act="save-custom">Save additions</button><span class="muted small" data-f="custom-status"></span></div>`;
+    const lang = { sanskrit: 'sa', kannada: 'kn', telugu: 'te', english: 'en' }[displayLanguage()] || 'en';
+    const trEl = $('[data-f="translation"]', form);
+    const notesEl = $('[data-f="notes"]', form);
+    trEl.value = (custom.translations && custom.translations[lang]) || '';
+    notesEl.value = custom.notes || '';
+    $('[data-act="save-custom"]', form).addEventListener('click', async () => {
+      const st = $('[data-f="custom-status"]', form);
+      st.textContent = 'Saving…';
+      try {
+        const fields = { ...custom, translations: { ...(custom.translations || {}), [lang]: trEl.value.trim() }, notes: notesEl.value.trim() };
+        if (!fields.translations[lang]) delete fields.translations[lang];
+        await api.putVerseCustom(link.dataset, link.id, fields);
+        const loaded = practice.bases.get(r.id); if (loaded) loaded.verseEntry = null;
+        st.textContent = 'Saved.';
+        toast('Your additions to the verse are saved.', 'success');
+      } catch (err) { st.textContent = ''; toast(err.message, 'error'); }
+    });
+    box.appendChild(form);
   });
 }
 
@@ -4340,6 +4450,24 @@ function libTranscriptPanel(li, r) {
   };
   transcriptListeners.add(onStored);
 }
+
+// Library › every recording whose name names a verse of the Gītā (CH12-03 → 12.3) is linked
+// to it; a recording whose transcript does not match the verse's words is listed, not linked.
+$('#library-link-verses').addEventListener('click', async () => {
+  const ids = await referenceDatasets();
+  if (!ids.length) { toast('No reference dataset was found.', 'error'); return; }
+  const btn = $('#library-link-verses');
+  btn.disabled = true;
+  try {
+    const rep = await api.mapVerses(ids[0], { write: true });
+    const parts = [`${rep.linked} linked`];
+    if (rep.doubtful.length) parts.push(`${rep.doubtful.length} doubtful, left alone (${rep.doubtful.map((d) => `${d.name} → ${d.verse}`).join(', ')})`);
+    if (rep.unmapped.length) parts.push(`${rep.unmapped.length} without a verse in the name (${rep.unmapped.map((d) => d.name).join(', ')})`);
+    toast(parts.join(' · '), rep.linked ? 'success' : 'info', 9000);
+    libraryCache = null;
+    await refreshLibrary();
+  } catch (err) { toast(err.message, 'error', 6000); } finally { btn.disabled = false; }
+});
 
 // Library › every sloka without words yet, in the background.
 $('#library-transcribe-all').addEventListener('click', async () => {

@@ -6,10 +6,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { validateDataset, combinedEntry, coverage as coverageOf, verseHashInput } from './js/verses.js';
+import { validateDataset, combinedEntry, coverage as coverageOf, verseHashInput, mergeCustom, sanitizeCustom } from './js/verses.js';
 
 let searchDirs = [];
+let customDir = null; // <data>/reference: where <id>.custom.json lives — the dataset's own folder is never written
 const loaded = new Map(); // id → dataset record
+const customs = new Map(); // id → { mtimeMs, data }
 
 const sha256 = (s) => crypto.createHash('sha256').update(s).digest('hex');
 const statMs = (f) => { try { return fs.statSync(f).mtimeMs; } catch { return null; } };
@@ -38,10 +40,13 @@ export function loadDataset(dir) {
   return rec;
 }
 
-// Every dataset folder under the search dirs, the first of each id winning.
-export function initReference(dirs) {
+// Every dataset folder under the search dirs, the first of each id winning. `customDir`
+// is where customisations are kept (<data>/reference), by default the first search dir.
+export function initReference(dirs, { customDir: cd = null } = {}) {
   searchDirs = dirs.slice();
+  customDir = cd || dirs[0] || null;
   loaded.clear();
+  customs.clear();
   for (const base of searchDirs) {
     let names = [];
     try { names = fs.readdirSync(base, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name); } catch { continue; }
@@ -76,8 +81,45 @@ export function datasets() {
   });
 }
 
-export const verse = (rec, id) => (rec && rec.data ? rec.byId.get(id) || combinedEntry(rec.byId, id) || null : null);
-export const verseHash = (rec, id) => (rec && rec.data ? rec.hashById.get(id) || (verse(rec, id) ? sha256(verseHashInput(verse(rec, id))) : null) : null);
+// ---------- customisations ----------
+export const customPath = (id) => (customDir ? path.join(customDir, `${id}.custom.json`) : null);
+// { version, verses: { "12.3": { deva, iast, speaker, translations, notes, variants } } }, re-read when the file changes
+export function customOf(id) {
+  const f = customPath(id);
+  if (!f) return { version: 1, verses: {} };
+  const m = statMs(f);
+  const c = customs.get(id);
+  if (c && c.mtimeMs === m) return c.data;
+  let data = { version: 1, verses: {} };
+  if (m !== null) { try { data = JSON.parse(fs.readFileSync(f, 'utf8')); } catch { data = { version: 1, verses: {} }; } }
+  if (!data || typeof data !== 'object') data = { version: 1, verses: {} };
+  if (!data.verses || typeof data.verses !== 'object') data.verses = {};
+  customs.set(id, { mtimeMs: m, data });
+  return data;
+}
+// Saves (or, with nothing left, removes) a verse's customisations; returns the merged entry.
+export function saveCustom(rec, id, fields) {
+  if (!customDir) throw new Error('No folder for customisations');
+  const clean = sanitizeCustom(fields);
+  const data = customOf(rec.id);
+  if (clean) data.verses[id] = clean; else delete data.verses[id];
+  fs.mkdirSync(customDir, { recursive: true });
+  fs.writeFileSync(customPath(rec.id), JSON.stringify(data, null, 2) + '\n');
+  customs.delete(rec.id);
+  return verse(rec, id);
+}
+
+// A verse as the app sees it: the dataset's entry with the customisations laid over it
+// (`customised`, `custom`); a combined id composed from its parts.
+export function verse(rec, id) {
+  if (!rec || !rec.data) return null;
+  const base = rec.byId.get(id) || combinedEntry(rec.byId, id);
+  if (!base) return null;
+  const c = customOf(rec.id).verses[id];
+  return mergeCustom(base, c || null);
+}
+// The hash of the text as served (customisations included): what a recording's link is checked against.
+export const verseHash = (rec, id) => { const v = verse(rec, id); return v ? sha256(verseHashInput(v)) : null; };
 
 export function chapter(rec, n) {
   if (!rec || !rec.data) return null;

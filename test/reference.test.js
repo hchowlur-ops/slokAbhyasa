@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadDataset, initReference, dataset, datasets, verse, verseHash, chapter, coverage } from '../reference.js';
+import { loadDataset, initReference, dataset, datasets, verse, verseHash, chapter, coverage, saveCustom, customOf, customPath } from '../reference.js';
 import { resolveReferenceDirs } from '../datadir.js';
 
 const FIX = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'reference');
@@ -66,4 +66,32 @@ test('resolveReferenceDirs: the data folder first, the app folder second, once w
   assert.ok(dirs.length >= 1 && dirs.length <= 2);
   assert.equal(dirs[dirs.length - 1], path.join(root, 'reference'));
   assert.equal(new Set(dirs.map((d) => path.resolve(d))).size, dirs.length);
+});
+
+test('customisations live in the data folder, over a dataset that is never written', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'slokabhyasa-custom-'));
+  initReference([FIX], { customDir: path.join(tmp, 'reference') });
+  const ds = dataset('gita');
+  const file = path.join(ds.dir, 'verses.json');
+  const before = fs.statSync(file);
+  const hash0 = verseHash(ds, '12.3');
+  assert.equal(verse(ds, '12.3').customised, false);
+  const merged = saveCustom(ds, '12.3', { translations: { kn: 'ಅರ್ಥ' }, notes: 'recited slowly', deva: ['ये त्वक्षरमनिर्देश्यमव्यक्तं पर्युपासते ।', 'सर्वत्रगमचिन्त्यं च कूटस्थमचलं ध्रुवम् ॥ (custom)'] });
+  assert.equal(merged.customised, true);
+  assert.equal(merged.translations.kn, 'ಅರ್ಥ');
+  assert.equal(merged.translations.en.length > 0, true, 'the dataset\'s English stays');
+  assert.equal(merged.notes, 'recited slowly');
+  assert.equal(customPath('gita'), path.join(tmp, 'reference', 'gita.custom.json'));
+  assert.ok(fs.existsSync(customPath('gita')));
+  assert.equal(customOf('gita').verses['12.3'].notes, 'recited slowly');
+  assert.notEqual(verseHash(ds, '12.3'), hash0, 'a changed text changes the hash the links are checked against');
+  const after = fs.statSync(file);
+  assert.equal(after.mtimeMs, before.mtimeMs, 'the dataset file was not touched');
+  assert.equal(after.size, before.size);
+  // other verses are untouched; removing the customisation brings the entry back
+  assert.equal(verse(ds, '2.5').customised, false);
+  saveCustom(ds, '12.3', null);
+  assert.equal(verse(ds, '12.3').customised, false);
+  assert.equal(verseHash(ds, '12.3'), hash0);
+  fs.rmSync(tmp, { recursive: true, force: true });
 });

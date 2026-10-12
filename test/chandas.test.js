@@ -133,3 +133,11 @@ test('an "uvāca" opening is left out of the metre, laid on its own line, and sk
   assert.deepEqual(c.padas.map((p) => p.ref), [8, 8, 8, 8]);
   assert.deepEqual(c.padas.map((p) => p.heard), [8, 8, 8, 8]);
 });
+
+test('chandasForRecord: a linked verse settles the family and names the text\'s source', () => {
+  const meta = { text: { body: 'गुरूनहत्वा हि महानुभावान्\nश्रेयो भोक्तुं भैक्ष्यमपीह लोके ।\nहत्वार्थकामांस्तु गुरूनिहैव\nभुञ्जीय भोगान् रुधिरप्रदिग्धान् ॥', origin: 'reference', language: 'sa' }, verse: { dataset: 'gita', id: '2.5', chapter: 2, verse: 5, metre: { family: 'trishtubh', name: 'triṣṭubh' } } };
+  const ch = chandasForRecord({ name: 'Some name', meta, store: null });
+  assert.equal(ch.family, 'trishtubh');
+  assert.equal(ch.source, 'reference');
+  assert.deepEqual(ch.verse, { chapter: 2, verse: 5 });
+});

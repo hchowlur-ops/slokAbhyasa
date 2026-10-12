@@ -215,3 +215,68 @@ export function coverage(data, index) {
   }
   return { dataset: data.dataset, total, recorded: done, byChapter, byKind };
 }
+
+// ---------- the link a recording keeps to a verse (meta.verse in its sidecar) ----------
+// The ids, a copy of the text the recording was made against (so the recording stays
+// complete without the dataset, and a dataset update can be told from it by the hash the
+// server adds), the metre, the licence, and how the link was made.
+export function verseLink(entry, { dataset, datasetVersion = null, speakerLineRecited = true, mappedBy = 'manual', licence = null, pinned = false } = {}) {
+  const p = parseVerseId(entry.id);
+  const hasLine = !!(entry.speaker && entry.speaker.deva);
+  return {
+    dataset, datasetVersion, id: entry.id,
+    kind: entry.kind || (p ? p.kind : 'verse'), chapter: entry.chapter ?? (p ? p.chapter : null), verse: entry.verse ?? (p ? p.verse : null), verseEnd: entry.verseEnd ?? (p ? p.verseEnd : null),
+    speakerLineRecited: hasLine && speakerLineRecited !== false,
+    text: { speaker: hasLine ? entry.speaker.deva : null, deva: (entry.deva || []).slice() },
+    textHash: null,
+    metre: entry.metre && entry.metre.family ? { family: entry.metre.family, name: entry.metre.name || FAMILY_NAMES[entry.metre.family] || null } : null,
+    licence, mappedBy, pinned: !!pinned, at: new Date().toISOString(),
+  };
+}
+// What the link's hash is taken over: the same text as verseHashInput gives for the entry.
+export const linkHashInput = (link) => normalizeVerseText([link && link.text && link.text.speaker ? link.text.speaker : '', ...((link && link.text && link.text.deva) || [])].filter(Boolean).join('\n'));
+
+// ---------- customisations, kept in the app's data over a read-only dataset ----------
+// A verse's own text corrected, a translation typed in, notes, variant readings: fields
+// laid over the dataset's entry when it is served or linked. The dataset's files are never
+// written; the customisations live in <data>/reference/<dataset>.custom.json.
+export const CUSTOM_FIELDS = ['deva', 'iast', 'speaker', 'translations', 'notes', 'variants'];
+const cleanLines = (v, max = 400) => (Array.isArray(v) ? v.filter((l) => typeof l === 'string' && l.trim()).map((l) => l.normalize('NFC').trim().slice(0, max)).slice(0, 12) : null);
+export function sanitizeCustom(fields) {
+  if (!fields || typeof fields !== 'object') return null;
+  const out = {};
+  const deva = cleanLines(fields.deva);
+  if (deva && deva.length) out.deva = deva;
+  const iast = cleanLines(fields.iast);
+  if (iast && iast.length) out.iast = iast;
+  if (fields.speaker && typeof fields.speaker === 'object') {
+    const sp = {};
+    if (typeof fields.speaker.who === 'string' && WHO[fields.speaker.who]) sp.who = fields.speaker.who;
+    if (typeof fields.speaker.deva === 'string' && fields.speaker.deva.trim()) sp.deva = fields.speaker.deva.normalize('NFC').trim().slice(0, 120);
+    if (typeof fields.speaker.iast === 'string' && fields.speaker.iast.trim()) sp.iast = fields.speaker.iast.trim().slice(0, 120);
+    if (Object.keys(sp).length) out.speaker = sp;
+  }
+  if (fields.translations && typeof fields.translations === 'object') {
+    const tr = {};
+    for (const [k, v] of Object.entries(fields.translations)) if (/^[a-z]{2,3}$/.test(k) && typeof v === 'string' && v.trim()) tr[k] = v.trim().slice(0, 4000);
+    if (Object.keys(tr).length) out.translations = tr;
+  }
+  if (typeof fields.notes === 'string' && fields.notes.trim()) out.notes = fields.notes.trim().slice(0, 2000);
+  if (Array.isArray(fields.variants)) {
+    const vs = fields.variants.filter((x) => x && typeof x === 'object' && typeof x.text === 'string' && x.text.trim())
+      .map((x) => ({ line: Number.isInteger(x.line) ? x.line : null, text: x.text.trim().slice(0, 400), replaces: typeof x.replaces === 'string' ? x.replaces.slice(0, 400) : null, note: typeof x.note === 'string' ? x.note.slice(0, 400) : null })).slice(0, 20);
+    if (vs.length) out.variants = vs;
+  }
+  return Object.keys(out).length ? out : null;
+}
+export function mergeCustom(entry, custom) {
+  if (!custom) return { ...entry, customised: false };
+  const out = { ...entry, customised: true, custom };
+  if (custom.deva) out.deva = custom.deva;
+  if (custom.iast) out.iast = custom.iast;
+  if (custom.speaker) out.speaker = { ...(entry.speaker || { who: null, deva: null, iast: null }), ...custom.speaker };
+  if (custom.translations) out.translations = { ...(entry.translations || {}), ...custom.translations };
+  if (custom.notes) out.notes = custom.notes;
+  if (custom.variants) out.variants = [...(entry.variants || []), ...custom.variants];
+  return out;
+}

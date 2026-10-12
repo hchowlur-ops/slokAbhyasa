@@ -702,10 +702,32 @@ and it ships inside the package. A copy placed in `<data>/reference/gita/` (your
 folder) takes precedence over the app's own, so it survives an upgrade. Source: the
 Sanskrit fields of the Vedic Scriptures dataset (MIT; the text itself is public domain)
 with eight typos corrected; the survey behind the choice and the licence findings are
-described in `tools/gita/README.md`. The server serves it read-only under `/api/reference`
+described in `tools/gita/README.md`. The dataset's files are **read-only** (the fetch tool
+sets them so) and the app never writes there. The server serves it under `/api/reference`
 (the datasets found, a dataset with its chapters and coverage, a chapter's entries with
-their recordings, one verse — a combined id such as `1.21-22` composed from its parts); no
-page reads it yet: the redesign of Learn around it is planned.
+their recordings, one verse — a combined id such as `1.21-22` composed from its parts).
+
+**Recordings linked to verses.** A recording's details can carry the verse it is a
+recording of (`verse` in its `.json` sidecar: the dataset and version, the id, a copy of the
+verse's text with its hash, the metre, the licence, how the link was made). A linked
+recording's **reference text is the dataset's** — the sloka panel, the comparison and the
+chandas use it instead of a transcript (a text you typed under Details still wins) — the
+panel's name line says "Gītā 12.3", the card carries a "Gītā 12.3" tag, and the verse's
+meaning shows under its text. Links are made three ways: a recording saved in Learn under
+a name that names a verse (CH12-03, ch12-7, 12.4) is linked at once; the Library's **Link
+to the Gītā** button links every unlinked recording whose name reads so (a recording whose
+transcript does not match the verse's words is listed as doubtful and left alone; one
+whose name names nothing, such as `Ch12-Starting`, is listed too); and **Details › Link…**
+links one by hand (or changes or removes the link). `node tools/map-verses.mjs` does the
+same from the command line (`--dry` to look first). When the dataset is updated and a
+verse's text changes, the card says so ("text differs from the dataset"); the recording
+keeps the text it was made against until it is linked again.
+
+**Your additions to a verse** — a meaning in your own words, in the language the text is
+shown in, and notes — are kept in your data folder (`<data>/reference/gita.custom.json`),
+never in the dataset, and are laid over the dataset's entry wherever the verse is served
+(the panel's meaning line prefers them); a corrected verse text, variant readings and a
+speaker line can be kept there too (`PUT /api/reference/gita/verses/12.3/custom`).
 
 ## How the comparison works
 

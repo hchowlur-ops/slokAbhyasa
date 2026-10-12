@@ -117,6 +117,8 @@ async function fetchAll() {
   for (const e of errors) console.log(`error: ${e}`);
   if (errors.length) throw new Error(`the dataset does not pass its own checks (${errors.length} errors)`);
   fs.mkdirSync(OUT, { recursive: true });
+  const FILES = ['verses.json', 'LICENSE', 'ATTRIBUTION.txt', 'manifest.json'];
+  for (const f of FILES) { try { fs.chmodSync(path.join(OUT, f), 0o644); } catch { /* not there yet */ } } // writable for this update
   const versesJson = Buffer.from(JSON.stringify(out, null, 1), 'utf8');
   fs.writeFileSync(path.join(OUT, 'verses.json'), versesJson);
   fs.writeFileSync(path.join(OUT, 'LICENSE'), licence);
@@ -148,7 +150,9 @@ async function fetchAll() {
     overrides: Object.keys(overrides),
   };
   fs.writeFileSync(path.join(OUT, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
-  console.log(`written to ${OUT}: verses.json (${(versesJson.length / 1024).toFixed(0)} KB), manifest.json, LICENSE, ATTRIBUTION.txt`);
+  // the dataset is read-only: the app never writes here (customisations go to <data>/reference/gita.custom.json)
+  for (const f of FILES) fs.chmodSync(path.join(OUT, f), 0o444);
+  console.log(`written to ${OUT}: verses.json (${(versesJson.length / 1024).toFixed(0)} KB), manifest.json, LICENSE, ATTRIBUTION.txt — read-only`);
 }
 
 try {

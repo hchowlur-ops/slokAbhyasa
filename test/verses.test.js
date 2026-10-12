@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { parseVerseId, verseIdFor, defaultNameFor, defaultFolderFor, verseBody, normalizeVerseText, verseHashInput, compareVerseOrder, mapNameToVerse, combinedEntry, validateDataset, coverage } from '../js/verses.js';
+import { parseVerseId, verseIdFor, defaultNameFor, defaultFolderFor, verseBody, normalizeVerseText, verseHashInput, compareVerseOrder, mapNameToVerse, combinedEntry, validateDataset, coverage, verseLink, linkHashInput, sanitizeCustom, mergeCustom } from '../js/verses.js';
 
 const mini = JSON.parse(fs.readFileSync(new URL('./fixtures/reference/gita-mini/verses.json', import.meta.url), 'utf8'));
 const miniManifest = JSON.parse(fs.readFileSync(new URL('./fixtures/reference/gita-mini/manifest.json', import.meta.url), 'utf8'));
@@ -104,4 +104,41 @@ test('coverage counts recorded verses per chapter, a combined recording covering
   assert.deepEqual(c.byChapter[1], { total: 2, recorded: 2, extras: 0 });
   assert.deepEqual(c.byChapter[2], { total: 1, recorded: 0, extras: 0 });
   assert.deepEqual(c.byKind.colophon, { total: 1, recorded: 1 });
+});
+
+test('the link a recording keeps to a verse copies the text and hashes the same as the entry', () => {
+  const v = mini.verses.find((x) => x.id === '1.21');
+  const link = verseLink(v, { dataset: 'gita', datasetVersion: '0.0.1', mappedBy: 'learn', licence: 'MIT' });
+  assert.equal(link.id, '1.21');
+  assert.deepEqual([link.chapter, link.verse, link.verseEnd, link.kind], [1, 21, null, 'verse']);
+  assert.equal(link.speakerLineRecited, true);
+  assert.equal(link.text.speaker, 'अर्जुन उवाच');
+  assert.deepEqual(link.text.deva, v.deva);
+  assert.deepEqual(link.metre, { family: 'anushtubh', name: 'anuṣṭubh' });
+  assert.equal(link.mappedBy, 'learn');
+  assert.equal(linkHashInput(link), verseHashInput(v));
+  const bare = verseLink(v, { dataset: 'gita', speakerLineRecited: false });
+  assert.equal(bare.speakerLineRecited, false, 'the line was not recited');
+  assert.equal(linkHashInput(bare), verseHashInput(v), 'the copy keeps the line all the same');
+  const colophon = verseLink(mini.verses.find((x) => x.id === '12.colophon'), { dataset: 'gita' });
+  assert.deepEqual([colophon.kind, colophon.verse, colophon.metre, colophon.speakerLineRecited], ['colophon', null, null, false]);
+});
+
+test('customisations are cleaned and laid over the entry', () => {
+  assert.equal(sanitizeCustom(null), null);
+  assert.equal(sanitizeCustom({ deva: [], notes: '  ', translations: { en: '' }, junk: 1 }), null);
+  const c = sanitizeCustom({ deva: [' ये त्वक्षरम् अनिर्देश्यम् ', '', 'सर्वत्रगम् ॥'], translations: { kn: 'ಅರ್ಥ', EN: 'x', en: ' meaning ' }, notes: 'a note', speaker: { who: 'krishna', deva: 'x' }, variants: [{ text: 'v', line: 1 }, { nope: 1 }] });
+  assert.deepEqual(c.deva, ['ये त्वक्षरम् अनिर्देश्यम्', 'सर्वत्रगम् ॥']);
+  assert.deepEqual(c.translations, { kn: 'ಅರ್ಥ', en: 'meaning' });
+  assert.equal(c.notes, 'a note');
+  assert.deepEqual(c.speaker, { who: 'krishna', deva: 'x' });
+  assert.equal(c.variants.length, 1);
+  const v = mini.verses.find((x) => x.id === '12.3');
+  const m = mergeCustom(v, c);
+  assert.equal(m.customised, true);
+  assert.deepEqual(m.deva, c.deva);
+  assert.equal(m.translations.kn, 'ಅರ್ಥ');
+  assert.equal(m.translations.en, 'meaning', 'a custom translation replaces the dataset\'s');
+  assert.equal(m.iast, v.iast, 'untouched fields stay');
+  assert.equal(mergeCustom(v, null).customised, false);
 });

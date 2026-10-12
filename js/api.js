@@ -12,8 +12,8 @@ export async function listBaselines() {
   return res.json();
 }
 
-export async function createBaseline({ name, blob, duration, sampleRate, source, folder = '' }) {
-  const q = new URLSearchParams({ name, duration: String(duration), sampleRate: String(sampleRate), source, folder });
+export async function createBaseline({ name, blob, duration, sampleRate, source, folder = '', autolink = false }) {
+  const q = new URLSearchParams({ name, duration: String(duration), sampleRate: String(sampleRate), source, folder, ...(autolink ? { autolink: '1' } : {}) });
   const res = await check(await fetch(`/api/baselines?${q}`, { method: 'POST', headers: { 'Content-Type': 'audio/wav' }, body: blob }));
   return res.json();
 }
@@ -247,5 +247,25 @@ export async function getVerse(ds, id) {
 }
 export async function getCoverage(ds) {
   const res = await check(await fetch(refUrl(ds, '/coverage')));
+  return res.json();
+}
+export async function linkVerse(id, { dataset = 'gita', verseId, speakerLineRecited = true }) {
+  const res = await check(await fetch(`/api/baselines/${encodeURIComponent(id)}/verse`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dataset, id: verseId, speakerLineRecited }) }));
+  return res.json();
+}
+export async function unlinkVerse(id) {
+  const res = await check(await fetch(`/api/baselines/${encodeURIComponent(id)}/verse`, { method: 'DELETE' }));
+  return res.json();
+}
+export async function mapVerses(ds, body = {}) {
+  const res = await check(await fetch(refUrl(ds, '/map'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }));
+  return res.json();
+}
+export async function putVerseCustom(ds, id, fields) {
+  const res = await check(await fetch(refUrl(ds, `/verses/${encodeURIComponent(id)}/custom`), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(fields) }));
+  return res.json();
+}
+export async function deleteVerseCustom(ds, id) {
+  const res = await check(await fetch(refUrl(ds, `/verses/${encodeURIComponent(id)}/custom`), { method: 'DELETE' }));
   return res.json();
 }

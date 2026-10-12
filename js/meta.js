@@ -8,7 +8,7 @@
 import { HOP_SEC, stToHz } from './dsp/features.js';
 import { percentile } from './dsp/util.js';
 
-export const SCHEMA_VERSION = '1.0.0';
+export const SCHEMA_VERSION = '1.1.0'; // 1.1.0: `verse`, the link to a reference dataset's verse; text origin 'reference'
 
 // Age buckets drawn where the voice changes (boys' octave drop at 12–15, women's 3 st after
 // 40) and where the law draws its line (a child is under 18); never a birth date.
@@ -260,5 +260,6 @@ export function newBaselineMeta({ name, source, speaker = null, style = null, te
     capture: capture || null,
     edit: edit || { trimStartSec: 0, trimEndSec: 0 },
     consent: consent || { givenBy: 'unspecified', shareScope: 'private' },
+    verse: null,
   };
 }

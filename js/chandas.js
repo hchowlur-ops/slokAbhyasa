@@ -179,12 +179,14 @@ export function chandasForRecord({ name, meta, store }) {
   const langs = store && store.languages ? store.languages : {};
   const sa = langs.sanskrit && langs.sanskrit.text ? langs.sanskrit : null;
   const cur = store && store.current && langs[store.current] && langs[store.current].text ? langs[store.current] : null;
-  const t = typed ? { text: typed, source: 'typed', language: (meta.text.language || 'sa') }
+  const t = typed ? { text: typed, source: meta.text.origin === 'reference' ? 'reference' : 'typed', language: (meta.text.language || 'sa') }
     : sa ? { text: sa.text, source: 'transcript', language: 'sanskrit' }
       : cur ? { text: cur.text, source: 'transcript', language: store.current } : null;
   if (!t || !String(t.text).trim()) return null;
-  const verse = gitaVerse(name);
-  const expected = verse ? gitaFamily(verse.chapter, verse.verse) : null;
+  // the verse: the link in the sidecar first (its metre settles the family), else the name
+  const link = meta && meta.verse && meta.verse.id ? meta.verse : null;
+  const verse = link && link.chapter != null && link.verse != null ? { chapter: link.chapter, verse: link.verse } : gitaVerse(name);
+  const expected = link && link.metre && link.metre.family ? link.metre.family : verse ? gitaFamily(verse.chapter, verse.verse) : null;
   const ch = identifyChandas(t.text, { expected });
   return {
     family: ch.family, name: ch.name, perPada: ch.perPada, padas: 4, syllables: ch.syllables, expectedSyllables: ch.expectedSyllables,

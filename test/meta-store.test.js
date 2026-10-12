@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { encodeWavBytes, decodeWav } from '../js/wav.js';
 import { parseWavHeader } from '../js/libutil.js';
-import { pcmSha256, audioInfo, withBext, makeBext, sanitizeMeta, ensureMeta, readMeta, moveMeta, sanitizeProfile, bextDescription } from '../meta-store.js';
+import { pcmSha256, audioInfo, withBext, makeBext, sanitizeMeta, ensureMeta, readMeta, moveMeta, sanitizeProfile, bextDescription, sanitizeVerse } from '../meta-store.js';
 
 const tone = (sec = 0.5, sr = 16000) => {
   const x = new Float32Array(Math.round(sec * sr));
@@ -128,4 +128,21 @@ test('profiles: a name is required, vocabularies are checked, ids and dates are 
   assert.equal(edited.name, 'Ananya');
   assert.equal(edited.ageGroup, '12to15');
   assert.deepEqual(edited.roles, ['learner'], 'no roles means a learner');
+});
+
+test('the verse link in a sidecar is validated, kept across patches, and cleared with null', () => {
+  const link = { dataset: 'gita', datasetVersion: '2026.10.11', id: '12.3', kind: 'verse', chapter: 12, verse: 3, verseEnd: null, speakerLineRecited: true, text: { speaker: null, deva: ['a ।', 'b ॥'] }, textHash: 'abc', metre: { family: 'anushtubh', name: 'anuṣṭubh' }, licence: 'MIT', mappedBy: 'learn', pinned: false, at: '2026-10-12T00:00:00.000Z', junk: 1 };
+  const m = sanitizeMeta({ name: 'CH12-03', source: 'mic', verse: link, text: { body: 'a ।\nb ॥', language: 'sa', script: 'Deva', origin: 'reference' } }, { id: 'x', createdAt: '2026-10-12T00:00:00.000Z' });
+  assert.equal(m.schemaVersion, '1.1.0');
+  assert.equal(m.verse.id, '12.3');
+  assert.equal(m.verse.junk, undefined);
+  assert.deepEqual(m.verse.text.deva, ['a ।', 'b ॥']);
+  assert.equal(m.text.origin, 'reference', 'a text from the dataset keeps its origin');
+  const patched = sanitizeMeta({ notes: 'hello' }, m);
+  assert.equal(patched.verse.id, '12.3', 'a patch without verse keeps the link');
+  assert.equal(patched.text.origin, 'reference');
+  const cleared = sanitizeMeta({ verse: null }, m);
+  assert.equal(cleared.verse, null);
+  assert.equal(sanitizeVerse({ id: '12.3' }), null, 'a link needs its dataset');
+  assert.equal(sanitizeVerse({ dataset: 'gita' }), null);
 });

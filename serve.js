@@ -20,8 +20,10 @@ import { decodeWav, encodeWavBytes } from './js/wav.js';
 import { cleanFolder, parseBaselineFilename, nameFromSlug, parseWavHeader, RESERVED_FOLDERS } from './js/libutil.js';
 import { normalizeCategories, normalizeTolerance, normalizeWeights, recordTolerance, correctness, attemptOverall, gradeOf } from './js/quizscore.js';
 import { resolveDataDir, resolveReferenceDirs } from './datadir.js';
-import { initReference, datasets as referenceList, dataset as referenceDataset, verse as referenceVerse, chapter as referenceChapter, coverage as referenceCoverage } from './reference.js';
-import { parseVerseId } from './js/verses.js';
+import crypto from 'node:crypto';
+import { initReference, datasets as referenceList, dataset as referenceDataset, verse as referenceVerse, verseHash as referenceVerseHash, chapter as referenceChapter, coverage as referenceCoverage, saveCustom as referenceSaveCustom } from './reference.js';
+import { parseVerseId, verseLink, linkHashInput, verseBody, mapNameToVerse } from './js/verses.js';
+import { compareWords, tokenize } from './js/textdiff.js';
 import { readMeta, writeMeta, removeMeta, moveMeta, ensureMeta, sanitizeMeta, audioInfo, withBext, bextDescription, readProfiles, writeProfiles, sanitizeProfile } from './meta-store.js';
 import { normalizeStore, pickTranscript, putInStore, removeFromStore, shiftStore, transcriptToText, applyTextEdit, publicStore } from './js/transcripts.js';
 import { transliterateTranscript } from './js/translit.js';
@@ -36,7 +38,7 @@ const QUIZZES = path.join(DATA, 'quizzes');
 const SESSIONS = path.join(DATA, 'sessions');
 const PROFILES = path.join(DATA, 'profiles.json');
 const REFERENCE_DIRS = resolveReferenceDirs(ROOT);
-initReference(REFERENCE_DIRS);
+initReference(REFERENCE_DIRS, { customDir: path.join(DATA, 'reference') }); // customisations beside the data, the datasets themselves read-only
 const HOST = '127.0.0.1';
 const PORT = Number(process.env.PORT) || 8787;
 const MAX_UPLOAD = 512 * 1024 * 1024; // 512 MB
@@ -698,22 +700,113 @@ async function handleProfiles(req, res, parts) {
   return sendJson(res, 405, { error: 'Method not allowed' });
 }
 
-// ---------- the reference datasets (read-only) ----------
+// ---------- a recording linked to a verse ----------
+const sha256Hex = (x) => crypto.createHash('sha256').update(x).digest('hex');
+// The link: the sidecar gets `verse` (the copy of the text, its hash, the metre), the verse's
+// text as the recording's reference text (origin 'reference'; a text typed by hand keeps
+// winning), and the chandas recomputed. The dataset is read-only: nothing is written there.
+async function linkToVerse(rec, meta, ds, entry, { speakerLineRecited = true, mappedBy = 'manual', pinned = false } = {}) {
+  const link = verseLink(entry, { dataset: ds.id, datasetVersion: (ds.manifest && ds.manifest.version) || null, speakerLineRecited, mappedBy, licence: ds.manifest && ds.manifest.licence ? ds.manifest.licence.id : null, pinned });
+  link.textHash = sha256Hex(linkHashInput(link));
+  const keepTyped = !!(meta.text && meta.text.body && meta.text.origin === 'typed');
+  const body = keepTyped ? { verse: link } : { verse: link, text: { body: verseBody(entry, { speakerLine: link.speakerLineRecited }), language: 'sa', script: 'Deva', origin: 'reference', title: `Gītā ${entry.id}` } };
+  const next = sanitizeMeta(body, meta);
+  next.name = rec.name;
+  next.chandas = chandasForRecord({ name: rec.name, meta: next, store: await readTranscripts(rec) });
+  await writeMeta(audioPath(rec), next);
+  return next;
+}
+async function unlinkVerse(rec, meta) {
+  const next = sanitizeMeta(meta.text && meta.text.origin === 'reference' ? { verse: null, text: null } : { verse: null }, meta);
+  next.name = rec.name;
+  next.chandas = chandasForRecord({ name: rec.name, meta: next, store: await readTranscripts(rec) });
+  await writeMeta(audioPath(rec), next);
+  return next;
+}
+// Whether a linked recording's copy of the text is the dataset's current text (null: not linked, or the dataset is not here).
+function verseCurrentOf(meta) {
+  if (!meta || !meta.verse) return null;
+  const ds = referenceDataset(meta.verse.dataset);
+  const h = ds ? referenceVerseHash(ds, meta.verse.id) : null;
+  return h ? h === meta.verse.textHash : null;
+}
+// The index with each record's link, for coverage and the chapter views.
+async function linkedIndex() {
+  const out = [];
+  for (const r of await readIndex()) {
+    let meta = null;
+    try { meta = await readMeta(audioPath(r)); } catch { meta = null; }
+    out.push({ ...r, verse: meta && meta.verse ? { dataset: meta.verse.dataset, id: meta.verse.id } : null });
+  }
+  return out;
+}
+const wordsOf = (text) => tokenize(text).map((w) => w.word);
+// A record's name read as a verse of the dataset, checked against its Sanskrit transcript
+// when it has one (the words of a mis-named file do not match the verse's).
+async function guessVerse(rec, ds) {
+  const g = mapNameToVerse(rec.name, folderOf(rec.file), new Set(ds.byId.keys()));
+  const entry = g ? referenceVerse(ds, g.id) : null;
+  if (!entry) return { guess: null, entry: null, similarity: null, doubtful: false };
+  let similarity = null;
+  try {
+    const store = await readTranscripts(rec);
+    const t = store && store.languages && store.languages.sanskrit;
+    if (t && t.text) { const c = compareWords(wordsOf(verseBody(entry, { speakerLine: true })), wordsOf(t.text)); similarity = c ? c.summary.similarity : null; }
+  } catch { similarity = null; }
+  return { guess: g, entry, similarity, doubtful: similarity !== null && similarity < 0.45 };
+}
+
+// ---------- the reference datasets ----------
 // GET /api/reference                         → every dataset found, errors included
 // GET /api/reference/:ds                     → manifest + chapters + coverage
 // GET /api/reference/:ds/chapters/:n         → the chapter's entries, each with its recordings
 // GET /api/reference/:ds/verses/:id          → one entry ("1.21-22" composed from its parts)
 // GET /api/reference/:ds/coverage            → how much of the dataset has a recording
-// Records are linked to verses by `verse: { dataset, id }` in the index (not written yet:
-// the link is the next phase), so the recordings and the coverage are empty until then.
+// PUT /api/reference/:ds/verses/:id/custom   {deva?, iast?, speaker?, translations?, notes?, variants?}
+//                                            → the customisation of that verse, kept in <data>/reference/<ds>.custom.json
+//                                              and laid over the dataset's entry wherever it is served; DELETE removes it
+// POST /api/reference/:ds/map                {ids?, write?: true, writeDoubtful?: false} → links the recordings whose names
+//                                            name a verse (CH12-03 → 12.3), checking the words of a transcript against the
+//                                            verse's; returns { mapped, doubtful, unmapped, linked }
+// Records are linked to verses by `verse` in their sidecar (see linkToVerse).
 async function handleReference(req, res, parts) {
-  if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
-  const [, , dsId, sub, arg] = parts;
-  if (!dsId) return sendJson(res, 200, referenceList().map(({ dir, ...d }) => d));
+  const [, , dsId, sub, arg, sub2] = parts;
+  if (!dsId) { if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' }); return sendJson(res, 200, referenceList().map(({ dir, ...d }) => d)); }
   const ds = referenceDataset(decodeURIComponent(dsId));
   if (!ds) return sendJson(res, 404, { error: `No reference dataset "${dsId}"` });
   if (ds.errors.length) return sendJson(res, 409, { error: 'The dataset has errors and is not served', errors: ds.errors });
-  const index = await readIndex();
+  if (sub === 'verses' && arg && sub2 === 'custom') {
+    const vid = decodeURIComponent(arg);
+    if (!referenceVerse(ds, vid)) return sendJson(res, 404, { error: `No verse "${vid}"` });
+    if (req.method === 'PUT') {
+      let body;
+      try { body = JSON.parse((await readBody(req, 1e6)).toString('utf8')); } catch { return sendJson(res, 400, { error: 'The customisation must be JSON' }); }
+      return sendJson(res, 200, referenceSaveCustom(ds, vid, body));
+    }
+    if (req.method === 'DELETE') return sendJson(res, 200, referenceSaveCustom(ds, vid, null));
+    return sendJson(res, 405, { error: 'Method not allowed' });
+  }
+  if (sub === 'map') {
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+    let body = {};
+    try { const raw = await readBody(req, 1e6); body = raw.length ? JSON.parse(raw.toString('utf8')) : {}; } catch { return sendJson(res, 400, { error: 'The request must be JSON' }); }
+    const want = Array.isArray(body.ids) ? new Set(body.ids) : null;
+    const write = body.write !== false;
+    const report = { mapped: [], doubtful: [], unmapped: [], linked: 0 };
+    for (const rec of await readIndex()) {
+      if (want && !want.has(rec.id)) continue;
+      const meta = await ensureMeta(rec, audioPath(rec));
+      if (meta.verse) continue; // linked already
+      const g = await guessVerse(rec, ds);
+      if (!g.entry) { report.unmapped.push({ id: rec.id, name: rec.name, folder: folderOf(rec.file), reason: 'the name does not name a verse of the dataset' }); continue; }
+      const row = { id: rec.id, name: rec.name, folder: folderOf(rec.file), verse: g.entry.id, by: g.guess.by, similarity: g.similarity, firstLine: g.entry.deva[0] };
+      if (g.doubtful) { report.doubtful.push(row); if (!(write && body.writeDoubtful)) continue; } else report.mapped.push(row);
+      if (write) { await linkToVerse(rec, meta, ds, g.entry, { mappedBy: 'migration' }); report.linked++; }
+    }
+    return sendJson(res, 200, report);
+  }
+  if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+  const index = await linkedIndex();
   if (!sub) return sendJson(res, 200, { ...ds.manifest, chapters: ds.data.chapters, coverage: referenceCoverage(ds, index), warnings: ds.warnings });
   if (sub === 'coverage') return sendJson(res, 200, referenceCoverage(ds, index));
   if (sub === 'chapters' && arg) {
@@ -755,7 +848,7 @@ async function handleApi(req, res, url) {
     await syncIndex();
     const list = await readIndex();
     const out = [];
-    for (const r of list) out.push(await withMeta(r));
+    for (const r of list) { const item = await withMeta(r); item.verseCurrent = verseCurrentOf(item.meta); out.push(item); }
     return sendJson(res, 200, out);
   }
 
@@ -779,10 +872,19 @@ async function handleApi(req, res, url) {
     };
     rec.file = `${folder ? folder + '/' : ''}${slug(name)}-${rec.id}.wav`;
     await fsp.mkdir(path.join(LIB, folder), { recursive: true });
-    const meta = sanitizeMeta({ name, source: rec.source }, { id: rec.id, createdAt: rec.createdAt, audio: audioInfo(body) });
+    let meta = sanitizeMeta({ name, source: rec.source }, { id: rec.id, createdAt: rec.createdAt, audio: audioInfo(body) });
     await writeWavWithBext(rec, body, meta);
     await writeMeta(audioPath(rec), meta);
     await withIndex((list) => { list.push(rec); });
+    // ?autolink=1 (Learn): a name that names a verse of a dataset here links the recording to it
+    if (url.searchParams.get('autolink') === '1') {
+      for (const d of referenceList()) {
+        const ds = referenceDataset(d.id);
+        if (!ds || ds.errors.length) continue;
+        const g = await guessVerse(rec, ds);
+        if (g.entry) { meta = await linkToVerse(rec, meta, ds, g.entry, { mappedBy: 'name' }); break; }
+      }
+    }
     return sendJson(res, 201, publicRecord(rec, meta));
   }
 
@@ -911,6 +1013,21 @@ async function handleApi(req, res, url) {
       return sendJson(res, 200, { ok: true, ...(publicStore(store) || { available: [] }) });
     }
     return sendJson(res, 405, { error: 'Method not allowed' });
+  }
+
+  // POST /api/baselines/:id/verse  {dataset, id, speakerLineRecited?}  → links the recording to that verse
+  // DELETE /api/baselines/:id/verse                                   → unlinks it (a text from the dataset goes with it)
+  if (sub === 'verse') {
+    const current = await ensureMeta(rec, audioPath(rec));
+    if (req.method === 'DELETE') return sendJson(res, 200, await unlinkVerse(rec, current));
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+    let body;
+    try { body = JSON.parse((await readBody(req, 1e5)).toString('utf8')); } catch { return sendJson(res, 400, { error: 'The link must be JSON' }); }
+    const ds = referenceDataset(String(body.dataset || 'gita'));
+    if (!ds || ds.errors.length) return sendJson(res, 404, { error: `No reference dataset "${body.dataset || 'gita'}"` });
+    const entry = referenceVerse(ds, String(body.id || ''));
+    if (!entry) return sendJson(res, 404, { error: `No verse "${body.id}"` });
+    return sendJson(res, 200, await linkToVerse(rec, current, ds, entry, { speakerLineRecited: body.speakerLineRecited !== false, mappedBy: 'manual' }));
   }
 
   // GET / PUT / PATCH /api/baselines/:id/meta  — the metadata sidecar. PUT replaces what
