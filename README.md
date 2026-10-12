@@ -350,7 +350,7 @@ tolerance fields stay visible but greyed until the switch is off again.
   heard are highlighted in red there and at the top; extra or different words in your attempt
   are highlighted in amber. Click any phrase to hear it; the small "i" by "Yours" opens
   this legend as an overlay. "Transcribe again" reruns with another model.
-* **Library** – "Transcript" shows, creates or corrects the transcript of a sloka: the Library
+* **Library** – "Transcript" shows or corrects the transcript of a sloka (no Transcribe button or model there: "Transcribe all" in the toolbar makes the missing ones): the Library
   is the one place a sloka's words are corrected (the panels of Teach, Self Evaluation and
   quizzes show them without an "Edit" button). A **right-click** on
   a sloka opens a popup listing everything in its details file — the file itself, who recorded
@@ -358,7 +358,7 @@ tolerance fields stay visible but greyed until the switch is off again.
   audio's hash and format, the software, the chandas — which closes when it loses focus (Esc,
   or a click elsewhere); "Details" on the card edits what can be edited.
 
-Every transcript panel has a model choice and an "Automatic" switch (shared across the
+Every transcript panel but the Library's has a model choice and an "Automatic" switch (shared across the
 app). Automatic is on by default — in Learn, Self Evaluation, Teach and quizzes — so
 transcripts are made without being asked for; turn it off if you would rather transcribe
 only on demand.
@@ -370,7 +370,10 @@ a visarga or an anusvāra folded where Whisper spells one as a vowel or a nasal)
 Telugu and romanised (IAST) text are then *written from the Sanskrit*, akṣara by akṣara,
 rather than transcribed separately, so the three never disagree with it; in those three
 every akṣara carries its weight in the metre above it — **◡ laghu** (light) or **— guru**
-(heavy) — the way chandas is taught. "Show the sloka's text in" under Settings › Sloka text
+(heavy) — the way chandas is taught. In those three the visarga is ḥ, or the visarga sign
+(ಃ, ః), and the anusvāra is ṃ, or the circle (ಂ, ం) — also where Devanagari writes a class
+nasal before a stop of its place (सङ्ग → ಸಂಗ, saṃga; चिन्त्य → ಚಿಂತ್ಯ), whatever the
+transcription wrote; Sanskrit itself is shown as written. "Show the sloka's text in" under Settings › Sloka text
 chooses the script, for the sloka panel, every transcript panel and the rows of a report;
 the text typed in a sloka's details may be in any of the four and is read the same way.
 `js/lipi.js` does the writing; `js/translit.js` brings romanised, Kannada or Telugu text

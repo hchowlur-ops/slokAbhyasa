@@ -44,6 +44,13 @@ export function toDeva(text) {
   return out;
 }
 
+// In Kannada, Telugu and romanised text the anusvāra stands where Devanagari may write a
+// class nasal before a stop of its own place (सङ्ग → ಸಂಗ / saṃga, चिन्त्य → ಚಿಂತ್ಯ / ciṃtya):
+// the circle ಂ / ం, or ṃ, the reader expects, whatever a transcription or a text wrote.
+// Sanskrit itself is shown as written.
+const NASAL_STOP = /ङ्(?=[कखगघ])|ञ्(?=[चछजझ])|ण्(?=[टठडढ])|न्(?=[तथदध])|म्(?=[पफबभ])/g;
+export const anusvaraForm = (deva) => String(deva || '').replace(NASAL_STOP, 'ं');
+
 // An akṣara in IAST; an avagraha after it is kept as an apostrophe (ते ऽपि → te’pi).
 const aksharaLatin = (a) => aksharaText(a) + (a.src && a.src.includes('ऽ') ? '’' : '');
 // Digits and the rest between words, in the script.
@@ -54,7 +61,7 @@ const sepIn = (p, script) => (script === 'Latn' ? p.replace(/[०-९]/g, (d) =>
 // wanted (by default in every language but Sanskrit, which is shown bare) and null otherwise.
 export function segments(line, language, { marks = !!language && language !== 'sanskrit' } = {}) {
   const script = SCRIPT_OF[language] || 'Deva';
-  const deva = toDeva(line);
+  const deva = script === 'Deva' ? toDeva(line) : anusvaraForm(toDeva(line));
   if (script === 'Deva' && !marks) return deva ? [{ sep: deva }] : [];
   const A = syllabify(deva);
   const W = syllableWeights(A);
@@ -94,8 +101,8 @@ export function wordSegments(words, language, opts = {}) {
 // Plain text in the script of a language, no marks.
 export function inScript(text, language) {
   const script = SCRIPT_OF[language] || 'Deva';
-  const deva = toDeva(text);
-  if (script === 'Deva') return deva;
+  if (script === 'Deva') return toDeva(text);
+  const deva = anusvaraForm(toDeva(text));
   if (script !== 'Latn') return shift(deva, DEVA, SCRIPT_BASE[script]);
   return deva.split('\n').map((line) => segments(line, language, { marks: false }).map((s) => (s.sep != null ? s.sep : s.text)).join('')).join('\n');
 }

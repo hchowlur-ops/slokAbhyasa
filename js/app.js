@@ -587,7 +587,7 @@ function renderTranscriptText(host, t, toks, flagged, cls, play, dimmed = null, 
 
 // A transcript panel: language/model controls, automatic toggle, progress, text,
 // optional editing. `setSource(fn)` supplies { samples, sampleRate, what } for "Transcribe".
-function createTranscriptPanel(host, { editable = false, play = null, onChange = null, onStale = null, title = 'Transcript' } = {}) {
+function createTranscriptPanel(host, { editable = false, play = null, onChange = null, onStale = null, title = 'Transcript', controls = true } = {}) {
   host.innerHTML = `
     <div class="tp-head">
       <span class="tp-title"></span>
@@ -606,7 +606,7 @@ function createTranscriptPanel(host, { editable = false, play = null, onChange =
     <div class="muted small" data-role="status">No transcript yet.</div>
     <div class="muted small locked-note" data-role="locked" hidden></div>`;
   $('.tp-title', host).textContent = title;
-  buildSttControls($('.stt-controls', host));
+  if (controls) buildSttControls($('.stt-controls', host)); else setHidden($('.stt-controls', host), true); // the Library shows the words without a model
   const autoCb = $('[data-role="auto"]', host);
   autoCb.checked = sttSettings.auto;
   autoCb.addEventListener('change', () => { sttSettings.auto = autoCb.checked; saveStt(); syncSttAuto(); });
@@ -640,7 +640,7 @@ function createTranscriptPanel(host, { editable = false, play = null, onChange =
     setHidden(saveBtn, !editing);
     setHidden(cancelBtn, !editing);
     setHidden(editHint, !editing);
-    setHidden(runBtn, editing);
+    setHidden(runBtn, editing || !controls); // … and without a Transcribe button
     runBtn.textContent = transcript ? 'Transcribe again' : 'Transcribe';
     if (!transcript) { statusEl.textContent = 'No transcript yet.'; return; }
     renderTranscriptText(textEl, transcript, tokenizeTranscript(transcript), flagged, flagClass, play, dimmed, true);
@@ -4448,6 +4448,7 @@ function libTranscriptPanel(li, r) {
   let store = null; // every language this sloka is transcribed in; the panel shows the chosen one
   const panel = createTranscriptPanel(host, {
     editable: !(r.meta && r.meta.verse), // a linked recording's words are the dataset's
+    controls: false, // no Transcribe button, no model: "Transcribe all" in the toolbar makes the missing words
     play: (s, e) => playLibraryRange(r, s, e),
     onChange: async (t) => {
       store = await api.putTranscript(r.id, t);
