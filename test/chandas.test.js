@@ -141,3 +141,16 @@ test('chandasForRecord: a linked verse settles the family and names the text\'s 
   assert.equal(ch.source, 'reference');
   assert.deepEqual(ch.verse, { chapter: 2, verse: 5 });
 });
+
+test('layoutSloka: a text with its half-verses is written in four pādas or two, as asked', () => {
+  const two = 'कर्मण्येवाधिकारस्ते मा फलेषु कदाचन ।\nमा कर्मफलहेतुर्भूर्मा ते सङ्गोऽस्त्वकर्मणि ॥';
+  assert.equal(layoutSloka(two, { perPada: 8, lines: 2 }), two, 'two wanted, two there');
+  const four = layoutSloka(two, { perPada: 8, lines: 4 });
+  assert.deepEqual(four.split('\n'), ['कर्मण्येवाधिकारस्ते', 'मा फलेषु कदाचन ।', 'मा कर्मफलहेतुर्भूर्मा', 'ते सङ्गोऽस्त्वकर्मणि ॥']);
+  assert.equal(layoutSloka(four, { perPada: 8, lines: 2 }), two, 'and back');
+  assert.equal(layoutSloka(four, { perPada: 8, lines: 4 }), four);
+  const withSpeaker = `श्रीभगवानुवाच\n${two}`;
+  assert.equal(layoutSloka(withSpeaker, { perPada: 8, lines: 4 }).split('\n').length, 5, 'the speaker line stays on its own');
+  const tri = 'गुरूनहत्वा हि महानुभावान्\nश्रेयो भोक्तुं भैक्ष्यमपीह लोके ।\nहत्वार्थकामांस्तु गुरूनिहैव\nभुञ्जीय भोगान् रुधिरप्रदिग्धान् ॥';
+  assert.equal(layoutSloka(tri, { perPada: 11, lines: 2 }), tri, 'the triṣṭubh family stays in four');
+});

@@ -22,7 +22,7 @@ import { normalizeStore, putInStore, pickTranscript, availableLanguages } from '
 import { transliterateTranscript } from './translit.js';
 import { identifyChandas, layoutSloka, padaBreaks, linesFor, uvacaOffset, chandasLabel, chandasPattern, gitaVerse, gitaFamily } from './chandas.js';
 import { periodRange, shiftPeriod, inRange, isoDate, slokaRows, summarize, KIND_LABEL } from './reports.js';
-import { diffWords, diffSummary, compareWords, tokenizeTranscript, windowedTokens, tokenize, dandaMarks, withDandas, uvacaWords } from './textdiff.js';
+import { diffWords, diffSummary, compareWords, tokenizeTranscript, windowedTokens, tokenize, dandaMarks, withDandas, uvacaWords, isUvacaLine } from './textdiff.js';
 import { AGE_GROUPS, VOICE_TYPES, STYLE_MODES, DEFAULT_STYLE_MODE, presetsFor, ADULT_PRESET, compareModeFor, speakerLabel, ageGroupLabel, styleMode, voiceStats, deriveText } from './meta.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -541,7 +541,10 @@ function renderTranscriptText(host, t, toks, flagged, cls, play, dimmed = null, 
     const { lines, marks } = dandaMarks(t.text);
     const counts = lines.map((l) => tokenize(l).length);
     const total = counts.reduce((x, y) => x + y, 0);
-    if (lines.length > 1 && total === toks.length) {
+    const ppWanted = perPada || t.perPada || identifyChandas(t.text).perPada;
+    const padaLines = lines.length - (lines.length > 1 && isUvacaLine(lines[0]) ? 1 : 0);
+    // the text's own lines, when they are the lines the setting wants; else laid out by the metre
+    if (lines.length > 1 && total === toks.length && padaLines === linesFor(ppWanted, slokaLines)) {
       let acc = 0;
       lines.forEach((l, li) => { acc += counts[li]; lineEnd.set(acc - 1, { mark: marks.get(li) || '', last: li === lines.length - 1 }); });
     } else if (lines.length) {
@@ -606,7 +609,7 @@ function createTranscriptPanel(host, { editable = false, play = null, onChange =
     <div class="muted small" data-role="status">No transcript yet.</div>
     <div class="muted small locked-note" data-role="locked" hidden></div>`;
   $('.tp-title', host).textContent = title;
-  if (controls) buildSttControls($('.stt-controls', host)); else setHidden($('.stt-controls', host), true); // the Library shows the words without a model
+  if (controls) buildSttControls($('.stt-controls', host)); else { setHidden($('.stt-controls', host), true); setHidden($('[data-role="auto"]', host).closest('label'), true); } // the Library shows the words without a model or an Automatic switch
   const autoCb = $('[data-role="auto"]', host);
   autoCb.checked = sttSettings.auto;
   autoCb.addEventListener('change', () => { sttSettings.auto = autoCb.checked; saveStt(); syncSttAuto(); });
@@ -644,7 +647,7 @@ function createTranscriptPanel(host, { editable = false, play = null, onChange =
     runBtn.textContent = transcript ? 'Transcribe again' : 'Transcribe';
     if (!transcript) { statusEl.textContent = 'No transcript yet.'; return; }
     renderTranscriptText(textEl, transcript, tokenizeTranscript(transcript), flagged, flagClass, play, dimmed, true);
-    const how = transcript.edited ? (transcript.editedIn === 'file' ? 'edited in the text file' : 'corrected by you') : sttTierLabel(transcript.tier);
+    const how = transcript.from === 'reference' ? `the Gītā's words${transcript.verse ? `, verse ${transcript.verse}` : ''}` : transcript.edited ? (transcript.editedIn === 'file' ? 'edited in the text file' : 'corrected by you') : sttTierLabel(transcript.tier);
     const lang = transcript.language && transcript.language !== 'unknown' ? sttLanguageLabel(transcript.language) : 'Text';
     const shown = marksShown() ? ` · shown in ${langName(displayLanguage())}, ◡ laghu — guru` : '';
     statusEl.textContent = `${lang} · ${how}${transcript.createdAt ? ' · ' + fmtDate(transcript.createdAt) : ''}${shown}`;
@@ -4489,7 +4492,8 @@ $('#library-link-verses').addEventListener('click', async () => {
   btn.disabled = true;
   try {
     const rep = await api.mapVerses(ids[0], { write: true });
-    const parts = [`${rep.linked} linked`];
+    const words = await api.wordsFromVerses(ids[0], {}); // every linked recording's words from its verse
+    const parts = [`${rep.linked} linked`, `${words.written.length} with the verse's words`];
     if (rep.doubtful.length) parts.push(`${rep.doubtful.length} doubtful, left alone (${rep.doubtful.map((d) => `${d.name} → ${d.verse}`).join(', ')})`);
     if (rep.unmapped.length) parts.push(`${rep.unmapped.length} without a verse in the name (${rep.unmapped.map((d) => d.name).join(', ')})`);
     toast(parts.join(' · '), rep.linked ? 'success' : 'info', 9000);

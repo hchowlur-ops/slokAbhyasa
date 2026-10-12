@@ -718,7 +718,14 @@ chandas use it instead of a transcript (a text you typed under Details before th
 wins) — the panel's name line says "Gītā 12.3", the card carries a "Gītā 12.3" tag, and the
 verse's meaning shows under its text. The words of a linked recording are not edited: the
 Details text field is read-only and the Transcript panel has no "Edit" button, each with a
-note saying so; unlink the verse to type your own text. Links are made three ways: a recording saved in Learn under
+note saying so; unlink the verse to type your own text. **The words follow the link**: a
+linked recording's transcript is made of the verse's own lines — the speaker line and the
+half-verses — with the timings of what Whisper heard spread over them by their akṣaras, so
+the Library's panel, Teach's panel and every script written from the text show the Gītā's
+words, and click-to-play plays each line; what was heard is kept and comes back on unlink.
+"Link to the Gītā" and `node tools/map-verses.mjs --words` redo the words of every linked
+recording from the dataset (after a dataset update, say); a transcription made later for a
+linked recording only lends its timings. Links are made three ways: a recording saved in Learn under
 a name that names a verse (CH12-03, ch12-7, 12.4) is linked at once; the Library's **Link
 to the Gītā** button links every unlinked recording whose name reads so (a recording whose
 transcript does not match the verse's words is listed as doubtful and left alone; one

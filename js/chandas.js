@@ -134,14 +134,32 @@ export function padaBreaks(words, perPada, lines = 2) {
 // way: । after the second pāda, ॥ after the fourth.
 export const linesFor = (perPada, preferred = 2) => (perPada === 11 ? 4 : preferred === 4 ? 4 : 2);
 
-// The text written out in its lines (see linesFor), unless it already has lines.
+// The text written out in its lines (see linesFor). A text that has its lines already (the
+// dataset's half-verses) is reshaped when the setting asks for the other count: the two
+// half-verses of an anuṣṭubh into its four pādas, or four pādas into two half-verses; any
+// other shape is kept as it is.
 export function layoutSloka(text, { perPada = null, lines = 2 } = {}) {
   const { prefix, body } = splitUvaca(String(text || '')); // the attribution on a line of its own
   const withPrefix = (laid) => (prefix ? `${prefix}\n${laid}` : laid);
-  if (body.split(/\r?\n/).filter((l) => l.trim()).length > 1) return withPrefix(body);
-  const words = body.trim().split(/\s+/).filter(Boolean);
+  const have = body.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   const pp = perPada || identifyChandas(body).perPada;
-  const breaks = padaBreaks(words, pp, linesFor(pp, lines));
+  const wanted = linesFor(pp, lines);
+  if (have.length > 1) {
+    if (pp === 8 && have.length === 2 && wanted === 4) {
+      const out = [];
+      for (const l of have) {
+        const mark = (l.match(/\s*[।॥|]+\s*$/) || [''])[0].trim();
+        const w = l.replace(/\s*[।॥|]+\s*$/, '').split(/\s+/).filter(Boolean);
+        const b = padaBreaks(w, pp, 4); // the first target, one pāda in, is the break wanted
+        if (b.length) { out.push(w.slice(0, b[0] + 1).join(' ')); out.push(`${w.slice(b[0] + 1).join(' ')}${mark ? ` ${mark}` : ''}`); } else out.push(l);
+      }
+      return withPrefix(out.join('\n'));
+    }
+    if (pp === 8 && have.length === 4 && wanted === 2) return withPrefix([have.slice(0, 2).join(' '), have.slice(2).join(' ')].join('\n'));
+    return withPrefix(have.join('\n'));
+  }
+  const words = body.trim().split(/\s+/).filter(Boolean);
+  const breaks = padaBreaks(words, pp, wanted);
   if (!breaks.length) return withPrefix(body.trim());
   const out = [];
   let start = 0;

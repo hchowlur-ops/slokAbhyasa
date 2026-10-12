@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { parseVerseId, verseIdFor, defaultNameFor, defaultFolderFor, verseBody, normalizeVerseText, verseHashInput, compareVerseOrder, mapNameToVerse, combinedEntry, validateDataset, coverage, verseLink, linkHashInput, sanitizeCustom, mergeCustom } from '../js/verses.js';
+import { parseVerseId, verseIdFor, defaultNameFor, defaultFolderFor, verseBody, normalizeVerseText, verseHashInput, compareVerseOrder, mapNameToVerse, combinedEntry, validateDataset, coverage, verseLink, linkHashInput, sanitizeCustom, mergeCustom, verseTranscript, heardTranscript } from '../js/verses.js';
 
 const mini = JSON.parse(fs.readFileSync(new URL('./fixtures/reference/gita-mini/verses.json', import.meta.url), 'utf8'));
 const miniManifest = JSON.parse(fs.readFileSync(new URL('./fixtures/reference/gita-mini/manifest.json', import.meta.url), 'utf8'));
@@ -141,4 +141,28 @@ test('customisations are cleaned and laid over the entry', () => {
   assert.equal(m.translations.en, 'meaning', 'a custom translation replaces the dataset\'s');
   assert.equal(m.iast, v.iast, 'untouched fields stay');
   assert.equal(mergeCustom(v, null).customised, false);
+});
+
+test('a linked recording\'s transcript is the verse\'s lines with the hearing\'s timings, and the hearing comes back on unlink', () => {
+  const v = mini.verses.find((x) => x.id === '1.21');
+  const heard = { language: 'sanskrit', tier: 'best', text: 'अर्जुन उवाच हृषीकेशम् तदा वाक्यमिदमाह महीपते सेनयोरुभयोर्मध्ये रथम् स्थापय मेऽच्युत', chunks: [{ text: 'अर्जुन उवाच हृषीकेशम् तदा', start: 1.0, end: 4.0 }, { text: 'वाक्यमिदमाह महीपते सेनयोरुभयोर्मध्ये रथम् स्थापय मेऽच्युत', start: 4.0, end: 11.0 }] };
+  const t = verseTranscript(v, { speakerLine: true, previous: heard });
+  assert.equal(t.from, 'reference');
+  assert.equal(t.verse, '1.21');
+  assert.equal(t.tier, 'best');
+  assert.deepEqual(t.chunks.map((c) => c.text), ['अर्जुन उवाच', ...v.deva]);
+  assert.equal(t.chunks[0].start, 1);
+  assert.equal(t.chunks[t.chunks.length - 1].end, 11);
+  assert.ok(t.chunks[0].end < t.chunks[1].start + 0.01 && t.chunks[0].end - t.chunks[0].start < t.chunks[1].end - t.chunks[1].start, 'the short speaker line takes a short span');
+  assert.equal(t.heard.text, heard.text);
+  const back = heardTranscript(t);
+  assert.equal(back.text, heard.text);
+  assert.equal(back.chunks.length, 2);
+  assert.equal(back.from, undefined);
+  const bare = verseTranscript(v, { speakerLine: false, previous: null });
+  assert.deepEqual(bare.chunks, []);
+  assert.equal(bare.text, v.deva.join(' '));
+  assert.equal(heardTranscript(bare), null);
+  const again = verseTranscript(v, { previous: t });
+  assert.equal(again.heard.text, heard.text, 'redoing the words keeps the hearing');
 });

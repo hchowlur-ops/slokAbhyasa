@@ -269,3 +269,7 @@ export async function deleteVerseCustom(ds, id) {
   const res = await check(await fetch(refUrl(ds, `/verses/${encodeURIComponent(id)}/custom`), { method: 'DELETE' }));
   return res.json();
 }
+export async function wordsFromVerses(ds, body = {}) {
+  const res = await check(await fetch(refUrl(ds, '/words'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }));
+  return res.json();
+}

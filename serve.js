@@ -22,7 +22,7 @@ import { normalizeCategories, normalizeTolerance, normalizeWeights, recordTolera
 import { resolveDataDir, resolveReferenceDirs } from './datadir.js';
 import crypto from 'node:crypto';
 import { initReference, datasets as referenceList, dataset as referenceDataset, verse as referenceVerse, verseHash as referenceVerseHash, chapter as referenceChapter, coverage as referenceCoverage, saveCustom as referenceSaveCustom } from './reference.js';
-import { parseVerseId, verseLink, linkHashInput, verseBody, mapNameToVerse } from './js/verses.js';
+import { parseVerseId, verseLink, linkHashInput, verseBody, mapNameToVerse, verseTranscript, heardTranscript } from './js/verses.js';
 import { compareWords, tokenize } from './js/textdiff.js';
 import { readMeta, writeMeta, removeMeta, moveMeta, ensureMeta, sanitizeMeta, audioInfo, withBext, bextDescription, readProfiles, writeProfiles, sanitizeProfile } from './meta-store.js';
 import { normalizeStore, pickTranscript, putInStore, removeFromStore, shiftStore, transcriptToText, applyTextEdit, publicStore } from './js/transcripts.js';
@@ -712,14 +712,30 @@ async function linkToVerse(rec, meta, ds, entry, { speakerLineRecited = true, ma
   const body = keepTyped ? { verse: link } : { verse: link, text: { body: verseBody(entry, { speakerLine: link.speakerLineRecited }), language: 'sa', script: 'Deva', origin: 'reference', title: `Gītā ${entry.id}` } };
   const next = sanitizeMeta(body, meta);
   next.name = rec.name;
-  next.chandas = chandasForRecord({ name: rec.name, meta: next, store: await readTranscripts(rec) });
+  // the words: the verse's lines, with the timings of what was heard
+  const store = await wordsFromVerse(rec, entry, link.speakerLineRecited);
+  next.chandas = chandasForRecord({ name: rec.name, meta: next, store });
   await writeMeta(audioPath(rec), next);
+  return next;
+}
+// A linked recording's transcript is the verse's text (the hearing's timings spread over its
+// lines, the hearing itself kept under `heard`); returns the store written.
+async function wordsFromVerse(rec, entry, speakerLine = true) {
+  const store = await readTranscripts(rec);
+  const prev = pickTranscript(store, 'sanskrit');
+  const t = verseTranscript(entry, { speakerLine, previous: prev });
+  const next = putInStore(store, t, { primary: true });
+  await writeTranscripts(rec, next);
   return next;
 }
 async function unlinkVerse(rec, meta) {
   const next = sanitizeMeta(meta.text && meta.text.origin === 'reference' ? { verse: null, text: null } : { verse: null }, meta);
   next.name = rec.name;
-  next.chandas = chandasForRecord({ name: rec.name, meta: next, store: await readTranscripts(rec) });
+  // the hearing comes back, when the verse's words had replaced one
+  let store = await readTranscripts(rec);
+  const back = heardTranscript(pickTranscript(store, 'sanskrit'));
+  if (back) { store = putInStore(store, back, { primary: true }); await writeTranscripts(rec, store); }
+  next.chandas = chandasForRecord({ name: rec.name, meta: next, store });
   await writeMeta(audioPath(rec), next);
   return next;
 }
@@ -785,6 +801,24 @@ async function handleReference(req, res, parts) {
     }
     if (req.method === 'DELETE') return sendJson(res, 200, referenceSaveCustom(ds, vid, null));
     return sendJson(res, 405, { error: 'Method not allowed' });
+  }
+  // POST /api/reference/:ds/words {ids?} → every linked recording's transcript made of its verse's lines again
+  if (sub === 'words') {
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+    let body = {};
+    try { const raw = await readBody(req, 1e6); body = raw.length ? JSON.parse(raw.toString('utf8')) : {}; } catch { return sendJson(res, 400, { error: 'The request must be JSON' }); }
+    const want = Array.isArray(body.ids) ? new Set(body.ids) : null;
+    const report = { written: [], skipped: [] };
+    for (const rec of await readIndex()) {
+      if (want && !want.has(rec.id)) continue;
+      const meta = await readMeta(audioPath(rec));
+      const link = meta && meta.verse;
+      const entry = link && link.dataset === ds.id ? referenceVerse(ds, link.id) : null;
+      if (!entry) { report.skipped.push({ id: rec.id, name: rec.name, reason: link ? 'its verse is not in this dataset' : 'not linked' }); continue; }
+      await wordsFromVerse(rec, entry, link.speakerLineRecited);
+      report.written.push({ id: rec.id, name: rec.name, verse: link.id });
+    }
+    return sendJson(res, 200, report);
   }
   if (sub === 'map') {
     if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
@@ -997,6 +1031,13 @@ async function handleApi(req, res, url) {
       if (!body || typeof body !== 'object' || typeof body.text !== 'string') return sendJson(res, 400, { error: 'Transcript needs a text field' });
       if (!body.text.trim() && !(Array.isArray(body.chunks) && body.chunks.some((c) => c && String(c.text || '').trim()))) return sendJson(res, 400, { error: 'An empty transcript is not stored' });
       const primary = url.searchParams.get('primary') !== '0';
+      // a linked recording's words are the verse's: a hearing put here lends its timings, no more
+      const linkMeta = await readMeta(audioPath(rec)).catch(() => null);
+      if (linkMeta && linkMeta.verse && body.from !== 'reference' && body.language === 'sanskrit') {
+        const lds = referenceDataset(linkMeta.verse.dataset);
+        const entry = lds && !lds.errors.length ? referenceVerse(lds, linkMeta.verse.id) : null;
+        if (entry) body = verseTranscript(entry, { speakerLine: linkMeta.verse.speakerLineRecited, previous: body });
+      }
       const current = await readTranscripts(rec);
       // a background result only fills a gap: it never replaces a transcript that exists
       // (least of all one someone corrected); "Transcribe again" is a primary put

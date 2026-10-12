@@ -11,6 +11,7 @@
 //   node tools/map-verses.mjs CH12-03         one, by name (or part of it) or id
 //   node tools/map-verses.mjs --dry           report, write nothing
 //   node tools/map-verses.mjs --doubtful      link the doubtful ones too
+//   node tools/map-verses.mjs --words         the words of every linked recording from its verse again
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -20,7 +21,8 @@ import { readMeta, writeMeta, sanitizeMeta } from '../meta-store.js';
 import { normalizeStore } from '../js/transcripts.js';
 import { chandasForRecord } from '../js/chandas.js';
 import { initReference, dataset, verse as referenceVerse } from '../reference.js';
-import { verseLink, linkHashInput, verseBody, mapNameToVerse } from '../js/verses.js';
+import { verseLink, linkHashInput, verseBody, mapNameToVerse, verseTranscript } from '../js/verses.js';
+import { pickTranscript, putInStore } from '../js/transcripts.js';
 import { compareWords, tokenize } from '../js/textdiff.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -29,6 +31,7 @@ const LIB = path.join(DATA, 'library');
 const args = process.argv.slice(2);
 const dry = args.includes('--dry');
 const takeDoubtful = args.includes('--doubtful');
+const redoWords = args.includes('--words');
 const want = args.find((a) => !a.startsWith('--'));
 const dsId = (args.find((a) => a.startsWith('--dataset=')) || '--dataset=gita').slice('--dataset='.length);
 
@@ -46,7 +49,21 @@ for (const r of records) {
   const wav = path.join(LIB, ...r.file.split('/'));
   const meta = await readMeta(wav);
   if (!meta) { console.log(`${r.name}: no details file yet (open it once in the app)`); continue; }
-  if (meta.verse) { console.log(`${r.name}: already linked to ${meta.verse.id}`); continue; }
+  const tp = wav.replace(/\.wav$/i, '.transcript.json');
+  const wordsOf = async (entry, speakerLine) => {
+    let store = null;
+    try { store = normalizeStore(JSON.parse(await fsp.readFile(tp, 'utf8'))); } catch { store = null; }
+    const next = putInStore(store, verseTranscript(entry, { speakerLine, previous: pickTranscript(store, 'sanskrit') }), { primary: true });
+    const vt = pickTranscript(next, 'sanskrit');
+    try { await fsp.writeFile(wav.replace(/\.wav$/i, '.txt'), vt.chunks.length ? vt.chunks.map((c) => c.text).join('\n') : vt.text); } catch { /* the .txt is a courtesy */ }
+    await fsp.writeFile(tp, JSON.stringify(next)); // the JSON last, so it stays the newer twin
+    return next;
+  };
+  if (meta.verse) {
+    if (redoWords && !dry) { const entry = referenceVerse(ds, meta.verse.id); if (entry) { await wordsOf(entry, meta.verse.speakerLineRecited); console.log(`${r.name}: words from ${meta.verse.id}`); linked++; continue; } }
+    console.log(`${r.name}: already linked to ${meta.verse.id}`);
+    continue;
+  }
   const g = mapNameToVerse(r.name, folderOf(r.file), ids);
   const entry = g ? referenceVerse(ds, g.id) : null;
   if (!entry) { console.log(`${r.name}: unmapped (the name does not name a verse of the dataset)`); continue; }
@@ -63,8 +80,8 @@ for (const r of records) {
   const keepTyped = !!(meta.text && meta.text.body && meta.text.origin === 'typed');
   const next = sanitizeMeta(keepTyped ? { verse: link } : { verse: link, text: { body: verseBody(entry, { speakerLine: true }), language: 'sa', script: 'Deva', origin: 'reference', title: `Gītā ${entry.id}` } }, meta);
   next.name = r.name;
-  next.chandas = chandasForRecord({ name: r.name, meta: next, store });
+  next.chandas = chandasForRecord({ name: r.name, meta: next, store: await wordsOf(entry, true) });
   await writeMeta(wav, next);
   linked++;
 }
-console.log(dry ? 'Dry run: nothing written.' : `Done. ${linked} linked.`);
+console.log(dry ? 'Dry run: nothing written.' : `Done. ${linked} ${redoWords ? 'written' : 'linked'}.`);

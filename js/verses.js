@@ -8,6 +8,7 @@
 // "12.opening" / "12.colophon" (a chapter's invocation or closing line), "dhyana.1",
 // "invocation.1", "other.1" (texts outside the chapters).
 import { GITA_VERSES, gitaVerse, gitaFamily } from './chandas.js';
+import { syllabify } from './phon.js';
 
 export const KINDS = ['verse', 'combined', 'opening', 'colophon', 'dhyana', 'invocation', 'other'];
 export const WHO = { krishna: 'श्रीभगवान्', arjuna: 'अर्जुन', sanjaya: 'सञ्जय', dhritarashtra: 'धृतराष्ट्र' };
@@ -279,4 +280,36 @@ export function mergeCustom(entry, custom) {
   if (custom.notes) out.notes = custom.notes;
   if (custom.variants) out.variants = [...(entry.variants || []), ...custom.variants];
   return out;
+}
+
+// ---------- the words of a linked recording: the verse's, with the hearing's timings ----------
+// A linked recording's transcript shows and plays the verse's own lines (speaker line and
+// half-verses), not what Whisper heard: the timings of the transcript it replaces are spread
+// over the lines by their akṣaras, and what was heard is kept under `heard` for an unlink.
+export function verseTranscript(entry, { speakerLine = true, previous = null } = {}) {
+  const lines = verseBody(entry, { speakerLine }).split('\n').map((l) => l.trim()).filter(Boolean);
+  const t = {
+    language: 'sanskrit', text: lines.join(' '), chunks: [],
+    tier: (previous && previous.tier) || null, model: (previous && previous.model) || null, device: (previous && previous.device) || null,
+    edited: true, editedIn: 'reference', from: 'reference', verse: entry.id, createdAt: new Date().toISOString(),
+  };
+  const prev = previous && Array.isArray(previous.chunks) ? previous.chunks.filter((c) => c && typeof c.start === 'number') : [];
+  if (prev.length) {
+    const start = prev[0].start;
+    const last = prev[prev.length - 1];
+    const end = typeof last.end === 'number' && last.end > start ? last.end : last.start + 3;
+    const weights = lines.map((l) => Math.max(1, syllabify(l).length));
+    const total = weights.reduce((a, b) => a + b, 0);
+    let at = start;
+    t.chunks = lines.map((l, i) => { const span = ((end - start) * weights[i]) / total; const c = { text: l, start: Number(at.toFixed(2)), end: Number((at + span).toFixed(2)) }; at += span; return c; });
+  }
+  if (previous && previous.text && previous.from !== 'reference') t.heard = { text: previous.text, chunks: Array.isArray(previous.chunks) ? previous.chunks : [] };
+  else if (previous && previous.heard) t.heard = previous.heard;
+  return t;
+}
+// What an unlink brings back: the hearing a verse transcript replaced, or nothing.
+export function heardTranscript(t) {
+  if (!t || t.from !== 'reference' || !t.heard || !t.heard.text) return null;
+  const { heard, verse, from, ...rest } = t;
+  return { ...rest, text: heard.text, chunks: heard.chunks || [], edited: false, editedIn: null, createdAt: new Date().toISOString() };
 }
