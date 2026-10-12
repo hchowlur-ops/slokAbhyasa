@@ -603,7 +603,8 @@ function createTranscriptPanel(host, { editable = false, play = null, onChange =
     <div class="stt-text" data-role="text" hidden></div>
     <textarea class="stt-edit" data-role="edit" rows="4" hidden spellcheck="false"></textarea>
     <div class="muted small" data-role="edit-hint" hidden>The text is shown in romanised Sanskrit (IAST) to edit — type it the same way: ā ī ū ṛ for the long vowels (or aa ii uu), ś ṣ (or sh), ṭ ḍ ṇ, ṃ for the anusvāra, ḥ for the visarga, ’ for the avagraha, "ch" for छ and "c" for च. It is written in Devanagari when you save, and Kannada, Telugu and IAST follow from that. One line per phrase; keep the same number of lines to keep the click-to-play timings.</div>
-    <div class="muted small" data-role="status">No transcript yet.</div>`;
+    <div class="muted small" data-role="status">No transcript yet.</div>
+    <div class="muted small locked-note" data-role="locked" hidden></div>`;
   $('.tp-title', host).textContent = title;
   buildSttControls($('.stt-controls', host));
   const autoCb = $('[data-role="auto"]', host);
@@ -619,6 +620,8 @@ function createTranscriptPanel(host, { editable = false, play = null, onChange =
   const editBtn = $('[data-act="edit"]', host);
   const saveBtn = $('[data-act="save"]', host);
   const cancelBtn = $('[data-act="cancel"]', host);
+  const lockedEl = $('[data-role="locked"]', host);
+  let canEdit = editable;
   let transcript = null;
   let others = []; // the other languages this recording is transcribed in
   let flagged = new Set();
@@ -633,7 +636,7 @@ function createTranscriptPanel(host, { editable = false, play = null, onChange =
   const render = () => {
     const editing = !editEl.hidden;
     setHidden(textEl, !transcript || editing);
-    setHidden(editBtn, !editable || !transcript || editing);
+    setHidden(editBtn, !canEdit || !transcript || editing);
     setHidden(saveBtn, !editing);
     setHidden(cancelBtn, !editing);
     setHidden(editHint, !editing);
@@ -685,6 +688,8 @@ function createTranscriptPanel(host, { editable = false, play = null, onChange =
       panel.set(t, store);
     },
     setSource(fn, key = null) { source = fn; sourceKey = key; },
+    // Editing on or off (off: the words are the reference dataset's), with the note that says so.
+    setEditable(on, note = '') { canEdit = !!on; lockedEl.textContent = on ? '' : note; setHidden(lockedEl, on || !note); if (!on) setHidden(editEl, true); render(); },
     // The panel forgets its content. A transcription still running carries on in the
     // worker; its result goes to onStale (or nowhere). cancel() first to stop it instead.
     reset() {
@@ -930,11 +935,13 @@ function buildMetaFields(host, { compact = false } = {}) {
     <label class="field"><span>How it is judged</span><select data-f="style"></select></label>
     <label class="field" title="The lineage whose way of reciting this recording follows — a maṭha, a guru or a school (Śṛṅgeri, Kāñcī, Uḍupi, a teacher's name). Kept with the recording as a note for whoever learns from it; it does not change how anything is scored."><span>Tradition or school <em class="muted">(optional)</em></span><input type="text" data-f="tradition" maxlength="80" placeholder="e.g. Śṛṅgeri, Kāñcī, a guru's name" autocomplete="off" /></label>
     <label class="field wide"><span>Text of the sloka <em class="muted">(optional · the words as they should be recited; used to judge pronunciation)</em></span><textarea data-f="text" rows="${compact ? 3 : 4}" spellcheck="false" placeholder="Type or paste the text, one pāda or line per row…"></textarea></label>
-    <span class="derived" data-f="derived"></span>`;
+    <span class="derived" data-f="derived"></span>
+    <span class="muted small locked-note" data-f="text-locked" hidden></span>`;
   const speakerSel = $('[data-f="speaker"]', host);
   const styleSel = $('[data-f="style"]', host);
   const tradInp = $('[data-f="tradition"]', host);
   const textArea = $('[data-f="text"]', host);
+  let textLocked = false;
   const derived = $('[data-f="derived"]', host);
   let remembered = { speaker: '', style: DEFAULT_STYLE_MODE };
   try { remembered = { speaker: localStorage.getItem(LEARN_SPEAKER_KEY) || '', style: localStorage.getItem(LEARN_STYLE_KEY) || DEFAULT_STYLE_MODE }; } catch { /* ignore */ }
@@ -965,8 +972,17 @@ function buildMetaFields(host, { compact = false } = {}) {
       return {
         speaker: sp ? { profileId: sp.id, voiceType: sp.voiceType, ageGroup: sp.ageGroup } : null,
         style: { mode: styleSel.value, tradition: tradInp.value.trim() || null },
-        text: textArea.value.trim() ? { body: textArea.value.trim() } : null,
+        text: textLocked ? undefined : textArea.value.trim() ? { body: textArea.value.trim() } : null, // locked: the sidecar's text is left as it is
       };
+    },
+    // The words are the reference dataset's: the field shows them and is not edited.
+    lockText(locked, note = '') {
+      textLocked = !!locked;
+      textArea.readOnly = textLocked;
+      textArea.classList.toggle('locked', textLocked);
+      const el = $('[data-f="text-locked"]', host);
+      el.textContent = textLocked ? note : '';
+      setHidden(el, !textLocked || !note);
     },
     set(meta) {
       want.speaker = (meta && meta.speaker && meta.speaker.profileId) || '';
@@ -4304,7 +4320,14 @@ function libDetailsPanel(li, r) {
     for (const [k, val] of rows) { const dt = document.createElement('dt'); dt.textContent = k; const dd = document.createElement('dd'); dd.textContent = val; dl.append(dt, dd); }
     setHidden(dl, !rows.length);
   };
-  const apply = (meta) => { fields.set(meta); showMeasured(meta); renderVerseBox($('.lib-verse', host), r, meta, apply); };
+  const apply = (meta) => {
+    fields.set(meta);
+    fields.lockText(!!(meta && meta.verse), lockNote(meta));
+    showMeasured(meta);
+    renderVerseBox($('.lib-verse', host), r, meta, apply);
+    const tp = $('.lib-transcript', li); // an open transcript panel follows the link
+    if (tp && tp.__panel) tp.__panel.setEditable(!(meta && meta.verse), lockNote(meta));
+  };
   apply(r.meta);
   if (!r.meta) api.getMeta(r.id).then(apply).catch(() => {});
   $('[data-act="save"]', host).addEventListener('click', async () => {
@@ -4323,6 +4346,9 @@ function libDetailsPanel(li, r) {
     } catch (err) { status.textContent = ''; toast(err.message, 'error'); }
   });
 }
+
+// The words of a linked recording are the dataset's: neither its text nor its transcript is edited.
+const lockNote = (meta) => (meta && meta.verse ? `The words shown are the Gītā's, verse ${meta.verse.id}, from the reference dataset, and are not edited here. Unlink the verse under Details to type your own text; a meaning or notes can be added to the verse there.` : '');
 
 // Library › Details › the verse of the reference dataset this recording is a recording of:
 // the link (made by name on save, by "Link to the Gītā", or here), the dataset's text, and
@@ -4421,7 +4447,7 @@ function libTranscriptPanel(li, r) {
   li.appendChild(host);
   let store = null; // every language this sloka is transcribed in; the panel shows the chosen one
   const panel = createTranscriptPanel(host, {
-    editable: true,
+    editable: !(r.meta && r.meta.verse), // a linked recording's words are the dataset's
     play: (s, e) => playLibraryRange(r, s, e),
     onChange: async (t) => {
       store = await api.putTranscript(r.id, t);
@@ -4438,6 +4464,8 @@ function libTranscriptPanel(li, r) {
     const dec = await decodeBlob(await api.fetchAudioBlob(r.id));
     return { samples: dec.samples, sampleRate: dec.sampleRate, what: `"${r.name}"` };
   });
+  host.__panel = panel;
+  panel.setEditable(!(r.meta && r.meta.verse), lockNote(r.meta));
   const show = () => panel.swap(transcriptIn(store), store);
   api.getTranscript(r.id).then((s) => { store = s; show(); }).catch(() => {});
   const onLanguage = () => { if (!host.isConnected) { sttLanguageListeners.delete(onLanguage); return; } show(); };

@@ -243,6 +243,8 @@ canvas { display: block; }
 .lib-verse-custom { display: flex; flex-direction: column; gap: 6px; }
 .lib-verse-custom textarea { width: 100%; font: inherit; font-size: 0.92rem; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: inherit; }
 .text-meaning { margin-top: 6px; line-height: 1.5; }
+.locked-note { margin-top: 4px; }
+textarea.locked { background: var(--surface-2); color: var(--muted); cursor: not-allowed; }
 
 /* reports dashboard */
 .reports-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; }
