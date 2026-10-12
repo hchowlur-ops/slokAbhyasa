@@ -296,6 +296,7 @@
               <div class="rec-status">
                 <div class="rec-label" id="practice-rec-label">Select a sloka first</div>
                 <div class="mono rec-timer" id="practice-timer">0:00.0</div>
+                <div class="muted small rec-count" id="practice-rec-count"></div>
                 <div class="muted small rec-note" id="practice-rec-note" hidden></div>
               </div>
               <div class="clip" id="practice-clip" title="Too loud – the sound is clipping">CLIP</div>
@@ -573,7 +574,7 @@
             <div class="field-label">How many slokas</div>
             <label class="toggle"><input type="radio" name="quiz-mode" value="single" /><span>One sloka</span></label>
             <label class="toggle"><input type="radio" name="quiz-mode" value="multiple" checked /><span>Several slokas, at most</span>
-              <input type="number" class="num" id="quiz-max" min="2" max="200" value="10" aria-label="Maximum number of slokas" /></label>
+              <input type="number" class="num" id="quiz-max" min="2" max="22" value="10" aria-label="Maximum number of slokas" /></label>
             <div class="grow"></div>
             <button class="btn btn-sm" id="quiz-random" type="button" title="Picks from the folders that are open below (from the whole library when none is open), spread across them">Pick at random</button>
             <button class="btn btn-sm btn-primary" id="quiz-start" type="button" disabled>Start quiz…</button>

@@ -10,7 +10,8 @@ import { drawWaveform, drawLiveWave, ComparisonChart } from './visualizer.js';
 import { serializeFeatures, deserializeFeatures, isValidFeatures } from './dsp/features.js';
 import { MISMATCH_CONTRAST, confirmByWords } from './dsp/compare.js';
 import { QUIZ_CATEGORIES, LEGACY_CATEGORIES, DEFAULT_QUIZ_CATEGORIES, DEFAULT_TOLERANCE, CATEGORY_WEIGHTS, categoryLabel, normalizeWeights, itemScores, attemptSummary, scoreFor, normalizeCategories, normalizeTolerance, recordTolerance, withinTolerance, itemVerdict, correctness, pickBaselines, overallScore, attemptOverall, gradeOf, modernCategories } from './quizscore.js';
-import { comparePhonology, ERROR_LABEL } from './phon.js';
+import { comparePhonology, ERROR_LABEL, syllabify } from './phon.js';
+import { SyllableCounter } from './dsp/syllables.js';
 import { mixToMono } from './dsp/resample.js';
 import { trimSilence } from './dsp/trim.js';
 import { Transcriber, STT_LANGUAGES, STT_LANGUAGE_CODES, STT_TIERS, sttLanguageLabel, sttLanguageTag, sttTierLabel, isStopped } from './stt.js';
@@ -1270,6 +1271,11 @@ let practice = {
   teach: false, // Teach: one sloka at a time, Play then Listen
   session: null, // the stored record of this take (Self Evaluation / Teach), see saveSession()
 };
+// How many slokas one take may hold (Self Evaluation, a quiz): a chapter's worth. The take
+// stays in memory whole, and every sloka's stretch is transcribed from it, so the number is
+// a matter of the machine's memory and patience; a heuristic from navigator.deviceMemory /
+// hardwareConcurrency may replace the constant.
+const MAX_SLOKAS_PER_TAKE = 22;
 let practiceRecorder = null;
 function getPracticeRecorder() {
   if (!practiceRecorder) {
@@ -1762,6 +1768,7 @@ function createSlokaPicker(host, { mode = 'multi', max = null, onChange, onActiv
 
 const practicePicker = createSlokaPicker($('#practice-picker'), {
   mode: 'multi',
+  max: MAX_SLOKAS_PER_TAKE,
   openKey: 'tutor-picker-open',
   onChange: (ids, activated) => setSelection(ids, activated),
   onActivate: (id) => setSelection(practice.selection.includes(id) ? practice.selection : [...practice.selection, id], id),
@@ -1840,6 +1847,10 @@ function updateRecLabel() {
 // The ticked slokas changed. Audio and finished reports of slokas that stay ticked are
 // kept, and a take that is already there is compared with any sloka that was added.
 async function setSelection(ids, activate) {
+  if (!practice.quiz && !practice.teach && ids.length > MAX_SLOKAS_PER_TAKE) {
+    toast(`One take holds ${MAX_SLOKAS_PER_TAKE} slokas at most; the first ${MAX_SLOKAS_PER_TAKE} are kept.`, 'info', 6000);
+    ids = ids.slice(0, MAX_SLOKAS_PER_TAKE);
+  }
   const order = (await getLibrary()).map((r) => r.id);
   practice.selection = order.filter((id) => ids.includes(id));
   if (!practice.quiz && !practice.teach) { try { localStorage.setItem(SELECTION_KEY, JSON.stringify(practice.selection)); } catch { /* ignore */ } }
@@ -1962,6 +1973,7 @@ $('#practice-rec').addEventListener('click', async () => {
     if (recSegments && recSegments.parts.length) markSegment(slokaTextItems()[currentTextIndex(slokaTextItems())]);
     const segments = recSegments;
     recSegments = null;
+    stopEar();
     const raw = await rec.stop();
     practiceUI.setRecording(false);
     setListBusy(false);
@@ -1989,6 +2001,7 @@ $('#practice-rec').addEventListener('click', async () => {
       recSegments = { from: 0, parts: [] };
       recTextIndex = currentTextIndex(slokaTextItems());
       recNote('');
+      startEar(rec); // several slokas: each is heard to its end and sent on by itself
       if ($('#practice-playalong').checked && $('#practice-headphones').checked) {
         basePlayer.seek(0);
         basePlayer.play();
@@ -2500,6 +2513,7 @@ function stepText(delta) {
     markSegment(items[i]);
     if (practice.quiz) quizTextIndex = j; else recTextIndex = j;
     renderSlokaTexts();
+    earPageTurned();
     return;
   }
   if (practice.quiz && !practice.take) { quizTextIndex = j; renderSlokaTexts(); return; }
@@ -2514,13 +2528,13 @@ function stepText(delta) {
 // the words of the recorded stretch that overlaps it well enough (transcribeTakePart), and is
 // transcribed afresh otherwise.
 let recSegments = null; // { from, parts: [{ from, to, name, promise, transcript }] } in recording time
-function markSegment(item) {
+function markSegment(item, toSec = null) {
   const rec = practiceRecorder;
   if (!rec || !rec.active || !recSegments) return;
   if (!sttSettings.auto && !practice.quiz) return; // transcription only when asked for
   const snap = rec.snapshot();
   const from = recSegments.from;
-  const to = snap.duration;
+  const to = toSec != null ? Math.max(from, Math.min(snap.duration, toSec)) : snap.duration;
   recSegments.from = to;
   if (to - from < 2) return; // a page turned back and forth: nothing to hear
   const sr = snap.sampleRate;
@@ -2538,6 +2552,71 @@ function recNote(text) {
   const el = $('#practice-rec-note');
   el.textContent = text;
   setHidden(el, !text);
+}
+
+// ---------- the ear: a sloka heard to its end, in a take of several ----------
+// While several slokas are recorded in one take, the app counts the akṣaras it hears (the
+// nuclei of the loudness envelope, dsp/syllables.js) against the akṣaras of the sloka in
+// view — its text, speaker line included — and once they are all but in and a pause
+// follows, the sloka is complete: its stretch, up to where the pause began, goes to the
+// speech worker at once as a background job, and the panel turns to the next sloka by
+// itself, exactly what Previous / Next did by hand. The worker takes the queued stretches
+// one after another, in the background, until none is left, so the words of every sloka
+// but the last are ready when the take stops. The count is a guide, not a judge: the
+// comparison afterwards finds each sloka in the take on its own (segmentFor).
+let liveEar = null;
+function expectedAksharas(item) {
+  const base = item && practice.bases.get(item.id);
+  const text = base ? slokaTextOf(base) : '';
+  return text ? syllabify(text).length : null;
+}
+function startEar(rec) {
+  stopEar();
+  const items = slokaTextItems();
+  if (items.length < 2 || !(sttSettings.auto || practice.quiz)) return;
+  const sr = rec.ctx.sampleRate;
+  const ear = { rec, counter: new SyllableCounter(sr), read: 0, samplesRead: 0, item: null, expected: null, done: false, listener: null };
+  const begin = () => { const i = currentTextIndex(slokaTextItems()); ear.item = slokaTextItems()[i] || null; ear.expected = expectedAksharas(ear.item); ear.counter.reset(); ear.done = false; };
+  ear.begin = begin;
+  begin();
+  ear.listener = () => {
+    if (!rec.active || liveEar !== ear) return;
+    for (; ear.read < rec.chunks.length; ear.read++) { ear.counter.push(rec.chunks[ear.read]); ear.samplesRead += rec.chunks[ear.read].length; }
+    const st = ear.counter.state_();
+    renderEar(ear, st);
+    if (ear.done) return;
+    const sung = st.elapsedMs - st.pauseMs; // sound heard before the pause, in this sloka
+    if (sung < 3000) return;
+    const exp = ear.expected;
+    const complete = exp
+      ? (st.count >= Math.round(exp * 0.85) && st.pauseMs >= 600) || (st.count >= Math.round(exp * 0.5) && st.pauseMs >= 1500) || (st.count >= Math.round(exp * 1.3) && st.pauseMs >= 400)
+      : sung >= 4000 && st.pauseMs >= 1500;
+    if (!complete) return;
+    const now = slokaTextItems();
+    const i = currentTextIndex(now);
+    markSegment(now[i], ear.samplesRead / sr - st.pauseMs / 1000 + 0.25); // the stretch ends where the pause began
+    if (i + 1 < now.length) {
+      if (practice.quiz) quizTextIndex = i + 1; else recTextIndex = i + 1;
+      renderSlokaTexts();
+      begin();
+    } else {
+      ear.done = true;
+      renderEar(ear, st);
+    }
+  };
+  rec.addEventListener('level', ear.listener);
+  liveEar = ear;
+}
+function stopEar() {
+  if (liveEar) { liveEar.rec.removeEventListener('level', liveEar.listener); liveEar = null; }
+  $('#practice-rec-count').textContent = '';
+}
+// a page turned by hand while the ear listens: the count starts again for the sloka now in view
+function earPageTurned() { if (liveEar) liveEar.begin(); }
+function renderEar(ear, st) {
+  const el = $('#practice-rec-count');
+  if (ear.done) { el.textContent = `every sloka heard · tap to stop`; return; }
+  el.textContent = ear.expected ? `${st.count} of ${ear.expected} akṣaras` : `${st.count} akṣaras`;
 }
 // The recorded stretch whose words serve a report's stretch of the take: the best overlap,
 // when it covers it well (the page was turned near the sloka's end).
@@ -3144,7 +3223,7 @@ let quizPicks = []; // ids of the slokas chosen for the next quiz, in the order 
 
 function quizSetup() {
   const mode = ($('input[name="quiz-mode"]:checked') || {}).value === 'single' ? 'single' : 'multiple';
-  const max = Math.max(2, Math.min(200, Math.round(Number($('#quiz-max').value) || 10)));
+  const max = Math.max(2, Math.min(MAX_SLOKAS_PER_TAKE, Math.round(Number($('#quiz-max').value) || 10)));
   return { mode, max };
 }
 function saveQuizSetup() { try { localStorage.setItem(QUIZ_SETUP_KEY, JSON.stringify(quizSetup())); } catch { /* ignore */ } }
@@ -3156,7 +3235,7 @@ function quizCandidates() {
 }
 const quizPicker = createSlokaPicker($('#quiz-picker'), {
   mode: 'multi',
-  max: 10,
+  max: MAX_SLOKAS_PER_TAKE,
   openKey: 'tutor-quiz-picker-open',
   pickLabel: 'Include',
   onChange: (ids) => { quizPicks = ids; renderQuizSlokas(); },

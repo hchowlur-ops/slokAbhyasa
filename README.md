@@ -231,7 +231,18 @@ during the take, and each turn sends the stretch recorded since the last one —
 that was in view — to the speech worker at once, as a background job that touches neither
 the recording nor the page ("Listening to CH12-03 in the background…" under the timer).
 Afterwards each report's stretch of the take takes those words when the recorded stretch
-overlaps it well enough, so the words are there the moment the results open. The speech
+overlaps it well enough, so the words are there the moment the results open. You need not
+turn the pages at all: while several slokas are recorded the app **listens for the end of
+each sloka** by itself — it counts the akṣaras it hears (the syllable nuclei of the
+loudness envelope) against the akṣaras of the sloka in view, and once they are all but in
+and a pause follows, that sloka's stretch goes to the speech worker and the panel turns to
+the next sloka ("24 of 33 akṣaras" under the timer shows the count as it grows, "every
+sloka heard · tap to stop" when the last is in). The queued stretches are transcribed one
+after another in the background until none is left, so the words of every sloka but the
+last are ready when the take stops. The count is a guide, not a judge: the comparison
+afterwards finds each sloka in the take on its own, and a page turned by hand still works.
+One take holds **22 slokas at most** — a chapter's worth; the number stands in for a
+heuristic from the machine's memory and cores that may replace it. The speech
 model is loaded in its worker as soon as a sloka is ready to be recited, so neither the
 recording nor the page feels the loading — the worker is its own thread, and the recording
 runs on the audio thread. Tick another

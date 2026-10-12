@@ -755,6 +755,9 @@ canvas { display: block; }
 .lib-actions .btn:not(.btn-primary):hover { background: var(--surface-2); color: var(--text); }
 .lib-actions [data-act="delete"]:hover { color: var(--danger); }
 
+.rec-count { margin-top: 2px; min-height: 1.2em; }
+.rec-count:empty { display: none; }
+
 /* ---------- the metadata popup (Library, right-click) ---------- */
 .meta-popup {
   position: fixed; z-index: 60; width: min(420px, 92vw); max-height: 72vh; display: flex; flex-direction: column;
