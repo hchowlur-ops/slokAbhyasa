@@ -1,11 +1,11 @@
 {
  "schemaVersion": "1.0.0",
  "dataset": "gita",
- "version": "2026.10.11",
+ "version": "2026.10.12",
  "source": {
   "name": "vedicscriptures/vedicscriptures.github.io",
   "url": "https://github.com/vedicscriptures/vedicscriptures.github.io",
-  "retrieved": "2026-10-11T16:03:23.970Z",
+  "retrieved": "2026-10-12T16:12:52.527Z",
   "files": {
    "chapters": "chapters/index.json",
    "verses": "slok/<chapter>/<verse>/index.json"
@@ -5951,7 +5951,7 @@
    },
    "deva": [
     "यज्ज्ञात्वा न पुनर्मोहमेवं यास्यसि पाण्डव ।",
-    "येन भूतान्यशेषेण द्रक्ष्यस्यात्मन्यथो मयि (var अशेषाणि) ॥"
+    "येन भूतान्यशेषेण द्रक्ष्यस्यात्मन्यथो मयि ॥"
    ],
    "iast": [
     "yajjñātvā na punarmohamevaṃ yāsyasi pāṇḍava |",
@@ -9511,7 +9511,7 @@
    },
    "deva": [
     "तस्मात्सर्वेषु कालेषु मामनुस्मर युध्य च ।",
-    "मय्यर्पितमनोबुद्धिर्मामेवैष्यस्यसंशयः (orसंशयम्) ॥"
+    "मय्यर्पितमनोबुद्धिर्मामेवैष्यस्यसंशयः ॥"
    ],
    "iast": [
     "tasmātsarveṣu kāleṣu māmanusmara yudhya ca |",

@@ -211,6 +211,58 @@ function foldVisargaEchoes(R, H, pairs) {
   return { pairs: out, folded };
 }
 
+// Visarga sandhi in recitation, as the śikṣā rules have it: before क / ख the visarga is the
+// jihvāmūlīya and before प / फ the upadhmānīya — a half-aspirate that a listener (Whisper
+// among them) hears as the stop aspirated, with nothing before it ("tapaḥ kuru" as "tapa
+// khuru", "gamaḥ pārtha" as "gama phārtha"); before स / श / ष it is that sibilant doubled
+// ("rāmaḥ sakhaḥ" as "rāmassakhaḥ"); before क्ष it is sounded in full; and at the end of a
+// pāda, where a pause follows, it is sounded in full too. Where the text's akṣara carries ः
+// before such a sound and the hearing has the sandhi form instead — the akṣara without
+// ḥ, the next one opening with the aspirated stop (or the plain one) or the doubled
+// sibilant — the heard akṣaras are read as the text's: nothing was dropped or changed.
+// A hearing that keeps the ḥ and aspirates the stop is read the same way. Both akṣaras
+// must have been heard, side by side. Returns how many were read this way.
+function foldVisargaSandhi(R, H, pairs, isPadaEnd) {
+  let folded = 0;
+  const byRef = new Map();
+  pairs.forEach((p, k) => { if (p.r >= 0) byRef.set(p.r, k); });
+  const retext = (a) => { a.text = aksharaText(a); return a; };
+  for (let r = 0; r + 1 < R.length; r++) {
+    const a = R[r];
+    if (!a.marks.includes('ḥ') || isPadaEnd(r)) continue;
+    const next = R[r + 1];
+    const c0 = next.onset[0];
+    if (!c0) continue;
+    let kind = null;
+    if (c0.kind === 'stop' && !c0.voiced && (c0.place === 'velar' || c0.place === 'labial')) kind = c0.ph === 'k' && next.onset[1] && next.onset[1].ph === 'ṣ' ? null : 'stop'; // क्ष: the visarga stays
+    else if (c0.kind === 'sibilant') kind = 'sibilant';
+    if (!kind) continue;
+    const k = byRef.get(r);
+    const k2 = byRef.get(r + 1);
+    if (k == null || k2 == null) continue;
+    const ha = pairs[k].h;
+    const hb = pairs[k2].h;
+    if (ha < 0 || hb < 0 || hb !== ha + 1) continue;
+    const x = H[ha];
+    const y = H[hb];
+    const y0 = y.onset[0];
+    if (!y0) continue;
+    if (x.marks.includes('ḥ')) {
+      // the visarga was heard; the stop aspirated after it is the same half-aspirate
+      if (kind === 'stop' && y0.kind === 'stop' && !y0.voiced && y0.place === c0.place && y0.asp && !c0.asp) { H[hb] = retext({ ...y, onset: [{ ...c0 }, ...y.onset.slice(1)] }); folded++; }
+      continue;
+    }
+    let onset = null;
+    if (kind === 'stop' && y0.kind === 'stop' && !y0.voiced && y0.place === c0.place) onset = [{ ...c0 }, ...y.onset.slice(1)]; // kh for k, ph (f) for p — or the plain stop
+    else if (kind === 'sibilant' && y0.kind === 'sibilant') onset = [{ ...c0 }, ...y.onset.slice(y.onset[1] && y.onset[1].kind === 'sibilant' && y.onset[1].ph === y0.ph ? 2 : 1)]; // the sibilant, doubled or not
+    if (!onset) continue;
+    H[ha] = withVisarga(x);
+    H[hb] = retext({ ...y, onset });
+    folded++;
+  }
+  return folded;
+}
+
 export const ERROR_LABEL = {
   aspiration: 'aspiration (k/kh, g/gh…)', voicing: 'voicing (k/g, t/d…)', place: 'place of articulation (t/ṭ, s/ś/ṣ…)', nasality: 'nasal (anusvāra, n/ṇ/ṅ)',
   visarga: 'visarga (ḥ)', length: 'double consonant', vowel: 'vowel', vowelLength: 'vowel length (a/ā, i/ī, u/ū)', missing: 'sound missing', added: 'sound added', other: 'other sound',
@@ -229,6 +281,11 @@ export function comparePhonology(refText, heardText, { perPada = null, offset = 
   const H = syllabify(heardText);
   if (!R.length) return null;
   const { pairs, folded } = foldVisargaEchoes(R, H, alignAksharas(R, H));
+  // where a pāda ends: by the metre from `offset`, else at the text's line ends
+  const lineEnds = new Set();
+  if (!perPada) { let acc = 0; for (const line of String(refText || '').split(/\r?\n/)) { const n = syllabify(line).length; if (n) { acc += n; lineEnds.add(acc - 1); } } }
+  const isPadaEnd = (r) => (perPada ? r >= offset && (r - offset + 1) % perPada === 0 : lineEnds.has(r));
+  const sandhi = foldVisargaSandhi(R, H, pairs, isPadaEnd);
   const refCount = R.length - folded.ref;
   const heardCount = H.length - folded.heard;
   let missing = 0; let added = 0; let unrelated = 0;
@@ -265,7 +322,7 @@ export function comparePhonology(refText, heardText, { perPada = null, offset = 
     syllables: pct(1 - (missing + added + unrelated) / refCount),
     phonemes: n ? pct(credit / n) : null,
     vowels: vowelsCompared ? pct(1 - vowelSlips / vowelsCompared) : null,
-    counts: { ref: refCount, heard: heardCount, missing, added, replaced: unrelated, phonemesCompared: n, vowelsCompared, vowelSlips, visargaEchoes: folded.heard + folded.ref },
+    counts: { ref: refCount, heard: heardCount, missing, added, replaced: unrelated, phonemesCompared: n, vowelsCompared, vowelSlips, visargaEchoes: folded.heard + folded.ref, visargaSandhi: sandhi },
     errors,
     examples,
     aligned,

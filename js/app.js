@@ -10,11 +10,13 @@ import { drawWaveform, drawLiveWave, ComparisonChart } from './visualizer.js';
 import { serializeFeatures, deserializeFeatures, isValidFeatures } from './dsp/features.js';
 import { MISMATCH_CONTRAST, confirmByWords } from './dsp/compare.js';
 import { QUIZ_CATEGORIES, LEGACY_CATEGORIES, DEFAULT_QUIZ_CATEGORIES, DEFAULT_TOLERANCE, CATEGORY_WEIGHTS, categoryLabel, normalizeWeights, itemScores, attemptSummary, scoreFor, normalizeCategories, normalizeTolerance, recordTolerance, withinTolerance, itemVerdict, correctness, pickBaselines, overallScore, attemptOverall, gradeOf, modernCategories } from './quizscore.js';
-import { comparePhonology, ERROR_LABEL } from './phon.js';
+import { comparePhonology, ERROR_LABEL, syllabify } from './phon.js';
+import { SyllableCounter } from './dsp/syllables.js';
 import { mixToMono } from './dsp/resample.js';
 import { trimSilence } from './dsp/trim.js';
 import { Transcriber, STT_LANGUAGES, STT_LANGUAGE_CODES, STT_TIERS, sttLanguageLabel, sttLanguageTag, sttTierLabel, isStopped } from './stt.js';
 import { segments as scriptSegments, wordSegments, toDeva, weightMark } from './lipi.js';
+import { scriptToLatin, latinToScript } from './translit.js';
 import { normalizeStore, putInStore, pickTranscript, availableLanguages } from './transcripts.js';
 import { transliterateTranscript } from './translit.js';
 import { identifyChandas, layoutSloka, padaBreaks, linesFor, uvacaOffset, chandasLabel, chandasPattern, gitaVerse, gitaFamily } from './chandas.js';
@@ -599,7 +601,7 @@ function createTranscriptPanel(host, { editable = false, play = null, onChange =
     <div class="progress" hidden><div class="progress-bar"><div class="progress-fill"></div></div><span class="muted small">Starting…</span><button class="btn btn-sm btn-ghost progress-stop" type="button" hidden>Stop</button></div>
     <div class="stt-text" data-role="text" hidden></div>
     <textarea class="stt-edit" data-role="edit" rows="4" hidden spellcheck="false"></textarea>
-    <div class="muted small" data-role="edit-hint" hidden>One line per phrase. Keep the same number of lines to keep the click-to-play timings. The text is also saved as a .txt file next to the recording.</div>
+    <div class="muted small" data-role="edit-hint" hidden>The text is shown in romanised Sanskrit (IAST) to edit — type it the same way: ā ī ū ṛ for the long vowels (or aa ii uu), ś ṣ (or sh), ṭ ḍ ṇ, ṃ for the anusvāra, ḥ for the visarga, ’ for the avagraha, "ch" for छ and "c" for च. It is written in Devanagari when you save, and Kannada, Telugu and IAST follow from that. One line per phrase; keep the same number of lines to keep the click-to-play timings.</div>
     <div class="muted small" data-role="status">No transcript yet.</div>`;
   $('.tp-title', host).textContent = title;
   buildSttControls($('.stt-controls', host));
@@ -645,6 +647,10 @@ function createTranscriptPanel(host, { editable = false, play = null, onChange =
   };
   // Editing works line by line: each timed phrase is one line, so corrections keep their timings.
   const editText = (t) => (t.chunks && t.chunks.length ? t.chunks.map((c) => c.text).join('\n') : t.text);
+  // The editor shows romanised Sanskrit (IAST), letter for letter, since few have an Indic
+  // keyboard; what is saved is the Devanagari read back from it.
+  const toEditor = (deva) => scriptToLatin(deva);
+  const fromEditor = (latin) => latinToScript(latin, 'Deva', { reading: 'exact' });
   const applyEdit = (t, value) => {
     const lines = value.split('\n').map((s) => s.trim()).filter(Boolean);
     const keepTimings = t.chunks && t.chunks.length && lines.length === t.chunks.length;
@@ -731,7 +737,7 @@ function createTranscriptPanel(host, { editable = false, play = null, onChange =
   runBtn.addEventListener('click', () => panel.transcribe());
   sttLanguageListeners.add(() => render()); // the text follows the script it is shown in
   editBtn.addEventListener('click', () => {
-    editEl.value = editText(transcript);
+    editEl.value = toEditor(editText(transcript));
     editEl.rows = Math.min(12, Math.max(3, editEl.value.split('\n').length + 1));
     setHidden(editEl, false);
     render();
@@ -739,7 +745,7 @@ function createTranscriptPanel(host, { editable = false, play = null, onChange =
   });
   cancelBtn.addEventListener('click', () => { setHidden(editEl, true); render(); });
   saveBtn.addEventListener('click', async () => {
-    const value = editEl.value;
+    const value = fromEditor(editEl.value);
     setHidden(editEl, true);
     if (transcript && value.trim() !== editText(transcript).trim()) {
       transcript = applyEdit(transcript, value);
@@ -840,7 +846,8 @@ const learnerListeners = new Set(); // re-rendered when the learner or the peopl
 async function renderLearnerSelect() {
   const profiles = await getProfiles();
   if (learnerId && !profileById(learnerId)) learnerId = '';
-  fillSelect($('#learner-select'), [{ value: '', label: profiles.length ? 'Anyone · adult defaults' : 'No one yet · adult defaults' }, ...profiles.map((p) => ({ value: p.id, label: profileLabel(p) }))], learnerId);
+  // names alone: the voice and age behind a name are the People dialog's business
+  fillSelect($('#learner-select'), [{ value: '', label: profiles.length ? 'Anyone' : 'No one yet' }, ...profiles.map((p) => ({ value: p.id, label: p.name }))], learnerId);
   for (const fn of learnerListeners) fn();
 }
 $('#learner-select').addEventListener('change', (e) => {
@@ -920,7 +927,7 @@ function buildMetaFields(host, { compact = false } = {}) {
   host.innerHTML = `
     <label class="field"><span>Recorded by</span><select data-f="speaker"></select></label>
     <label class="field"><span>How it is judged</span><select data-f="style"></select></label>
-    <label class="field"><span>Tradition or school <em class="muted">(optional)</em></span><input type="text" data-f="tradition" maxlength="80" placeholder="e.g. Śṛṅgeri" autocomplete="off" /></label>
+    <label class="field" title="The lineage whose way of reciting this recording follows — a maṭha, a guru or a school (Śṛṅgeri, Kāñcī, Uḍupi, a teacher's name). Kept with the recording as a note for whoever learns from it; it does not change how anything is scored."><span>Tradition or school <em class="muted">(optional)</em></span><input type="text" data-f="tradition" maxlength="80" placeholder="e.g. Śṛṅgeri, Kāñcī, a guru's name" autocomplete="off" /></label>
     <label class="field wide"><span>Text of the sloka <em class="muted">(optional · the words as they should be recited; used to judge pronunciation)</em></span><textarea data-f="text" rows="${compact ? 3 : 4}" spellcheck="false" placeholder="Type or paste the text, one pāda or line per row…"></textarea></label>
     <span class="derived" data-f="derived"></span>`;
   const speakerSel = $('[data-f="speaker"]', host);
@@ -1264,6 +1271,11 @@ let practice = {
   teach: false, // Teach: one sloka at a time, Play then Listen
   session: null, // the stored record of this take (Self Evaluation / Teach), see saveSession()
 };
+// How many slokas one take may hold (Self Evaluation, a quiz): a chapter's worth. The take
+// stays in memory whole, and every sloka's stretch is transcribed from it, so the number is
+// a matter of the machine's memory and patience; a heuristic from navigator.deviceMemory /
+// hardwareConcurrency may replace the constant.
+const MAX_SLOKAS_PER_TAKE = 22;
 let practiceRecorder = null;
 function getPracticeRecorder() {
   if (!practiceRecorder) {
@@ -1756,6 +1768,7 @@ function createSlokaPicker(host, { mode = 'multi', max = null, onChange, onActiv
 
 const practicePicker = createSlokaPicker($('#practice-picker'), {
   mode: 'multi',
+  max: MAX_SLOKAS_PER_TAKE,
   openKey: 'tutor-picker-open',
   onChange: (ids, activated) => setSelection(ids, activated),
   onActivate: (id) => setSelection(practice.selection.includes(id) ? practice.selection : [...practice.selection, id], id),
@@ -1834,6 +1847,10 @@ function updateRecLabel() {
 // The ticked slokas changed. Audio and finished reports of slokas that stay ticked are
 // kept, and a take that is already there is compared with any sloka that was added.
 async function setSelection(ids, activate) {
+  if (!practice.quiz && !practice.teach && ids.length > MAX_SLOKAS_PER_TAKE) {
+    toast(`One take holds ${MAX_SLOKAS_PER_TAKE} slokas at most; the first ${MAX_SLOKAS_PER_TAKE} are kept.`, 'info', 6000);
+    ids = ids.slice(0, MAX_SLOKAS_PER_TAKE);
+  }
   const order = (await getLibrary()).map((r) => r.id);
   practice.selection = order.filter((id) => ids.includes(id));
   if (!practice.quiz && !practice.teach) { try { localStorage.setItem(SELECTION_KEY, JSON.stringify(practice.selection)); } catch { /* ignore */ } }
@@ -1956,6 +1973,7 @@ $('#practice-rec').addEventListener('click', async () => {
     if (recSegments && recSegments.parts.length) markSegment(slokaTextItems()[currentTextIndex(slokaTextItems())]);
     const segments = recSegments;
     recSegments = null;
+    stopEar();
     const raw = await rec.stop();
     practiceUI.setRecording(false);
     setListBusy(false);
@@ -1983,6 +2001,7 @@ $('#practice-rec').addEventListener('click', async () => {
       recSegments = { from: 0, parts: [] };
       recTextIndex = currentTextIndex(slokaTextItems());
       recNote('');
+      startEar(rec); // several slokas: each is heard to its end and sent on by itself
       if ($('#practice-playalong').checked && $('#practice-headphones').checked) {
         basePlayer.seek(0);
         basePlayer.play();
@@ -2259,11 +2278,7 @@ function renderReportBrowser() {
   $('#reports-title').textContent = `Reports · ${ids.length} slokas · one at a time`;
   $('#reports-fold-sub').textContent = `${ids.length} rows · where each sloka was found in your recording, and its conflicts`;
   $('#report-pos').textContent = idx >= 0 ? `${idx + 1} / ${ids.length}` : '';
-  $('#report-name').textContent = practice.activeId ? nameOf(practice.activeId) : '';
-  const chip = $('#report-flag');
-  const flag = practice.activeId ? reportFlag(practice.activeId) : null;
-  setHidden(chip, !flag);
-  if (flag) { chip.textContent = flag.text; chip.className = `report-flag ${flag.level}`; }
+  $('#report-name').textContent = practice.activeId ? nameOf(practice.activeId) : ''; // the name alone: the verdict is the ring's and the rows' to tell
 }
 // The preview above the results changes height with the sloka, so keep the reports in view.
 async function openReport(id) {
@@ -2498,6 +2513,7 @@ function stepText(delta) {
     markSegment(items[i]);
     if (practice.quiz) quizTextIndex = j; else recTextIndex = j;
     renderSlokaTexts();
+    earPageTurned();
     return;
   }
   if (practice.quiz && !practice.take) { quizTextIndex = j; renderSlokaTexts(); return; }
@@ -2512,13 +2528,13 @@ function stepText(delta) {
 // the words of the recorded stretch that overlaps it well enough (transcribeTakePart), and is
 // transcribed afresh otherwise.
 let recSegments = null; // { from, parts: [{ from, to, name, promise, transcript }] } in recording time
-function markSegment(item) {
+function markSegment(item, toSec = null) {
   const rec = practiceRecorder;
   if (!rec || !rec.active || !recSegments) return;
   if (!sttSettings.auto && !practice.quiz) return; // transcription only when asked for
   const snap = rec.snapshot();
   const from = recSegments.from;
-  const to = snap.duration;
+  const to = toSec != null ? Math.max(from, Math.min(snap.duration, toSec)) : snap.duration;
   recSegments.from = to;
   if (to - from < 2) return; // a page turned back and forth: nothing to hear
   const sr = snap.sampleRate;
@@ -2536,6 +2552,71 @@ function recNote(text) {
   const el = $('#practice-rec-note');
   el.textContent = text;
   setHidden(el, !text);
+}
+
+// ---------- the ear: a sloka heard to its end, in a take of several ----------
+// While several slokas are recorded in one take, the app counts the akṣaras it hears (the
+// nuclei of the loudness envelope, dsp/syllables.js) against the akṣaras of the sloka in
+// view — its text, speaker line included — and once they are all but in and a pause
+// follows, the sloka is complete: its stretch, up to where the pause began, goes to the
+// speech worker at once as a background job, and the panel turns to the next sloka by
+// itself, exactly what Previous / Next did by hand. The worker takes the queued stretches
+// one after another, in the background, until none is left, so the words of every sloka
+// but the last are ready when the take stops. The count is a guide, not a judge: the
+// comparison afterwards finds each sloka in the take on its own (segmentFor).
+let liveEar = null;
+function expectedAksharas(item) {
+  const base = item && practice.bases.get(item.id);
+  const text = base ? slokaTextOf(base) : '';
+  return text ? syllabify(text).length : null;
+}
+function startEar(rec) {
+  stopEar();
+  const items = slokaTextItems();
+  if (items.length < 2 || !(sttSettings.auto || practice.quiz)) return;
+  const sr = rec.ctx.sampleRate;
+  const ear = { rec, counter: new SyllableCounter(sr), read: 0, samplesRead: 0, item: null, expected: null, done: false, listener: null };
+  const begin = () => { const i = currentTextIndex(slokaTextItems()); ear.item = slokaTextItems()[i] || null; ear.expected = expectedAksharas(ear.item); ear.counter.reset(); ear.done = false; };
+  ear.begin = begin;
+  begin();
+  ear.listener = () => {
+    if (!rec.active || liveEar !== ear) return;
+    for (; ear.read < rec.chunks.length; ear.read++) { ear.counter.push(rec.chunks[ear.read]); ear.samplesRead += rec.chunks[ear.read].length; }
+    const st = ear.counter.state_();
+    renderEar(ear, st);
+    if (ear.done) return;
+    const sung = st.elapsedMs - st.pauseMs; // sound heard before the pause, in this sloka
+    if (sung < 3000) return;
+    const exp = ear.expected;
+    const complete = exp
+      ? (st.count >= Math.round(exp * 0.85) && st.pauseMs >= 600) || (st.count >= Math.round(exp * 0.5) && st.pauseMs >= 1500) || (st.count >= Math.round(exp * 1.3) && st.pauseMs >= 400)
+      : sung >= 4000 && st.pauseMs >= 1500;
+    if (!complete) return;
+    const now = slokaTextItems();
+    const i = currentTextIndex(now);
+    markSegment(now[i], ear.samplesRead / sr - st.pauseMs / 1000 + 0.25); // the stretch ends where the pause began
+    if (i + 1 < now.length) {
+      if (practice.quiz) quizTextIndex = i + 1; else recTextIndex = i + 1;
+      renderSlokaTexts();
+      begin();
+    } else {
+      ear.done = true;
+      renderEar(ear, st);
+    }
+  };
+  rec.addEventListener('level', ear.listener);
+  liveEar = ear;
+}
+function stopEar() {
+  if (liveEar) { liveEar.rec.removeEventListener('level', liveEar.listener); liveEar = null; }
+  $('#practice-rec-count').textContent = '';
+}
+// a page turned by hand while the ear listens: the count starts again for the sloka now in view
+function earPageTurned() { if (liveEar) liveEar.begin(); }
+function renderEar(ear, st) {
+  const el = $('#practice-rec-count');
+  if (ear.done) { el.textContent = `every sloka heard · tap to stop`; return; }
+  el.textContent = ear.expected ? `${st.count} of ${ear.expected} akṣaras` : `${st.count} akṣaras`;
 }
 // The recorded stretch whose words serve a report's stretch of the take: the best overlap,
 // when it covers it well (the page was turned near the sloka's end).
@@ -2756,8 +2837,7 @@ function renderQuizScore() {
   $('#quiz-score-name').textContent = quiz.name;
   const status = $('#quiz-score-status');
   const tol = attemptTolerance(a);
-  const who = a.learner && speakerLabel(a.learner);
-  status.textContent = a.error ? `Not saved: ${a.error}` : !a.saved ? 'Scoring…' : `Attempt ${quiz.attempts.length} · saved ${fmtDate(a.at)}${a.sttAvailable ? '' : ' · pronunciation not available'}${who ? ` · judged as ${who}` : ''}`;
+  status.textContent = a.error ? `Not saved: ${a.error}` : !a.saved ? 'Scoring…' : `Attempt ${quiz.attempts.length} · saved ${fmtDate(a.at)}${a.sttAvailable ? '' : ' · pronunciation not available'}`;
   const corr = a.saved || a.error ? correctness(a.items, quiz.categories, tol) : null;
   const pct = corr ? corr.pct : null;
   const tolText = (c) => (tol ? `tolerance ${tol[c]} %` : 'no tolerance');
@@ -3041,11 +3121,9 @@ function renderReportsDetail(a) {
   if (!a) { setHidden(box, true); return; }
   setHidden(box, false);
   $('#reports-detail-title').textContent = a.kind === 'quiz' ? `Quiz · ${a.name} · attempt ${a.attempt}` : `${KIND_LABEL[a.kind]} · ${fmtWhen(a.at)}`;
-  const who = a.learner && speakerLabel(a.learner);
   const subs = [fmtWhen(a.at)];
   if (a.takeDuration) subs.push(`${fmtTime(a.takeDuration)} recording`);
   if (a.kind === 'quiz') subs.push(`scored on ${a.categories.map(catLabel).join(' + ')}`);
-  if (who) subs.push(`judged as ${who}`);
   $('#reports-detail-sub').textContent = subs.join(' · ');
   const listen = $('#reports-detail-listen');
   setHidden(listen, !a.audio);
@@ -3145,7 +3223,7 @@ let quizPicks = []; // ids of the slokas chosen for the next quiz, in the order 
 
 function quizSetup() {
   const mode = ($('input[name="quiz-mode"]:checked') || {}).value === 'single' ? 'single' : 'multiple';
-  const max = Math.max(2, Math.min(200, Math.round(Number($('#quiz-max').value) || 10)));
+  const max = Math.max(2, Math.min(MAX_SLOKAS_PER_TAKE, Math.round(Number($('#quiz-max').value) || 10)));
   return { mode, max };
 }
 function saveQuizSetup() { try { localStorage.setItem(QUIZ_SETUP_KEY, JSON.stringify(quizSetup())); } catch { /* ignore */ } }
@@ -3157,7 +3235,7 @@ function quizCandidates() {
 }
 const quizPicker = createSlokaPicker($('#quiz-picker'), {
   mode: 'multi',
-  max: 10,
+  max: MAX_SLOKAS_PER_TAKE,
   openKey: 'tutor-quiz-picker-open',
   pickLabel: 'Include',
   onChange: (ids) => { quizPicks = ids; renderQuizSlokas(); },
@@ -4102,7 +4180,8 @@ function renderPhonologyReport(host, ph) {
   p.className = 'muted small';
   const parts = Object.entries(ph.errors).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${n} × ${ERROR_LABEL[k]}`);
   const echoes = ph.counts.visargaEchoes ? ` · ${ph.counts.visargaEchoes} visarga${ph.counts.visargaEchoes === 1 ? '' : 's'} Whisper wrote out as "ha", read as ḥ` : '';
-  p.textContent = `${ph.counts.ref} akṣaras in the text, ${ph.counts.heard} heard · ${ph.counts.missing} missing, ${ph.counts.added} added, ${ph.counts.replaced} replaced · ${parts.length ? parts.join(' · ') : 'no slips in the sounds'}${echoes}`;
+  const sandhi = ph.counts.visargaSandhi ? ` · ${ph.counts.visargaSandhi} visarga${ph.counts.visargaSandhi === 1 ? '' : 's'} sounded by the sandhi rule before k / p / s (jihvāmūlīya, upadhmānīya, the sibilant), read as ḥ` : '';
+  p.textContent = `${ph.counts.ref} akṣaras in the text, ${ph.counts.heard} heard · ${ph.counts.missing} missing, ${ph.counts.added} added, ${ph.counts.replaced} replaced · ${parts.length ? parts.join(' · ') : 'no slips in the sounds'}${echoes}${sandhi}`;
   body.appendChild(p);
   if (ph.padas && ph.padas.length > 1) {
     const q = document.createElement('div');

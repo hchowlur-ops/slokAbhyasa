@@ -3,12 +3,12 @@
   "id": "gita",
   "work": "Bhagavad Gītā",
   "name": "Bhagavad Gītā — Vedic Scriptures text",
-  "version": "2026.10.11",
+  "version": "2026.10.12",
   "sourceCommit": "5a3fb5a00b1e92c1f0bd51c31e962d3670b4f4d3",
   "source": {
     "name": "vedicscriptures/vedicscriptures.github.io",
     "url": "https://github.com/vedicscriptures/vedicscriptures.github.io",
-    "retrieved": "2026-10-11T16:03:23.970Z"
+    "retrieved": "2026-10-12T16:12:52.527Z"
   },
   "licence": {
     "id": "MIT",
@@ -22,7 +22,7 @@
     "verses": "verses.json"
   },
   "sha256": {
-    "verses.json": "cc31194ee25c13f474f6ac847cb965e76c9a6b2391f212afec336674e51202e4"
+    "verses.json": "b17f4553824a26a5687569c928cd797f62d395dce0ff966b4093a413502f7c50"
   },
   "translations": {
     "en": {
@@ -41,7 +41,7 @@
   },
   "checks": {
     "countMismatch": [],
-    "metreMismatch": 11,
+    "metreMismatch": 9,
     "overridesNotFound": [],
     "warnings": [
       "1.20: iast has 2 lines, deva 3",

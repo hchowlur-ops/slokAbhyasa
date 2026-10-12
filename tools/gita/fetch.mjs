@@ -125,8 +125,8 @@ async function fetchAll() {
     'Bhagavad Gītā — Sanskrit text (Devanagari and IAST) and chapter names',
     `Source: ${HOMEPAGE} (commit ${ref}), by Vedic Scriptures (Pt. Prashant Tripathi), MIT licence (see LICENSE).`,
     'The Sanskrit verses themselves are an ancient text in the public domain. The source\'s translations and',
-    'commentaries, which are third-party copyrighted works, were not taken. Eight typos were corrected and one',
-    'editorial note removed by SlokAbhyasa\'s fetch tool (tools/gita/overrides.json).',
+    'commentaries, which are third-party copyrighted works, were not taken. Eight typos were corrected and the',
+    'editorial variant notes removed by SlokAbhyasa\'s fetch tool (tools/gita/overrides.json).',
     ...(english ? [
       '',
       `English translation: ${EN_TRANSLATOR}, "The Bhagavad-Gîtâ" (public domain), aligned verse by verse in the`,

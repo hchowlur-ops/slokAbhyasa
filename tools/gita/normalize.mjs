@@ -76,7 +76,7 @@ export function verseRecord(src, { overrides = null, report = null, speakerSoFar
   const id = kind === 'colophon' ? `${chapter}.colophon` : `${chapter}.${verse}`;
   const deva = parseSlok(src.slok);
   const iast = parseIast(src.transliteration);
-  let lines = deva.lines.map((l) => l.replace(/\s*\(or [^)]*\)\s*/g, ' ').replace(/\s+/g, ' ').trim()); // an editorial variant note inside the text
+  let lines = deva.lines.map((l) => l.replace(/\s*\((?:or|var)\b[^)]*\)\s*/g, ' ').replace(/\s+/g, ' ').trim()); // the source's editorial variant notes, "(or …)" / "(var …)"
   lines = applyOverrides(id, lines, overrides, report);
   const who = deva.speakerLine ? speakerOf(deva.speakerLine) : speakerSoFar;
   const family = kind === 'verse' ? gitaFamily(chapter, verse) : null;

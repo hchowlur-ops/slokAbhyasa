@@ -134,3 +134,33 @@ test('comparePhonology reads romanised and Kannada hearings against Devanagari t
   assert.equal(plain.phonemes, 100);
   assert.ok(plain.vowels < 80, `vowels ${plain.vowels}`);
 });
+
+test('visarga sandhi: the half-aspirate before k / p and the doubled sibilant are read as the visarga', () => {
+  const full = (ref, heard, opts) => { const c = comparePhonology(ref, heard, opts); return [c.phonemes, c.syllables, c.errors, c.counts.visargaSandhi]; };
+  // jihvāmūlīya: "tapaḥ kuru" heard as "tapa khuru"
+  assert.deepEqual(full('तपः कुरु', 'तप खुरु'), [100, 100, {}, 1]);
+  // upadhmānīya: "gamaḥ pārtha" heard as "gama phārtha" (f), or with the plain stop
+  assert.deepEqual(full('गमः पार्थ', 'गम फार्थ'), [100, 100, {}, 1]);
+  assert.deepEqual(full('गमः पार्थ', 'गम पार्थ'), [100, 100, {}, 1]);
+  // inside a word: duḥkham heard as dukham; the ḥ kept and the stop aspirated is the same sound
+  assert.deepEqual(full('दुःखम्', 'दुखम्'), [100, 100, {}, 1]);
+  assert.deepEqual(full('तपः कुरु', 'तपः खुरु'), [100, 100, {}, 1]);
+  // before a sibilant: "rāmaḥ sakhaḥ" heard as "rāmassakhaḥ", "rāmaḥ śete" as "rāmaśśete"
+  assert.deepEqual(full('रामः सखः', 'रामस्सखः'), [100, 100, {}, 1]);
+  assert.deepEqual(full('रामः शेते', 'रामश्शेते'), [100, 100, {}, 1]);
+  // before kṣa the visarga is sounded in full: dropping it is a slip
+  const ks = comparePhonology('नमः क्षेत्र', 'नम क्षेत्र');
+  assert.equal(ks.errors.visarga, 1);
+  assert.equal(ks.counts.visargaSandhi, 0);
+  // at the end of a pāda (by the metre) it is sounded in full too: dropping it is a slip
+  const ref = 'धर्मक्षेत्रे कुरुक्षेत्रे समवेता युयुत्सवः कुरुक्षेत्रे';
+  const byMetre = comparePhonology(ref, 'धर्मक्षेत्रे कुरुक्षेत्रे समवेता युयुत्सव खुरुक्षेत्रे', { perPada: 8 });
+  assert.equal(byMetre.counts.visargaSandhi, 0, 'the 16th akṣara ends the second pāda');
+  assert.equal(byMetre.errors.visarga, 1);
+  // … and at a line end without a metre; inside a line it folds
+  const byLine = comparePhonology('समवेता युयुत्सवः\nकुरुक्षेत्रे', 'समवेता युयुत्सव\nखुरुक्षेत्रे');
+  assert.equal(byLine.counts.visargaSandhi, 0);
+  assert.equal(comparePhonology('समवेता युयुत्सवः कुरुक्षेत्रे', 'समवेता युयुत्सव खुरुक्षेत्रे').counts.visargaSandhi, 1);
+  // a visarga that was really dropped before another sound stays a slip
+  assert.equal(comparePhonology('नमः ते', 'नम ते').errors.visarga, 1);
+});

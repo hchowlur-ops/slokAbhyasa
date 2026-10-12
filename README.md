@@ -105,6 +105,10 @@ is remembered.
 
 Silence (and stray clicks) at the start and end of a take are trimmed automatically before
 saving; untick "Trim silence at the start and end" to keep a recording as it was captured.
+The trimmer reads the room from the lead and the tail of the take (before the first and
+after the last loud moment, less the microphone's settling and a breath), so a steady room
+noise is never taken for sound; the cut keeps 120 ms before the first sound and 220 ms after
+the last.
 A short lead-in (about a tenth of a second) and the natural decay at the end are kept.
 
 Saving also analyses the recording once and caches the result next to the WAV, so evaluating
@@ -160,7 +164,7 @@ it", "Recite with the text shown" or "Recite from memory".
 ### Teach
 Learning one sloka at a time. Open a folder and choose one sloka; it appears in the perform
 block, where you can play it as often as you like at any speed. Then press **Listen**,
-recite the sloka back and press it again (it reads "Stop · SlokAbhyasa is listening"
+recite the sloka back and press it again (it reads "Recording… tap to stop"
 meanwhile). SlokAbhyasa compares what it heard with the sloka and shows the same report as
 Self Evaluation: scores, chart, deviations, transcript.
 
@@ -227,7 +231,18 @@ during the take, and each turn sends the stretch recorded since the last one —
 that was in view — to the speech worker at once, as a background job that touches neither
 the recording nor the page ("Listening to CH12-03 in the background…" under the timer).
 Afterwards each report's stretch of the take takes those words when the recorded stretch
-overlaps it well enough, so the words are there the moment the results open. The speech
+overlaps it well enough, so the words are there the moment the results open. You need not
+turn the pages at all: while several slokas are recorded the app **listens for the end of
+each sloka** by itself — it counts the akṣaras it hears (the syllable nuclei of the
+loudness envelope) against the akṣaras of the sloka in view, and once they are all but in
+and a pause follows, that sloka's stretch goes to the speech worker and the panel turns to
+the next sloka ("24 of 33 akṣaras" under the timer shows the count as it grows, "every
+sloka heard · tap to stop" when the last is in). The queued stretches are transcribed one
+after another in the background until none is left, so the words of every sloka but the
+last are ready when the take stops. The count is a guide, not a judge: the comparison
+afterwards finds each sloka in the take on its own, and a page turned by hand still works.
+One take holds **22 slokas at most** — a chapter's worth; the number stands in for a
+heuristic from the machine's memory and cores that may replace it. The speech
 model is loaded in its worker as soon as a sloka is ready to be recited, so neither the
 recording nor the page feels the loading — the worker is its own thread, and the recording
 runs on the audio thread. Tick another
@@ -385,10 +400,14 @@ acoustic analysis, and the app stays usable meanwhile:
   browser's cache.
 
 **Correcting the text.** Recognition of chants is approximate, so the Library's transcript
-panel (and Learn's, before a sloka is saved) has an "Edit" button; the text is edited in
-Devanagari, whatever script it is shown in. The editor shows one line per timed phrase;
-keep the same number of lines and the click-to-play timings survive your corrections.
-Saving writes two files next to the recording in `library/`:
+panel (and Learn's, before a sloka is saved) has an "Edit" button. Since few people have an
+Indic keyboard, the editor shows the text in **romanised Sanskrit (IAST)**, letter for
+letter — ā ī ū ṛ, ś ṣ, ṭ ḍ ṇ, ṃ for the anusvāra, ḥ for the visarga, ’ for the avagraha,
+"ch" for छ and "c" for च — and reads it back into Devanagari when you save (aa, ii, uu and
+sh are accepted as well); Kannada, Telugu and IAST then follow from the Devanagari, as
+everywhere else. The editor shows one line per timed phrase; keep the same number of lines
+and the click-to-play timings survive your corrections. Saving writes two files next to
+the recording in `library/`:
 
 * `<name>.txt` – the plain text, one phrase per line. Edit it in any text editor if you
   prefer; when it is newer than the JSON, SlokAbhyasa uses it the next time the sloka is
@@ -457,7 +476,13 @@ the visarga (full credit, nothing "added"). The fold is guided by the side that 
 ः, so a genuine final -ह (इह, देह, सह) is never folded away and a visarga you really
 dropped is still a slip; the breakdown line says how many were read this way. Likewise a
 nasal before a stop of its own place is the anusvāra (सङ्ग and संग are one word), which
-Whisper always writes as ं. A take that holds more than one sloka — a quiz or
+Whisper always writes as ं. The visarga's own sandhi in recitation is honoured as well: before
+क / ख it is the *jihvāmūlīya* and before प / फ the *upadhmānīya*, half-aspirates that a
+listener hears as the stop aspirated with nothing before it (तपः कुरु recited as "tapa
+khuru", गमः पार्थ as "gama phārtha"), and before स / श / ष it is that sibilant doubled (रामः
+सखः as "rāmassakhaḥ"); where the text has such a visarga and the hearing has the sandhi
+form, the akṣaras are read as the text's. Before क्ष, and at the end of a pāda (by the
+metre, else at a line end), the visarga is sounded in full, so dropping it there is a slip. A take that holds more than one sloka — a quiz or
 an evaluation of several, or a take much longer than the sloka — is transcribed stretch by
 stretch, each stretch being where a sloka was found in it, so a sloka's "Yours" shows that
 sloka's words alone; Whisper loses its way in a long chant, but transcribes a single sloka's
@@ -656,6 +681,7 @@ the browser:
 ```
 node tools/trim-library.mjs            # trim in place
 node tools/trim-library.mjs --dry-run  # only report what would change
+node tools/trim-library.mjs CH01-01    # one sloka, by name (or part of it) or id
 ```
 
 "Transcribe all" queues every sloka that has no transcript yet; the work runs in the
