@@ -198,6 +198,12 @@ slokas you had ticked there.
    the open sloka's report is in — its scores and, when the words are transcribed, its
    transcript; a report opened with Previous / Next whose words are still on their way
    shows it again until they come.
+   * With **several slokas**, the results open on a **scoreboard**: the take's overall in a
+     ring (the mean over the slokas recited) with its grade and a few words, a line saying
+     how many were recited and scored, less than half recited, not recited or still
+     comparing, and **one card per sloka** — its name, score, grade and what went wrong
+     ("restarted pāda 3", "less than half recited · not scored", "not recited") — the open
+     one marked. A card opens that sloka's report below; Previous / Next step through them.
    * The **overall score**, in the middle: a ring with the weighted mean of the seven
      categories (see "What is scored" below — phonemes 30, vowel length 25, syllables 15,
      emphasis 10, pitch contour 10, phrasing 5, timing 5 by default; the **Settings** page
@@ -289,7 +295,15 @@ from the sloka actually heard. And you can always say where you are: **tap a lin
 the text to set the count to that line's first pāda, or tap the count line to count the
 sloka from the top. The learner's pace — their tempo against the teacher's, their pauses
 between pādas and slokas — is folded into the chosen profile take by take, so the ear's
-patience fits them. The queued stretches are transcribed one
+patience fits them. A sloka of which **less than half** was recited — the ear closed
+it, the page was turned, or the take stopped, with its position under half the plan — is
+neither transcribed nor scored: it counts as not recited, its card and row say "less than
+half recited (12 of 33 akṣaras) · not scored", and its recommendation is Needs practice.
+The speech model is loaded the moment slokas are chosen, so it sits ready, idle, until the
+first sloka ends; the live analysis of what follows a pause runs in the analysis worker, so
+the page stays smooth. A **Stop listening** button under the timer, shown while a stretch
+is being heard, halts the background listening for the rest of the take: the sound is still
+compared, and the open report can still ask for its words afterwards. The queued stretches are transcribed one
 after another in the background until none is left, so the words of every sloka but the
 last are ready when the take stops. The count is a guide, not a judge: the comparison
 afterwards finds each sloka in the take on its own, and a page turned by hand still works.

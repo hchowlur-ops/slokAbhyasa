@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { cleanFolder, parseBaselineFilename, nameFromSlug, parseWavHeader } from '../js/libutil.js';
 import { encodeWavBytes } from '../js/wav.js';
-import { itemScores, attemptSummary, scoreFor, normalizeCategories, modernCategories, pickBaselines, shuffle, DEFAULT_QUIZ_CATEGORIES, DEFAULT_TOLERANCE, normalizeTolerance, recordTolerance, withinTolerance, itemVerdict, correctness, overallScore, attemptOverall, gradeOf, CATEGORY_WEIGHTS, QUIZ_CATEGORIES, normalizeWeights, gradeWithSlips, gradeWords, cleanSlips, slipLabel, slipsLabel, anySlips, GRADES, slipPenalty, applySlipPenalty, itemOverall, selfCorrections } from '../js/quizscore.js';
+import { itemScores, attemptSummary, scoreFor, normalizeCategories, modernCategories, pickBaselines, shuffle, DEFAULT_QUIZ_CATEGORIES, DEFAULT_TOLERANCE, normalizeTolerance, recordTolerance, withinTolerance, itemVerdict, correctness, overallScore, attemptOverall, gradeOf, CATEGORY_WEIGHTS, QUIZ_CATEGORIES, normalizeWeights, gradeWithSlips, gradeWords, cleanSlips, slipLabel, slipsLabel, anySlips, GRADES, slipPenalty, applySlipPenalty, itemOverall, selfCorrections, isPartial } from '../js/quizscore.js';
 
 test('cleanFolder: usable names pass, traversal and reserved names do not', () => {
   assert.equal(cleanFolder('Chapter 12'), 'Chapter 12');
@@ -285,4 +285,23 @@ test('self-correction costs 15 % of the sloka\'s score; a stall or dropped akṣ
   assert.equal(slipLabel({ kind: 'falseStart', word: 'ये' }), 'started the sloka again at "ये"');
   assert.deepEqual(cleanSlips([{ kind: 'repeat', word: '  नमः ', by: 'words' }]), [{ kind: 'repeat', word: 'नमः', by: 'words' }]);
   assert.ok(gradeWords('practice', { seed: 'x', slips: [{ kind: 'repeat', word: 'नमः' }] }).text.includes('"नमः" twice'));
+});
+
+test('less than half recited: not scored, counted as not recited, Needs practice', () => {
+  const matched = { match: { ok: true }, scores: { emphasis: 90, pitch: 80, phrasing: 70, timing: 95 } };
+  const full = itemScores(matched, { phonology: { phonemes: 96, vowels: 95, syllables: 97 }, sttAvailable: true });
+  assert.equal(full.matched, true);
+  const part = itemScores(matched, { phonology: null, sttAvailable: true, partial: true });
+  assert.equal(part.matched, false);
+  assert.equal(part.partial, true);
+  assert.equal(part.missing, false);
+  assert.deepEqual([part.phoneme, part.vowel, part.syllable, part.emphasis, part.timing], [0, 0, 0, 0, 0], 'a quiz counts it as not recited');
+  assert.equal(isPartial([{ kind: 'partial', count: 12, expected: 33 }]), true);
+  assert.equal(isPartial([{ kind: 'skipped' }]), true);
+  assert.equal(isPartial([{ kind: 'restart', pada: 2 }]), false);
+  assert.equal(isPartial([{ kind: 'partial', unsure: true }]), false);
+  assert.equal(slipLabel({ kind: 'partial', count: 12, expected: 33 }), 'less than half recited (12 of 33 akṣaras)');
+  assert.equal(gradeWithSlips(0, [{ kind: 'partial' }]).id, 'practice');
+  assert.equal(slipPenalty([{ kind: 'partial' }]), 0, 'nothing to deduct from: it is not scored');
+  assert.deepEqual(cleanSlips([{ kind: 'partial', count: 12, expected: 33, by: 'ear' }]), [{ kind: 'partial', count: 12, expected: 33, by: 'ear' }]);
 });

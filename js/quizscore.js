@@ -66,7 +66,10 @@ export const gradeById = (id) => GRADES.find((g) => g.id === id) || null;
 // a restart, a stall, akṣaras dropped, a sloka skipped, a false start. The recitation is
 // still scored in full, but its grade is Needs practice whatever the score (gradeWithSlips).
 //   { kind, at (s into the take), pada (1-based; 0 the speaker line), count, expected, unsure }
-export const SLIP_KINDS = ['restart', 'stall', 'dropped', 'skipped', 'falseStart', 'repeat'];
+export const SLIP_KINDS = ['restart', 'stall', 'dropped', 'skipped', 'falseStart', 'repeat', 'partial'];
+// A sloka of which less than half was recited (`partial`) is neither transcribed nor
+// scored: it counts as not recited, and its recommendation is Needs practice.
+export const isPartial = (slips) => Array.isArray(slips) && slips.some((s) => s && (s.kind === 'partial' || s.kind === 'skipped') && !s.unsure);
 // The slips that are the learner correcting themself — a word said again, a pāda or the
 // sloka started again — cost 15 % of the sloka's score (slipPenalty); the rest (a stall,
 // akṣaras dropped) are left to the categories they already lower.
@@ -101,6 +104,7 @@ export function slipLabel(s) {
     case 'stall': return `stuck in ${padaName(s.pada)}`;
     case 'dropped': return s.count != null && s.expected != null ? `akṣaras dropped (${s.count} of ${s.expected} heard)` : 'akṣaras dropped';
     case 'skipped': return 'not recited';
+    case 'partial': return s.count != null && s.expected != null ? `less than half recited (${s.count} of ${s.expected} akṣaras)` : 'less than half recited';
     case 'falseStart': return `started the sloka again${atWord(s)}`;
     default: return s.kind;
   }
@@ -298,14 +302,14 @@ export function correctness(items, categories, tolerance = DEFAULT_TOLERANCE) {
 //   result        the comparison result for this sloka, or { error }
 //   phonology     comparePhonology() of the words heard against the sloka's text, or null
 //   sttAvailable  whether speech recognition worked for this attempt at all
-export function itemScores(result, { phonology = null, sttAvailable = false } = {}) {
+export function itemScores(result, { phonology = null, sttAvailable = false, partial = false } = {}) {
   const none = { matched: false, missing: true, phoneme: null, vowel: null, syllable: null, emphasis: null, pitch: null, phrasing: null, timing: null };
   if (!result || result.error || !result.scores) return none;
-  const matched = !!(result.match && result.match.ok);
+  const matched = !!(result.match && result.match.ok) && !partial; // less than half recited: not recited, not scored
   const r = (v) => (v == null ? null : Math.round(Math.max(0, Math.min(100, v))));
   if (!matched) {
     const w = sttAvailable ? 0 : null;
-    return { matched: false, missing: false, phoneme: w, vowel: w, syllable: w, emphasis: 0, pitch: 0, phrasing: 0, timing: 0 };
+    return { matched: false, missing: false, ...(partial ? { partial: true } : {}), phoneme: w, vowel: w, syllable: w, emphasis: 0, pitch: 0, phrasing: 0, timing: 0 };
   }
   const s = result.scores;
   // recited text (weight 0): pitch is a matter of style, shown but never judged

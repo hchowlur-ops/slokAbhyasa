@@ -150,3 +150,16 @@ test('progress: a first Excellent, a new best, a climb, persistence, a streak, a
   assert.ok(pq.all.some((m) => m.kind === 'firstExcellent' && m.quizId === 'q1'));
   assert.equal(pq.quizzes.q1.excellent, 1);
 });
+
+test('a session with a sloka recited under half: the overall over the recited, the grade Needs practice', () => {
+  const s = { id: 's9', kind: 'evaluation', at: '2026-10-13T10:00:00', items: [
+    { id: 'a', name: 'CH12-03', matched: true, missing: false, phoneme: 96, vowel: 95, syllable: 97, emphasis: 90, pitch: 85, phrasing: 80, timing: 90, slips: [] },
+    { id: 'b', name: 'CH12-04', matched: false, missing: false, partial: true, phoneme: 0, vowel: 0, syllable: 0, emphasis: 0, pitch: 0, phrasing: 0, timing: 0, slips: [{ kind: 'partial', count: 15, expected: 32, by: 'ear' }] },
+  ] };
+  const a = assessmentFromSession(s);
+  assert.equal(a.recited, 1);
+  assert.ok(a.overall >= 90, `overall ${a.overall}`);
+  assert.equal(a.grade, 'practice');
+  assert.equal(a.items[1].grade, 'practice');
+  assert.equal(a.items[1].overall, 0);
+});

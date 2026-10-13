@@ -2,7 +2,7 @@
 // evaluation sessions brought into one shape ("assessments"), and the per-sloka rows of the
 // folder view. Pure; shared by the browser and the server, and tested in Node.
 
-import { QUIZ_CATEGORIES, itemOverall, attemptOverall, gradeWithSlips, anySlips, correctness, recordTolerance, normalizeWeights, CATEGORY_WEIGHTS } from './quizscore.js';
+import { QUIZ_CATEGORIES, itemOverall, attemptOverall, gradeWithSlips, anySlips, isPartial, correctness, recordTolerance, normalizeWeights, CATEGORY_WEIGHTS } from './quizscore.js';
 
 export const PERIODS = ['day', 'week', 'month', 'all'];
 const CAT_IDS = QUIZ_CATEGORIES.map((c) => c.id);
@@ -97,7 +97,7 @@ export function assessmentFromSession(s) {
   const items = (s.items || []).map((it) => itemWithOverall(it, CAT_IDS, weights));
   const recited = items.filter((it) => it.matched);
   const overall = recited.length ? attemptOverall(recited, CAT_IDS, weights) : items.length ? 0 : s.overall == null ? null : s.overall;
-  const g = gradeWithSlips(overall, anySlips(recited) ? [{ kind: 'restart' }] : null);
+  const g = gradeWithSlips(overall, anySlips(recited) || items.some((it) => it.partial || isPartial(it.slips)) ? [{ kind: 'restart' }] : null); // a slip, or a sloka under half recited: Needs practice
   return {
     key: `session:${s.id}`, kind: s.kind === 'teach' ? 'teach' : 'evaluation', sessionId: s.id, at: s.at,
     name: s.kind === 'teach' ? 'Teach' : 'Self Evaluation', categories: CAT_IDS, tolerance: recordTolerance(s), weights, learner: s.learner || null,

@@ -7,10 +7,10 @@ import { encodeWav } from './wav.js';
 import * as api from './api.js';
 import { Analyzer } from './analyzer.js';
 import { drawWaveform, drawLiveWave, ComparisonChart } from './visualizer.js';
-import { serializeFeatures, deserializeFeatures, isValidFeatures, extractFeatures, SR as FEAT_SR } from './dsp/features.js';
+import { serializeFeatures, deserializeFeatures, isValidFeatures, SR as FEAT_SR } from './dsp/features.js';
 import { padaStarts, startTemplates, calibrate, matchStart, mfccRows, meanOf, TEMPLATE_SEC, TEMPLATE_FRAMES, MIN_TEMPLATE_FRAMES } from './dsp/starts.js';
 import { MISMATCH_CONTRAST, confirmByWords } from './dsp/compare.js';
-import { QUIZ_CATEGORIES, LEGACY_CATEGORIES, DEFAULT_QUIZ_CATEGORIES, DEFAULT_TOLERANCE, CATEGORY_WEIGHTS, categoryLabel, normalizeWeights, itemScores, attemptSummary, scoreFor, normalizeCategories, normalizeTolerance, recordTolerance, withinTolerance, itemVerdict, correctness, pickBaselines, overallScore, attemptOverall, itemOverall, applySlipPenalty, selfCorrections, SLIP_PENALTY, gradeOf, gradeById, gradeWithSlips, gradeWords, slipsLabel, anySlips, modernCategories } from './quizscore.js';
+import { QUIZ_CATEGORIES, LEGACY_CATEGORIES, DEFAULT_QUIZ_CATEGORIES, DEFAULT_TOLERANCE, CATEGORY_WEIGHTS, categoryLabel, normalizeWeights, itemScores, attemptSummary, scoreFor, normalizeCategories, normalizeTolerance, recordTolerance, withinTolerance, itemVerdict, correctness, pickBaselines, overallScore, attemptOverall, itemOverall, applySlipPenalty, selfCorrections, SLIP_PENALTY, isPartial, gradeOf, gradeById, gradeWithSlips, gradeWords, slipsLabel, anySlips, modernCategories } from './quizscore.js';
 import { comparePhonology, ERROR_LABEL, syllabify } from './phon.js';
 import { SyllableCounter } from './dsp/syllables.js';
 import { mixToMono, resample } from './dsp/resample.js';
@@ -1403,9 +1403,12 @@ const bestBeforeOf = (id) => (practice.progress && practice.progress.slokas && p
 // a tenth at best, so what it marks on its own is provisional: "akṣaras dropped" stands
 // once the words are in and miss akṣaras too; "stuck in a pāda" stands once the sound
 // comparison finds a pause the sloka does not have. Until then neither is shown or graded.
+// Less than half of the sloka was recited (or none of it): not transcribed, not scored.
+const partialOf = (id) => isPartial(practice.slips.get(id) || []);
 function slipsOf(id) {
   const raw = practice.slips.get(id) || [];
   if (!raw.length) return raw;
+  if (isPartial(raw)) return raw.filter((x) => x.kind === 'partial' || x.kind === 'skipped'); // under half recited: that is the whole story
   const res = practice.results.get(id);
   const ph = practice.phonology.get(id);
   const out = [];
@@ -1738,7 +1741,7 @@ function reportScores(id) {
   const r = practice.results.get(id);
   if (!isReport(r)) return null;
   const ph = practice.phonology.get(id) || null;
-  return itemScores(r, { phonology: ph, sttAvailable: practice.wordSims.has(id) });
+  return itemScores(r, { phonology: ph, sttAvailable: practice.wordSims.has(id), partial: partialOf(id) });
 }
 
 // ---------- weights: what the overall score is made of ----------
@@ -2029,6 +2032,7 @@ function updateRecLabel() {
 // The ticked slokas changed. Audio and finished reports of slokas that stay ticked are
 // kept, and a take that is already there is compared with any sloka that was added.
 async function setSelection(ids, activate) {
+  if (Array.isArray(ids) && ids.length) warmStt(); // the speech model loads now, idle until the first sloka ends
   if (!practice.quiz && !practice.teach && ids.length > MAX_SLOKAS_PER_TAKE) {
     toast(`One take holds ${MAX_SLOKAS_PER_TAKE} slokas at most; the first ${MAX_SLOKAS_PER_TAKE} are kept.`, 'info', 6000);
     ids = ids.slice(0, MAX_SLOKAS_PER_TAKE);
@@ -2153,7 +2157,10 @@ $('#practice-rec').addEventListener('click', async () => {
     if (recSegments && recSegments.parts.length) markSegment(slokaTextItems()[currentTextIndex(slokaTextItems())]);
     const segments = recSegments;
     recSegments = null;
+    // the sloka in view when the take stops, barely begun: less than half recited, not scored
+    if (liveEar && liveEar.item && liveEar.expected && liveEar.pos < liveEar.expected * 0.5 && liveEar.counter.state_().elapsedMs >= 2000 && !partialOf(liveEar.item.id)) addSlip(liveEar.item.id, { kind: 'partial', count: Math.round(liveEar.pos), expected: liveEar.expected, by: 'ear' });
     stopEar();
+    setHidden($('#practice-rec-stop-listen'), true);
     const raw = await rec.stop();
     practiceUI.setRecording(false);
     setListBusy(false);
@@ -2179,8 +2186,10 @@ $('#practice-rec').addEventListener('click', async () => {
       await rec.start();
       practiceUI.setRecording(true);
       setListBusy(true);
-      recSegments = { from: 0, parts: [] };
+      recSegments = { from: 0, parts: [], stopped: false };
       practice.slips = new Map();
+      practice.listenStopped = false;
+      setHidden($('#practice-rec-stop-listen'), true);
       recTextIndex = currentTextIndex(slokaTextItems());
       recNote('');
       startEar(rec); // several slokas: each is heard to its end and sent on by itself
@@ -2296,13 +2305,17 @@ function sessionItems() {
   return practice.selection.map((id) => {
     const r = practice.results.get(id);
     const rec = (libraryCache || []).find((x) => x.id === id);
-    const sc = itemScores(r, { phonology: practice.phonology.get(id) || null, sttAvailable: practice.wordSims.has(id) });
+    const sc = itemScores(r, { phonology: practice.phonology.get(id) || null, sttAvailable: practice.wordSims.has(id), partial: partialOf(id) });
     return { id, name: rec ? rec.name : nameOf(id), folder: rec ? rec.folder || '' : '', ...sc, diag: comparisonDiag(r), slips: slipsOf(id) };
   });
 }
 // A session's overall counts the slokas recited (ticked ones that were not found in the
 // take are left out; a quiz counts them as 0).
-const sessionSummary = (items) => attemptSummary(items.filter((it) => it.matched), QUIZ_CATEGORIES.map((c) => c.id), activeTolerance(), activeWeights());
+const sessionSummary = (items) => {
+  const sum = attemptSummary(items.filter((it) => it.matched), QUIZ_CATEGORIES.map((c) => c.id), activeTolerance(), activeWeights());
+  if (sum.grade && items.some((it) => it.partial || isPartial(it.slips))) sum.grade = 'practice'; // a sloka under half recited: the take's recommendation is Needs practice
+  return sum;
+};
 async function saveSession() {
   const take = practice.take;
   if (!take || practice.quiz || practice.session) return;
@@ -2383,6 +2396,7 @@ function reportFlag(id) {
   const r = practice.results.get(id);
   if (!r) return null;
   if (r.error) return { level: 'bad', text: 'Could not be compared' };
+  if (partialOf(id)) return { level: 'bad', text: `${slipsLabel(slipsOf(id))} · not scored · Needs practice` };
   if (!r.match.ok) return { level: 'bad', text: 'Does not sound like this sloka' };
   if (r.match.by === 'words') return { level: 'info', text: 'Confirmed by the words (the recordings sound different)' };
   const clash = [];
@@ -2398,8 +2412,67 @@ function reportFlag(id) {
   return null;
 }
 
+// The take's scoreboard, above the single report: the take's overall (the mean over the
+// slokas recited) with its grade and words, then one card per sloka — its score, grade and
+// what went wrong — the open one marked; a card opens its report.
+function renderTakeBoard(ids) {
+  const board = $('#take-board');
+  if (ids.length < 2 || practice.quiz) { setHidden(board, true); return; }
+  setHidden(board, false);
+  const items = sessionItems();
+  const sum = sessionSummary(items);
+  const recited = items.filter((it) => it.matched);
+  const partial = items.filter((it) => partialOf(it.id));
+  const notFound = items.filter((it) => !it.matched && !it.missing && !partialOf(it.id));
+  const pending = ids.filter((id) => !practice.results.has(id));
+  $('#take-ring').style.setProperty('--pct', String(sum.overall == null ? 0 : sum.overall));
+  $('#take-overall').textContent = sum.overall == null ? '–' : String(sum.overall);
+  const grade = gradeById(sum.grade);
+  const takeSlips = recited.flatMap((it) => it.slips || []);
+  setGrade($('#take-grade'), grade, $('#take-words'), { seed: practice.session && practice.session.id ? `session:${practice.session.id}` : 'take', slips: takeSlips, score: sum.overall });
+  const bits = [`${ids.length} slokas`, `${recited.length} recited and scored`];
+  if (partial.length) bits.push(`${partial.length} less than half recited (not scored)`);
+  if (notFound.length) bits.push(`${notFound.length} not recited`);
+  if (pending.length) bits.push(`${pending.length} still comparing`);
+  const waiting = recited.filter((it) => !practice.wordSims.has(it.id)).length;
+  if (waiting && !practice.listenStopped) bits.push(`the words of ${waiting} on their way`);
+  if (practice.listenStopped) bits.push('listening stopped');
+  $('#take-sub').textContent = `${bits.join(' · ')} — the overall is the mean over the slokas recited`;
+  const cards = $('#take-cards');
+  cards.innerHTML = '';
+  for (const id of ids) {
+    const r = practice.results.get(id);
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.setAttribute('role', 'tab');
+    card.setAttribute('aria-selected', id === practice.activeId ? 'true' : 'false');
+    const { overall, grade: g } = isReport(r) ? reportOverall(id) : { overall: null, grade: null };
+    const sc = reportScores(id);
+    const bad = !!(r && (r.error || partialOf(id) || (isReport(r) && !sc.matched)));
+    card.className = `take-card${id === practice.activeId ? ' active' : ''}${bad ? ' bad' : ''}${!r ? ' pending' : ''}`;
+    card.innerHTML = '<span class="tc-name"></span><span class="tc-score"></span><span class="tc-grade"></span><span class="tc-note"></span>';
+    $('.tc-name', card).textContent = nameOf(id);
+    $('.tc-name', card).title = nameOf(id);
+    const noteEl = $('.tc-note', card);
+    if (!r) { $('.tc-score', card).textContent = '…'; noteEl.textContent = 'comparing'; }
+    else if (r.error) { $('.tc-score', card).textContent = '–'; noteEl.textContent = 'could not be compared'; noteEl.classList.add('bad'); }
+    else if (partialOf(id)) { $('.tc-score', card).textContent = '–'; $('.tc-grade', card).textContent = gradeText(gradeById('practice')); $('.tc-grade', card).classList.add('practice'); noteEl.textContent = slipsLabel(slipsOf(id)) + ' · not scored'; noteEl.classList.add('bad'); }
+    else if (!sc.matched) { $('.tc-score', card).textContent = '–'; $('.tc-grade', card).textContent = gradeText(gradeById('practice')); $('.tc-grade', card).classList.add('practice'); noteEl.textContent = 'not recited'; noteEl.classList.add('bad'); }
+    else {
+      $('.tc-score', card).textContent = overall == null ? '–' : String(overall);
+      if (g) { $('.tc-grade', card).textContent = gradeText(g); $('.tc-grade', card).classList.add(g.id); }
+      const sl = slipsOf(id);
+      noteEl.textContent = sl.length ? slipsLabel(sl) : practice.wordSims.has(id) ? '' : practice.listenStopped ? 'sound only' : 'words on their way';
+      if (sl.length) noteEl.classList.add('bad');
+    }
+    card.title = id === practice.activeId ? 'This report is open below' : 'Open this sloka\'s report';
+    card.addEventListener('click', () => openReport(id));
+    cards.appendChild(card);
+  }
+}
 function renderReportBrowser() {
   const ids = reportIds();
+  renderTakeBoard(ids);
   setHidden($('#reports'), ids.length < 2);
   setHidden($('#report-title-row'), !ids.length);
   const map = $('#report-map');
@@ -2467,7 +2540,7 @@ function renderReportBrowser() {
     map.appendChild(row);
   }
   const idx = ids.indexOf(practice.activeId);
-  $('#reports-title').textContent = `Reports · ${ids.length} slokas · one at a time`;
+  $('#reports-title').textContent = `Report · ${idx >= 0 ? nameOf(practice.activeId) : ''}`;
   $('#reports-fold-sub').textContent = `${ids.length} rows · where each sloka was found in your recording, and its conflicts`;
   $('#report-pos').textContent = idx >= 0 ? `${idx + 1} / ${ids.length}` : '';
   $('#report-name').textContent = practice.activeId ? nameOf(practice.activeId) : ''; // the name alone: the verdict is the ring's and the rows' to tell
@@ -2501,6 +2574,17 @@ function showActiveReport() {
     setHidden($('#report-body'), true);
     resetTranscriptUI();
     setEvaluating(false); // nothing is coming for it
+    return;
+  }
+  if (partialOf(practice.activeId)) {
+    practice.result = null; // nothing to show but the note
+    practice.selected = null;
+    renderReportBrowser();
+    $('#report-error').textContent = `${slipsLabel(slipsOf(practice.activeId))} — this sloka is not transcribed or scored. Needs practice: recite the whole of it, then evaluate again.`;
+    setHidden($('#report-error'), false);
+    setHidden($('#report-body'), true);
+    resetTranscriptUI();
+    setEvaluating(false);
     return;
   }
   setHidden($('#report-error'), true);
@@ -2646,7 +2730,6 @@ const playShown = () => !practice.quiz || !!practice.take;
 // finds it ready: the loading is what used to make the page stutter.
 const warmed = new Set(); // "tier:device" already asked for in this page
 function warmStt() {
-  if (!sttSettings.auto && !practice.quiz) return;
   sttTier().then((tier) => {
     const device = sttSettings.cpuTiers.includes(tier) ? 'wasm' : null;
     const key = `${tier}:${device || 'auto'}`;
@@ -2745,7 +2828,9 @@ function stepText(delta) {
     // a page turned while recording: the stretch since the last turn is the sloka that was in
     // view — off to the speech worker it goes; the page itself turns without touching the
     // active sloka or the recording
-    markSegment(items[i]);
+    const partial = !!(liveEar && liveEar.item && liveEar.item.id === items[i].id && liveEar.expected && liveEar.pos < liveEar.expected * 0.5 && liveEar.counter.state_().elapsedMs >= 2000);
+    if (partial) addSlip(items[i].id, { kind: 'partial', count: Math.round(liveEar.pos), expected: liveEar.expected, by: 'ear' });
+    markSegment(items[i], null, { transcribe: !partial });
     if (practice.quiz) quizTextIndex = j; else recTextIndex = j;
     renderSlokaTexts();
     earPageTurned();
@@ -2763,26 +2848,40 @@ function stepText(delta) {
 // the words of the recorded stretch that overlaps it well enough (transcribeTakePart), and is
 // transcribed afresh otherwise.
 let recSegments = null; // { from, parts: [{ from, to, name, promise, transcript }] } in recording time
-function markSegment(item, toSec = null) {
+function markSegment(item, toSec = null, { transcribe = true } = {}) {
   const rec = practiceRecorder;
   if (!rec || !rec.active || !recSegments) return;
-  if (!sttSettings.auto && !practice.quiz) return; // transcription only when asked for
   const snap = rec.snapshot();
   const from = recSegments.from;
   const to = toSec != null ? Math.max(from, Math.min(snap.duration, toSec)) : snap.duration;
   recSegments.from = to;
   if (to - from < 2) return; // a page turned back and forth: nothing to hear
+  const seg = { from, to, id: item ? item.id : null, name: item ? item.name : '', promise: null, transcript: null, done: true, ctrl: null };
+  recSegments.parts.push(seg);
+  // less than half recited, or the listening stopped: the stretch is kept apart, its words never asked for
+  if (!transcribe || recSegments.stopped) { seg.skipped = true; seg.promise = Promise.resolve(null); return; }
   const sr = snap.sampleRate;
   const samples = snap.samples.slice(Math.round(from * sr), Math.round(to * sr));
-  const seg = { from, to, id: item ? item.id : null, name: item ? item.name : '', promise: null, transcript: null, done: false };
-  recSegments.parts.push(seg);
   const parts = recSegments.parts;
+  seg.done = false;
+  seg.ctrl = new AbortController();
   recNote(`Listening to ${seg.name || 'that stretch'} in the background…`);
-  seg.promise = runTranscription(samples, sr, null, seg.name || 'your recording', undefined, { background: true })
+  setHidden($('#practice-rec-stop-listen'), false);
+  seg.promise = runTranscription(samples, sr, null, seg.name || 'your recording', seg.ctrl.signal, { background: true })
     .then((t) => { seg.transcript = t; try { checkSegmentWords(seg); } catch { /* a guess only */ } return t; })
     .catch(() => null)
-    .finally(() => { seg.done = true; if (parts.every((p) => p.done)) recNote(''); else { const busy = parts.find((p) => !p.done); recNote(`Listening to ${busy.name || 'that stretch'} in the background…`); } });
+    .finally(() => { seg.done = true; const busy = parts.find((p) => !p.done); if (!busy) { if (!recSegments.stopped) recNote(''); setHidden($('#practice-rec-stop-listen'), true); } else recNote(`Listening to ${busy.name || 'that stretch'} in the background…`); });
 }
+// Stop listening: the background jobs of this take are stopped and no more are queued; the
+// sound is still compared, and the open report can still ask for its words afterwards.
+$('#practice-rec-stop-listen').addEventListener('click', () => {
+  if (!recSegments) return;
+  recSegments.stopped = true;
+  for (const p of recSegments.parts) if (p.ctrl && !p.done) p.ctrl.abort();
+  practice.listenStopped = true;
+  recNote('Listening stopped for this take: the sound is still compared; the words of the open report come when it is opened.');
+  setHidden($('#practice-rec-stop-listen'), true);
+});
 // The words of a stretch heard in the background, against every sloka of the take: when
 // they are clearly another sloka's than the page assumed (the learner skipped ahead, or
 // went back), the stretch is relabelled and, while the recording goes on, the page turns
@@ -2902,23 +3001,23 @@ function samplesBetween(rec, fromSec, toSec) {
 }
 // The MFCC frames of what was sung from `at` for a template's length, with the mean of the
 // last few seconds taken off (as the teacher's recording has its own mean taken off).
-function liveRows(rec, at) {
+async function liveRows(rec, at) {
   const ctx = Math.max(0, at - 3);
   const x = resample(samplesBetween(rec, ctx, at + TEMPLATE_SEC + 0.05), rec.ctx.sampleRate, FEAT_SR);
   if (x.length < FEAT_SR * (TEMPLATE_SEC + 0.1)) return null;
-  const F = extractFeatures(x);
+  const F = await analyzer.features(x, FEAT_SR, null); // in the analysis worker: the page stays smooth
   return mfccRows(F, Math.round((at - ctx) / F.hopSec), TEMPLATE_FRAMES, { mean: meanOf(F) });
 }
 // Sound after a pause: where in the sloka does it begin? A start the count has already
 // passed is a restart — of a pāda (the count goes back to its start) or of the sloka (what
 // came before was a false start; the stretch begins again here). A start that is simply
 // next is the recitation going on. Nothing is done on a doubtful match.
-function hearRestart(ear, p) {
+async function hearRestart(ear, p) {
   const { plan, fp, rec, item } = ear;
   if (!plan || !fp || !item) return;
   let rows = null;
-  try { rows = liveRows(rec, p.at); } catch { rows = null; }
-  if (!rows || rows.length < MIN_TEMPLATE_FRAMES) return;
+  try { rows = await liveRows(rec, p.at); } catch { rows = null; }
+  if (!rows || rows.length < MIN_TEMPLATE_FRAMES || liveEar !== ear || ear.item !== item) return;
   const m = matchStart(rows, fp.templates, { threshold: fp.threshold });
   if (!m.confident) return;
   const k = m.best.pada;
@@ -3049,7 +3148,7 @@ function startEar(rec) {
       if (ear.fp && ear.prevPause >= 400 && !ear.pending) ear.pending = { at: resumedAt, count: st.count, pos };
     }
     ear.prevPause = st.pauseMs;
-    if (ear.pending && ear.samplesRead / sr - ear.pending.at >= TEMPLATE_SEC + 0.15) { const p = ear.pending; ear.pending = null; hearRestart(ear, p); }
+    if (ear.pending && ear.samplesRead / sr - ear.pending.at >= TEMPLATE_SEC + 0.15) { const p = ear.pending; ear.pending = null; hearRestart(ear, p).catch(() => {}); }
     const sung = st.elapsedMs - st.pauseMs; // sound heard before the pause, in this sloka
     if (sung < 3000) return;
     const exp = ear.expected;
@@ -3072,7 +3171,9 @@ function startEar(rec) {
       return;
     }
     ear.slokaPauses.push(st.pauseMs);
-    if (ear.item && exp && pos < exp - 2) addSlip(ear.item.id, { kind: 'dropped', at: Math.round(pauseBegan * 100) / 100, count: Math.round(pos), expected: exp, unsure: true, by: 'ear' }); // the words will say
+    const partial = !!(ear.item && exp && pos < exp * 0.5); // less than half: not transcribed, not scored
+    if (partial) addSlip(ear.item.id, { kind: 'partial', at: Math.round(pauseBegan * 100) / 100, count: Math.round(pos), expected: exp, by: 'ear' });
+    else if (ear.item && exp && pos < exp - 2) addSlip(ear.item.id, { kind: 'dropped', at: Math.round(pauseBegan * 100) / 100, count: Math.round(pos), expected: exp, unsure: true, by: 'ear' }); // the words will say
     else if (exp) {
       // a sloka recited whole teaches the ear this learner: their speed, how their voice
       // counts, and their pace against the teacher's
@@ -3085,7 +3186,7 @@ function startEar(rec) {
     }
     const now = slokaTextItems();
     const i = currentTextIndex(now);
-    markSegment(now[i], pauseBegan + 0.25); // the stretch ends where the pause began
+    markSegment(now[i], pauseBegan + 0.25, { transcribe: !partial }); // the stretch ends where the pause began
     if (i + 1 < now.length) {
       if (practice.quiz) quizTextIndex = i + 1; else recTextIndex = i + 1;
       renderSlokaTexts();
@@ -3261,6 +3362,7 @@ async function scoreQuizAttempt() {
       let base;
       try { base = await ensureBase(id); } catch { continue; }
       const res = practice.results.get(id);
+      if (partialOf(id)) continue; // less than half recited: not transcribed, not scored
       let heardT;
       try {
         prog.show(`Quiz: listening to the words of your recording (${k + 1} of ${ids.length})…`, stop);
@@ -3294,7 +3396,7 @@ async function scoreQuizAttempt() {
     // the scores
     attempt.items = quiz.items.map((it) => {
       const r = practice.results.get(it.id);
-      const sc = itemScores(r, { phonology: sims.has(it.id) ? sims.get(it.id).phonology : null, sttAvailable: stt });
+      const sc = itemScores(r, { phonology: sims.has(it.id) ? sims.get(it.id).phonology : null, sttAvailable: stt, partial: partialOf(it.id) });
       return { id: it.id, name: it.name, folder: it.folder, ...sc, diag: comparisonDiag(r), slips: slipsOf(it.id) };
     });
     const sum = attemptSummary(attempt.items, quiz.categories, attempt.tolerance, attempt.weights);
@@ -4594,7 +4696,8 @@ async function transcribeAllParts() {
   const order = [practice.activeId, ...ids].filter((id, i, a) => ids.includes(id) && a.indexOf(id) === i);
   for (const id of order) {
     if (practice.take !== take) return;
-    if (practice.wordSims.has(id)) continue;
+    if (practice.wordSims.has(id) || partialOf(id)) continue; // less than half recited: no words asked for
+    if (practice.listenStopped && id !== practice.activeId) continue; // the listening was stopped: only the open report's words
     const res = practice.results.get(id);
     try {
       const heardT = await transcribeTakePart(heardPartOf(res), false);
@@ -4662,6 +4765,7 @@ function transcribeBoth(force) {
       getCtx();
       const baseT = referenceWords(practice.base, practice.result);
       if (!baseT) { $('#stt-summary').textContent = NO_WORDS_NOTE; settleEvaluating(); return; } // no words to compare with: the report stands on the sound alone
+      if (partialOf(id)) { $('#stt-summary').textContent = `${slipsLabel(slipsOf(id))}: not transcribed, not scored. Needs practice.`; settleEvaluating(); return; }
       let heardT = await transcribeTakePart(heardPartOf(practice.result), force);
       if (!current() || !heardT) return; // stopped: the report stays without a word diff
       heardT = (await hearAgainIfPoor(practice.result, baseT, heardT, practice.base.duration, force)).heardT;

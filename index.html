@@ -304,6 +304,7 @@
                 <div class="mono rec-timer" id="practice-timer">0:00.0</div>
                 <div class="muted small rec-count" id="practice-rec-count"></div>
                 <div class="muted small rec-note" id="practice-rec-note" hidden></div>
+                <button class="btn btn-sm btn-ghost rec-stop-listen" id="practice-rec-stop-listen" type="button" hidden title="Stop hearing the words in the background for the rest of this take; the sound is still compared">Stop listening</button>
               </div>
               <div class="clip" id="practice-clip" title="Too loud – the sound is clipping">CLIP</div>
             </div>
@@ -365,10 +366,22 @@
               <div class="quiz-trend" id="quiz-trend"></div>
             </details>
           </div>
-          <!-- several slokas: one report at a time, Previous / Next; the rows of all of them folded -->
+          <!-- several slokas: the take's scoreboard — its overall, one card per sloka — then one
+               report at a time under it (a card opens it; Previous / Next step through) -->
+          <div class="take-board" id="take-board" hidden>
+            <div class="take-overall">
+              <div class="ring take-ring" id="take-ring" style="--pct: 0"><span class="mono ring-val" id="take-overall">–</span></div>
+              <div class="take-overall-text">
+                <div class="score-grade" id="take-grade"></div>
+                <div class="take-sub muted small" id="take-sub"></div>
+                <div class="score-words" id="take-words" hidden></div>
+              </div>
+            </div>
+            <div class="take-cards" id="take-cards" role="tablist" aria-label="The slokas of this take"></div>
+          </div>
           <div class="reports" id="reports" hidden>
             <div class="reports-head">
-              <h3 id="reports-title">Reports</h3>
+              <h3 id="reports-title">Report</h3>
               <div class="grow"></div>
               <button class="btn btn-sm" id="report-prev" type="button">‹ Previous</button>
               <span class="mono muted small" id="report-pos"></span>

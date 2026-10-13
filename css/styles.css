@@ -809,6 +809,8 @@ textarea.locked { background: var(--surface-2); color: var(--muted); cursor: not
 .lib-actions [data-act="delete"]:hover { color: var(--danger); }
 
 .rec-count { margin-top: 2px; min-height: 1.2em; }
+.rec-stop-listen { margin-top: 4px; }
+.rec-stop-listen[hidden] { display: none; }
 .rec-count:empty { display: none; }
 
 /* ---------- the metadata popup (Library, right-click) ---------- */
@@ -880,6 +882,33 @@ textarea.locked { background: var(--surface-2); color: var(--muted); cursor: not
 
 /* ---------- self evaluation: report browser ---------- */
 .reports { margin-bottom: 18px; padding: 14px; border-radius: 14px; background: var(--surface-2); }
+/* the take's scoreboard: its overall, and one card per sloka */
+.take-board { margin: 2px 0 16px; padding: 14px 16px 12px; border-radius: 14px; background: var(--surface-2); border: 1px solid var(--border); }
+.take-board[hidden] { display: none; }
+.take-overall { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; margin-bottom: 12px; }
+.take-ring { width: 96px; height: 96px; flex: 0 0 auto; }
+.take-ring::before { inset: 9px; }
+.take-ring .ring-val { font-size: 1.7rem; }
+.take-overall-text { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; }
+.take-overall-text .score-grade { margin-top: 0; }
+.take-overall-text .score-words { margin: 0; max-width: 420px; text-align: left; }
+.take-sub { line-height: 1.35; }
+.take-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.take-card { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 9px 11px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); cursor: pointer; font: inherit; color: inherit; text-align: left; min-width: 0; transition: border-color .12s, transform .12s, box-shadow .12s; }
+.take-card:hover { border-color: var(--accent); transform: translateY(-1px); box-shadow: var(--shadow); }
+.take-card.active { box-shadow: inset 0 0 0 2px var(--accent); border-color: var(--accent); }
+.take-card.bad { border-left: 4px solid var(--danger); }
+.take-card.pending { opacity: .75; }
+.tc-name { font-weight: 650; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.9rem; }
+.tc-score { font-family: var(--mono); font-weight: 700; font-size: 1.5rem; line-height: 1.1; }
+.tc-grade { font-size: 0.78rem; font-weight: 700; }
+.tc-grade.excellent { color: var(--gold-deep); }
+:root[data-theme="dark"] .tc-grade.excellent { color: var(--gold); }
+.tc-grade.good { color: color-mix(in srgb, var(--pitch) 70%, var(--text)); }
+.tc-grade.fair { color: color-mix(in srgb, var(--timing) 70%, var(--text)); }
+.tc-grade.practice { color: var(--danger); }
+.tc-note { font-size: 0.76rem; color: var(--muted); line-height: 1.3; }
+.tc-note.bad { color: var(--danger); font-weight: 600; }
 .reports-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
 .reports-head h3 { margin: 0; }
 .report-map { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
