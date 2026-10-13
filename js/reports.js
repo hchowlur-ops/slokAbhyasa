@@ -2,7 +2,7 @@
 // evaluation sessions brought into one shape ("assessments"), and the per-sloka rows of the
 // folder view. Pure; shared by the browser and the server, and tested in Node.
 
-import { QUIZ_CATEGORIES, overallScore, attemptOverall, gradeWithSlips, anySlips, correctness, recordTolerance, normalizeWeights, CATEGORY_WEIGHTS } from './quizscore.js';
+import { QUIZ_CATEGORIES, itemOverall, attemptOverall, gradeWithSlips, anySlips, correctness, recordTolerance, normalizeWeights, CATEGORY_WEIGHTS } from './quizscore.js';
 
 export const PERIODS = ['day', 'week', 'month', 'all'];
 const CAT_IDS = QUIZ_CATEGORIES.map((c) => c.id);
@@ -59,7 +59,7 @@ export function inRange(at, range) {
 }
 
 const itemWithOverall = (it, categories, weights = CATEGORY_WEIGHTS) => {
-  const overall = it && !it.missing ? overallScore(it, categories, weights) : null;
+  const overall = it && !it.missing ? itemOverall(it, categories, weights) : null; // its self-corrections taken off
   const g = gradeWithSlips(overall, it && it.slips); // a slip (a restart, a stall…): Needs practice, whatever the score
   return { ...it, overall, grade: g ? g.id : null };
 };

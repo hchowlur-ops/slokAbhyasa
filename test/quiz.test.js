@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { cleanFolder, parseBaselineFilename, nameFromSlug, parseWavHeader } from '../js/libutil.js';
 import { encodeWavBytes } from '../js/wav.js';
-import { itemScores, attemptSummary, scoreFor, normalizeCategories, modernCategories, pickBaselines, shuffle, DEFAULT_QUIZ_CATEGORIES, DEFAULT_TOLERANCE, normalizeTolerance, recordTolerance, withinTolerance, itemVerdict, correctness, overallScore, attemptOverall, gradeOf, CATEGORY_WEIGHTS, QUIZ_CATEGORIES, normalizeWeights, gradeWithSlips, gradeWords, cleanSlips, slipLabel, slipsLabel, anySlips, GRADES } from '../js/quizscore.js';
+import { itemScores, attemptSummary, scoreFor, normalizeCategories, modernCategories, pickBaselines, shuffle, DEFAULT_QUIZ_CATEGORIES, DEFAULT_TOLERANCE, normalizeTolerance, recordTolerance, withinTolerance, itemVerdict, correctness, overallScore, attemptOverall, gradeOf, CATEGORY_WEIGHTS, QUIZ_CATEGORIES, normalizeWeights, gradeWithSlips, gradeWords, cleanSlips, slipLabel, slipsLabel, anySlips, GRADES, slipPenalty, applySlipPenalty, itemOverall, selfCorrections } from '../js/quizscore.js';
 
 test('cleanFolder: usable names pass, traversal and reserved names do not', () => {
   assert.equal(cleanFolder('Chapter 12'), 'Chapter 12');
@@ -263,4 +263,26 @@ test('gradeWords: an emoji and a phrase, the same for the same seed, plain for a
   assert.ok(gradeWords('good', { seed: 'x', best: 92, score: 84 }).text.includes('Your best is still 92'));
   assert.ok(!gradeWords('good', { seed: 'x', best: 86, score: 84 }).text.includes('best'), 'a point or two under the best is not remarked on');
   assert.deepEqual(gradeWords(null), { emoji: '', label: '', text: '' });
+});
+
+test('self-correction costs 15 % of the sloka\'s score; a stall or dropped akṣaras do not; the attempt averages the penalised items', () => {
+  assert.equal(slipPenalty([{ kind: 'repeat', word: 'नमः' }]), 0.15);
+  assert.equal(slipPenalty([{ kind: 'restart', pada: 3 }]), 0.15);
+  assert.equal(slipPenalty([{ kind: 'falseStart' }]), 0.15);
+  assert.equal(slipPenalty([{ kind: 'stall', pada: 2 }, { kind: 'dropped' }]), 0);
+  assert.equal(slipPenalty([{ kind: 'restart', pada: 3, unsure: true }]), 0, 'a doubtful one costs nothing');
+  assert.equal(slipPenalty([]), 0);
+  assert.equal(applySlipPenalty(92, [{ kind: 'repeat' }]), 78);
+  assert.equal(applySlipPenalty(92, [{ kind: 'repeat' }, { kind: 'restart', pada: 2 }]), 78, 'once per sloka, not per slip');
+  assert.equal(applySlipPenalty(null, [{ kind: 'repeat' }]), null);
+  const clean = { matched: true, missing: false, phoneme: 100, vowel: 100, syllable: 100 };
+  assert.equal(itemOverall(clean, ['phoneme', 'vowel', 'syllable']), 100);
+  assert.equal(itemOverall({ ...clean, slips: [{ kind: 'repeat', word: 'x' }] }, ['phoneme', 'vowel', 'syllable']), 85);
+  assert.equal(attemptOverall([clean, { ...clean, slips: [{ kind: 'restart', pada: 2 }] }], ['phoneme', 'vowel', 'syllable']), 93, '(100 + 85) / 2');
+  assert.equal(selfCorrections([{ kind: 'stall' }, { kind: 'repeat' }, { kind: 'restart', unsure: true }]).length, 1);
+  assert.equal(slipLabel({ kind: 'repeat', word: 'कर्म' }), 'repeated "कर्म"');
+  assert.equal(slipLabel({ kind: 'restart', pada: 3, word: 'सर्व' }), 'restarted pāda 3 at "सर्व"');
+  assert.equal(slipLabel({ kind: 'falseStart', word: 'ये' }), 'started the sloka again at "ये"');
+  assert.deepEqual(cleanSlips([{ kind: 'repeat', word: '  नमः ', by: 'words' }]), [{ kind: 'repeat', word: 'नमः', by: 'words' }]);
+  assert.ok(gradeWords('practice', { seed: 'x', slips: [{ kind: 'repeat', word: 'नमः' }] }).text.includes('"नमः" twice'));
 });

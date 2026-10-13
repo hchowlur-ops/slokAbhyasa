@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { tokenize, diffWords, diffSummary, compareWords, phoneticKey, tokenizeTranscript, windowedTokens, dandaMarks, withDandas, uvacaWords, isUvacaLine, splitUvaca } from '../js/textdiff.js';
+import { findSelfCorrections } from '../js/textdiff.js';
 
 test('phoneticKey: Devanagari, Kannada and Latin spellings of one sound share a key', () => {
   assert.equal(phoneticKey('नमः'), 'namah');
@@ -135,4 +136,28 @@ test('"arjuna uvāca" opening a śloka is recognised in any script and spelling'
   // the daṇḍas skip the attribution's line
   assert.equal(withDandas('अर्जुन उवाच\nएवं सततयुक्ता ये भक्तास्त्वां पर्युपासते\nये चाप्यक्षरमव्यक्तं तेषां के योगवित्तमाः'), 'अर्जुन उवाच\nएवं सततयुक्ता ये भक्तास्त्वां पर्युपासते ।\nये चाप्यक्षरमव्यक्तं तेषां के योगवित्तमाः ॥');
   assert.equal(withDandas('अर्जुन उवाच\nक\nख\nग\nघ'), 'अर्जुन उवाच\nक\nख ।\nग\nघ ॥');
+});
+
+test('self-corrections from the words: a word said twice, a pāda started again, the sloka started again', () => {
+  const T = (s) => s.split(' ').map((w) => ({ word: w, norm: w }));
+  const ref = T('ये त्वक्षरमनिर्देश्यमव्यक्तं पर्युपासते सर्वत्रगमचिन्त्यञ्च कूटस्थमचलन्ध्रुवम्');
+  const refPada = [1, 1, 2, 3, 4];
+  assert.deepEqual(findSelfCorrections(ref, ref), []);
+  const twice = findSelfCorrections(ref, T('ये त्वक्षरमनिर्देश्यमव्यक्तं पर्युपासते पर्युपासते सर्वत्रगमचिन्त्यञ्च कूटस्थमचलन्ध्रुवम्'), { refPada });
+  assert.deepEqual(twice.map((c) => [c.kind, c.word]), [['repeat', 'पर्युपासते']]);
+  // the second half-verse started again: "sarvatra… kūṭa…" then once more from sarvatra
+  const again = findSelfCorrections(ref, T('ये त्वक्षरमनिर्देश्यमव्यक्तं पर्युपासते सर्वत्रगमचिन्त्यञ्च कूटस्थम सर्वत्रगमचिन्त्यञ्च कूटस्थमचलन्ध्रुवम्'), { refPada });
+  assert.equal(again.length, 1, JSON.stringify(again));
+  assert.equal(again[0].kind, 'restart');
+  assert.equal(again[0].word, 'सर्वत्रगमचिन्त्यञ्च');
+  assert.equal(again[0].pada, 3);
+  // the whole sloka started again after three words
+  const top = findSelfCorrections(ref, T('ये त्वक्षरमनिर्देश्यमव्यक्तं पर्युपासते ये त्वक्षरमनिर्देश्यमव्यक्तं पर्युपासते सर्वत्रगमचिन्त्यञ्च कूटस्थमचलन्ध्रुवम्'), { refPada });
+  assert.deepEqual(top.map((c) => [c.kind, c.word, c.pada]), [['restart', 'ये', 1]]);
+  // a stray word is not a restart; a short run matching nothing is not either
+  assert.deepEqual(findSelfCorrections(ref, T('ये त्वक्षरमनिर्देश्यमव्यक्तं हरि पर्युपासते सर्वत्रगमचिन्त्यञ्च कूटस्थमचलन्ध्रुवम्')), []);
+  // the same in Kannada: the keys read across scripts
+  const kn = findSelfCorrections(ref, T('ಯೇ ತ್ವಕ್ಷರಮನಿರ್ದೇಶ್ಯಮವ್ಯಕ್ತಂ ಪರ್ಯುಪಾಸತೇ ಪರ್ಯುಪಾಸತೇ ಸರ್ವತ್ರಗಮಚಿಂತ್ಯಞ್ಚ ಕೂಟಸ್ಥಮಚಲಂಧ್ರುವಮ್'));
+  assert.equal(kn.length, 1);
+  assert.equal(kn[0].kind, 'repeat');
 });

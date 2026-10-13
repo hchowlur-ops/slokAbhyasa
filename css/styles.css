@@ -610,6 +610,13 @@ textarea.locked { background: var(--surface-2); color: var(--muted); cursor: not
 /* a few words of encouragement under the grade */
 .score-words { margin: 6px auto 0; max-width: 300px; font-size: 0.9rem; line-height: 1.35; color: var(--text); font-family: var(--display); font-style: italic; }
 .score-words[hidden] { display: none; }
+/* points lost to self-correction (a word said again, a pāda or the sloka started again) */
+.score-penalty { margin: 6px auto 0; max-width: 320px; font-size: 0.85rem; line-height: 1.35; color: var(--danger); }
+.score-penalty[hidden] { display: none; }
+.stt-corrections { margin: 8px 0 0; padding: 8px 12px; border-radius: 10px; border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent); background: color-mix(in srgb, var(--danger) 6%, transparent); font-size: 0.9rem; }
+.stt-corrections[hidden] { display: none; }
+.stt-corrections b { color: var(--danger); }
+.stt-corrections .cw { font-weight: 650; }
 /* what went wrong in the recitation itself (a restart, a stall…), in a report row */
 .rr-slip { font-weight: 600; color: var(--danger); }
 /* the line of the sloka the ear hears the learner in; a tap on a line resyncs the count */

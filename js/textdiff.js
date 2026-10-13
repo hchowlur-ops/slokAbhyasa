@@ -231,3 +231,46 @@ export function withDandas(text) {
   const { lines, marks } = dandaMarks(text);
   return lines.map((l, i) => (marks.has(i) ? `${l} ${marks.get(i)}` : l)).join('\n');
 }
+
+// The learner correcting themself, read from the words: a word said twice in a row
+// ("repeat"), and a stretch of words that reads the sloka again from a word already
+// reached — a pāda, or the sloka, started again ("restart"). The word-level LCS marks the
+// second reading (or the broken-off first one) as inserted; a run of inserted words that
+// picks up the sloka at a word already matched — two words of it, or one long word that
+// the words after the run carry on from — is a restart at that word. `refPada[i]` says
+// which pāda the sloka's word i begins in (0 the speaker line), when known. Returns
+// [{ kind, word, at (heard index), pada?, refIndex? }].
+export function findSelfCorrections(refToks, heardToks, { refPada = null } = {}) {
+  const rk = (refToks || []).map((t) => phoneticKey(t.norm || t.word || ''));
+  const hk = (heardToks || []).map((t) => phoneticKey(t.norm || t.word || ''));
+  const out = [];
+  for (let j = 1; j < hk.length; j++) if (hk[j].length >= 3 && hk[j] === hk[j - 1]) out.push({ kind: 'repeat', word: heardToks[j].word, at: j });
+  if (rk.length < 2 || hk.length < 2) return out;
+  const ops = diffWords(rk, hk);
+  let reached = -1; // the furthest sloka word matched so far
+  let run = []; // heard indices inserted since the last match
+  const flush = (nextRef) => { // nextRef: the sloka word the heard word after the run matched, or -1
+    if (run.length && reached >= 0) {
+      for (let r = 0; r < run.length; r++) {
+        if (run.length - r === 1 && run[r] > 0 && hk[run[r]] === hk[run[r] - 1]) break; // a word said twice: reported above
+        let found = null;
+        for (let p = 0; p <= reached; p++) {
+          if (rk[p].length < 2 || rk[p] !== hk[run[r]]) continue;
+          let n = 0;
+          for (let k = 0; r + k < run.length && p + k < rk.length; k++) { if (rk[p + k] === hk[run[r + k]]) n++; else break; }
+          const continues = nextRef === p + (run.length - r);
+          if (n >= 2 || (n === 1 && rk[p].length >= 4 && continues)) { found = { p, n }; break; }
+        }
+        if (found) { out.push({ kind: 'restart', word: refToks[found.p].word, at: run[r], refIndex: found.p, pada: refPada ? refPada[found.p] : null }); break; }
+      }
+    }
+    run = [];
+  };
+  for (const o of ops) {
+    if (o.op === 'equal') { flush(o.a); reached = Math.max(reached, o.a); }
+    else if (o.op === 'insert') run.push(o.b);
+    else flush(-1);
+  }
+  flush(-1);
+  return out.sort((a, b) => a.at - b.at);
+}

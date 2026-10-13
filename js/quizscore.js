@@ -66,7 +66,12 @@ export const gradeById = (id) => GRADES.find((g) => g.id === id) || null;
 // a restart, a stall, akṣaras dropped, a sloka skipped, a false start. The recitation is
 // still scored in full, but its grade is Needs practice whatever the score (gradeWithSlips).
 //   { kind, at (s into the take), pada (1-based; 0 the speaker line), count, expected, unsure }
-export const SLIP_KINDS = ['restart', 'stall', 'dropped', 'skipped', 'falseStart'];
+export const SLIP_KINDS = ['restart', 'stall', 'dropped', 'skipped', 'falseStart', 'repeat'];
+// The slips that are the learner correcting themself — a word said again, a pāda or the
+// sloka started again — cost 15 % of the sloka's score (slipPenalty); the rest (a stall,
+// akṣaras dropped) are left to the categories they already lower.
+export const SELF_CORRECTION = ['restart', 'falseStart', 'repeat'];
+export const SLIP_PENALTY = 0.15;
 export function cleanSlips(list) {
   if (!Array.isArray(list)) return [];
   const out = [];
@@ -77,6 +82,7 @@ export function cleanSlips(list) {
     if (Number.isInteger(s.pada) && s.pada >= 0 && s.pada <= 32) o.pada = s.pada;
     if (Number.isInteger(s.count) && s.count >= 0) o.count = s.count;
     if (Number.isInteger(s.expected) && s.expected >= 0) o.expected = s.expected;
+    if (typeof s.word === 'string' && s.word.trim()) o.word = s.word.trim().slice(0, 80); // the word said again, or the one a restart began at
     if (s.unsure) o.unsure = true;
     if (typeof s.by === 'string' && ['ear', 'words', 'sound', 'manual'].includes(s.by)) o.by = s.by;
     out.push(o);
@@ -85,17 +91,28 @@ export function cleanSlips(list) {
   return out;
 }
 const padaName = (p) => (p === 0 ? 'the speaker line' : p == null ? 'a pāda' : `pāda ${p}`);
-// One slip in words, for a row: "restarted pāda 3".
+const atWord = (s) => (s.word ? ` at "${s.word}"` : '');
+// One slip in words, for a row: "restarted pāda 3 at "सर्वत्रगम"".
 export function slipLabel(s) {
   if (!s) return '';
   switch (s.kind) {
-    case 'restart': return `restarted ${padaName(s.pada)}`;
+    case 'restart': return `restarted ${padaName(s.pada)}${atWord(s)}`;
+    case 'repeat': return s.word ? `repeated "${s.word}"` : 'repeated a word';
     case 'stall': return `stuck in ${padaName(s.pada)}`;
     case 'dropped': return s.count != null && s.expected != null ? `akṣaras dropped (${s.count} of ${s.expected} heard)` : 'akṣaras dropped';
     case 'skipped': return 'not recited';
-    case 'falseStart': return 'a false start';
+    case 'falseStart': return `started the sloka again${atWord(s)}`;
     default: return s.kind;
   }
+}
+export const isSelfCorrection = (s) => !!s && SELF_CORRECTION.includes(s.kind) && !s.unsure;
+export const selfCorrections = (slips) => (Array.isArray(slips) ? slips.filter(isSelfCorrection) : []);
+// The share of a sloka's score lost to self-correction: 15 % when there was any, else none.
+export const slipPenalty = (slips) => (selfCorrections(slips).length ? SLIP_PENALTY : 0);
+export function applySlipPenalty(overall, slips) {
+  if (overall == null || !Number.isFinite(overall)) return overall;
+  const p = slipPenalty(slips);
+  return p ? Math.round(overall * (1 - p)) : overall;
 }
 // A whole list in words: "restarted pāda 3 · stuck in pāda 2", each kind once.
 export function slipsLabel(slips) {
@@ -116,7 +133,8 @@ export const anySlips = (items) => (items || []).some((it) => it && Array.isArra
 // What a slip asks the learner to do, said kindly.
 function slipAdvice(s) {
   switch (s.kind) {
-    case 'restart': return `You started ${padaName(s.pada)} again: a breath first, then once more from the top.`;
+    case 'restart': return `You started ${padaName(s.pada)} again${atWord(s)}: a breath first, then once more from the top.`;
+    case 'repeat': return s.word ? `You said "${s.word}" twice: once, slowly, is enough.` : 'You said a word twice: once, slowly, is enough.';
     case 'stall': return `You got stuck in ${padaName(s.pada)}: slow down there and it will come.`;
     case 'dropped': return s.count != null && s.expected != null ? `A few akṣaras went missing (${s.count} of ${s.expected} heard): slowly, every one of them.` : 'A few akṣaras went missing: slowly, every one of them.';
     case 'skipped': return 'This sloka was not heard: recite it on its own first.';
@@ -194,13 +212,15 @@ export function attemptOverall(items, categories = CAT_IDS, weights = CATEGORY_W
   let n = 0;
   for (const it of items || []) {
     if (!it || it.missing) continue;
-    const o = overallScore(it, categories, weights);
+    const o = itemOverall(it, categories, weights);
     if (o == null) continue;
     sum += o;
     n++;
   }
   return n ? Math.round(sum / n) : null;
 }
+// One item's overall with its self-corrections taken off (15 % when it has any).
+export const itemOverall = (it, categories = CAT_IDS, weights = CATEGORY_WEIGHTS) => applySlipPenalty(overallScore(it, categories, weights), it && it.slips);
 
 export function normalizeTolerance(t) {
   const out = {};

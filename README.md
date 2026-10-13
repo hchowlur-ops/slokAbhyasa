@@ -198,11 +198,17 @@ slokas you had ticked there.
      grown-up learner; "not your best today, your best is still 84" rather than praise for
      a take below the learner's best; plain labels instead with a switch in Settings). Only
      the categories that could be judged count; the overall is recomputed when the word
-     scores arrive with the transcript. A **slip** in the recitation itself — a restart of a
-     pāda or of the sloka, getting stuck inside a pāda, akṣaras dropped, heard by the ear
-     while recording several slokas and confirmed by the sound comparison or the words —
-     leaves the score as it is but makes the grade Needs practice, for that sloka and for
-     the take; the report row says which ("restarted pāda 3", "stuck in pāda 2"). Under the
+     scores arrive with the transcript. A **slip** in the recitation itself makes the grade
+     Needs practice, for that sloka and for the take, and the report row says which. The
+     slips that are the learner correcting themself — a word said twice, a pāda or the
+     sloka started again, found in the words heard (and a restart heard by the ear while
+     recording several slokas) — also cost **15 % of the sloka's score**, once, whatever
+     their number; the line under the grade says what was lost and why ("Lost 14 points
+     (15 %) for self-correction: repeated "पर्युपासते""), and the Analysis names each one
+     with the word said twice or the word the pāda or the sloka was started again at.
+     Getting stuck inside a pāda or dropping akṣaras (heard by the ear and confirmed by the
+     sound comparison or the words) is a slip too but costs nothing beyond the categories
+     it already lowers. Under the
      grade, once the take is saved, a line or two from the learner's history: a first
      Excellent on this sloka, a new best, a climb since last week, "you kept at it: four
      takes today and the last was your best", a streak of days, a welcome back after a
@@ -217,8 +223,9 @@ slokas you had ticked there.
    * **Analysis**, folded under that; open it for the detail:
      - the **transcript** of the sloka and of your attempt, with the words that differ
        highlighted (see "Transcripts" below). Each row has a **play button** by its label —
-       "Sloka ▶" plays the sloka, "Yours ▶" plays your recording; "Transcribe again" reruns
-       the words with another language or model;
+       "Sloka ▶" plays the sloka, "Yours ▶" plays your recording (the words are heard
+       automatically, in the language the text is shown in; there is no Transcribe button
+       and no model dropdown anywhere);
      - the seven **category tiles**, each with its score, what it rests on and whether it
        is within tolerance; a category that cannot be judged for this report (no
        transcript yet, pitch shown for interest only for recited text) is collapsed under
@@ -380,7 +387,7 @@ tolerance fields stay visible but greyed until the switch is off again.
   and compared, in the Transcript block at the top of the Analysis fold: sloka words that were not
   heard are highlighted in red there and at the top; extra or different words in your attempt
   are highlighted in amber. Click any phrase to hear it; the small "i" by "Yours" opens
-  this legend as an overlay. "Transcribe again" reruns with another model.
+  this legend as an overlay.
 * **Library** – "Transcript" shows or corrects the transcript of a sloka (no Transcribe button or model there: "Transcribe all" in the toolbar makes the missing ones): the Library
   is the one place a sloka's words are corrected (the panels of Teach, Self Evaluation and
   quizzes show them without an "Edit" button). A **right-click** on
@@ -428,7 +435,7 @@ acoustic analysis, and the app stays usable meanwhile:
 * In **Self Evaluation** your attempt's transcription starts the moment you stop recording,
   while the comparison runs; the results appear first and the word diff fills in after.
 * Every transcription shows a progress bar with a **Stop** button. Stopping leaves the
-  recording without a transcript (press "Transcribe" later to make one); stopping while a
+  recording without a transcript (it is made the next time the sloka is used); stopping while a
   quiz is being scored gives that attempt no pronunciation score. After a stop the next
   transcription can take a few seconds longer while the speech model is reloaded from the
   browser's cache.
@@ -693,16 +700,21 @@ three Excellent attempts on three different days or on any days — this one is 
 server, with the badges), **Tolerance**
 (the acceptable variation per category for Self Evaluation and Teach; a quiz always uses the
 defaults for the chosen learner; and the "Ignore tolerances" switch that turns every
-within/outside verdict off, leaving scores and grades), **Speech recognition** (the model,
-and whether transcripts are made automatically — the same controls that sit beside every
-transcript panel; the words are always heard as Sanskrit), and **Sloka text** (whether the slokas' text is
+within/outside verdict off, leaving scores and grades), **Speech recognition** (a note only:
+the words are heard automatically, in the language the text is shown in, by the model chosen
+for this computer — there is no model dropdown and no Transcribe button anywhere), and **Sloka text** (whether the slokas' text is
 shown during Self Evaluation and while reciting a quiz, both on by default; whether the
 Transcript block is hidden in the results (off by default: on, the sloka's words and yours
 and the words-heard line, at the top of the Analysis fold, are left out, in Self Evaluation
 and quizzes, "Play both together" staying under the overall, while the words are still heard
 and scored); the script the
-sloka's text is shown in — Sanskrit as heard, or Kannada, Telugu or romanised (IAST) written
-from it, each akṣara then carrying ◡ laghu or — guru above it; the chandas hint; and whether
+sloka's text is shown in — Sanskrit, Kannada, Telugu or romanised (IAST) — which is also
+the language the words are heard in, so what you read and what was heard are written the
+same way with no transliteration between — with one safeguard: Whisper knows Sanskrit chant
+far better as Sanskrit than as Kannada, Telugu or English, so when a hearing in one of those
+comes back poor (under 40 % of the sloka's words) the stretch is heard again as Sanskrit and
+written in the chosen script; whether every akṣara carries ◡ laghu or — guru
+above it, in every script (on by default; off with the switch); the chandas hint; and whether
 an anuṣṭubh sloka is written in two lines or four). Beside them, "Why these defaults" explains how the
 weights and tolerances are tuned for Sanskrit śloka recitation and lists the references
 (reproduced under "References" below). Under both columns a short note, "Whisper · how the

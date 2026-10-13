@@ -10,13 +10,13 @@ import { drawWaveform, drawLiveWave, ComparisonChart } from './visualizer.js';
 import { serializeFeatures, deserializeFeatures, isValidFeatures, extractFeatures, SR as FEAT_SR } from './dsp/features.js';
 import { padaStarts, startTemplates, calibrate, matchStart, mfccRows, meanOf, TEMPLATE_SEC, TEMPLATE_FRAMES, MIN_TEMPLATE_FRAMES } from './dsp/starts.js';
 import { MISMATCH_CONTRAST, confirmByWords } from './dsp/compare.js';
-import { QUIZ_CATEGORIES, LEGACY_CATEGORIES, DEFAULT_QUIZ_CATEGORIES, DEFAULT_TOLERANCE, CATEGORY_WEIGHTS, categoryLabel, normalizeWeights, itemScores, attemptSummary, scoreFor, normalizeCategories, normalizeTolerance, recordTolerance, withinTolerance, itemVerdict, correctness, pickBaselines, overallScore, attemptOverall, gradeOf, gradeById, gradeWithSlips, gradeWords, slipsLabel, anySlips, modernCategories } from './quizscore.js';
+import { QUIZ_CATEGORIES, LEGACY_CATEGORIES, DEFAULT_QUIZ_CATEGORIES, DEFAULT_TOLERANCE, CATEGORY_WEIGHTS, categoryLabel, normalizeWeights, itemScores, attemptSummary, scoreFor, normalizeCategories, normalizeTolerance, recordTolerance, withinTolerance, itemVerdict, correctness, pickBaselines, overallScore, attemptOverall, itemOverall, applySlipPenalty, selfCorrections, SLIP_PENALTY, gradeOf, gradeById, gradeWithSlips, gradeWords, slipsLabel, anySlips, modernCategories } from './quizscore.js';
 import { comparePhonology, ERROR_LABEL, syllabify } from './phon.js';
 import { SyllableCounter } from './dsp/syllables.js';
 import { mixToMono, resample } from './dsp/resample.js';
 import { trimSilence } from './dsp/trim.js';
 import { Transcriber, STT_LANGUAGES, STT_LANGUAGE_CODES, STT_TIERS, sttLanguageLabel, sttLanguageTag, sttTierLabel, isStopped } from './stt.js';
-import { segments as scriptSegments, wordSegments, toDeva, weightMark } from './lipi.js';
+import { segments as scriptSegments, wordSegments, toDeva, weightMark, inScript } from './lipi.js';
 import { scriptToLatin, latinToScript } from './translit.js';
 import { mapNameToVerse, parseVerseId, verseBody, versePlan } from './verses.js';
 import { badgeEmoji, DEVICE as BADGE_DEVICE } from './badges.js';
@@ -24,7 +24,7 @@ import { normalizeStore, putInStore, pickTranscript, availableLanguages } from '
 import { transliterateTranscript } from './translit.js';
 import { identifyChandas, layoutSloka, padaBreaks, linesFor, uvacaOffset, chandasLabel, chandasPattern, gitaVerse, gitaFamily, aksharaPlan } from './chandas.js';
 import { periodRange, shiftPeriod, inRange, isoDate, slokaRows, summarize, KIND_LABEL, progress } from './reports.js';
-import { diffWords, diffSummary, compareWords, tokenizeTranscript, windowedTokens, tokenize, dandaMarks, withDandas, uvacaWords, isUvacaLine } from './textdiff.js';
+import { diffWords, diffSummary, compareWords, tokenizeTranscript, windowedTokens, tokenize, dandaMarks, withDandas, uvacaWords, isUvacaLine, findSelfCorrections } from './textdiff.js';
 import { AGE_GROUPS, VOICE_TYPES, STYLE_MODES, DEFAULT_STYLE_MODE, presetsFor, ADULT_PRESET, compareModeFor, speakerLabel, ageGroupLabel, styleMode, voiceStats, deriveText } from './meta.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -308,10 +308,9 @@ const sttSettings = (() => {
   const d = { language: 'sanskrit', tier: null, auto: true, autoV: 2, cpuTiers: [] };
   let s = d;
   try { s = { ...d, ...JSON.parse(localStorage.getItem(STT_KEY) || '{}') }; } catch { /* defaults */ }
-  s.language = 'sanskrit'; // the words are always heard as Sanskrit; other languages are written from it
-  if (s.tier && s.tier !== 'tiny' && !STT_TIERS.some((t) => t.id === s.tier)) s.tier = null;
-  if (s.autoV !== 2) { s.auto = true; s.autoV = 2; }
-  s.auto = s.auto !== false;
+  s.tier = null; // the model is chosen for this computer (see sttTier); there is no dropdown any more
+  s.auto = true; // transcripts are always made: there is no Transcribe button any more
+  s.autoV = 2;
   if (!Array.isArray(s.cpuTiers)) s.cpuTiers = [];
   return s;
 })();
@@ -322,7 +321,11 @@ const sttLanguageListeners = new Set();
 const TEXT_LANGUAGE_KEY = 'tutor-text-language';
 let textLanguage = (() => { try { const v = localStorage.getItem(TEXT_LANGUAGE_KEY) || ''; return STT_LANGUAGE_CODES.includes(v) && v !== 'sanskrit' ? v : ''; } catch { return ''; } })();
 const displayLanguage = () => textLanguage || 'sanskrit';
-const marksShown = () => displayLanguage() !== 'sanskrit';
+sttSettings.language = displayLanguage(); // the words are heard in the language the text is shown in: no step between
+// ◡ laghu and — guru above every akṣara, in every script (off with the switch in Settings)
+const MARKS_KEY = 'tutor-marks';
+let marksOn = (() => { try { return localStorage.getItem(MARKS_KEY) !== '0'; } catch { return true; } })();
+const marksShown = () => marksOn;
 {
   const sel = $('#settings-text-language');
   const labels = { english: 'English · romanised (IAST)' };
@@ -331,16 +334,18 @@ const marksShown = () => displayLanguage() !== 'sanskrit';
   sel.addEventListener('change', () => {
     textLanguage = STT_LANGUAGE_CODES.includes(sel.value) && sel.value !== 'sanskrit' ? sel.value : '';
     try { if (textLanguage) localStorage.setItem(TEXT_LANGUAGE_KEY, textLanguage); else localStorage.removeItem(TEXT_LANGUAGE_KEY); } catch { /* ignore */ }
+    sttSettings.language = displayLanguage();
     for (const fn of sttLanguageListeners) fn(displayLanguage());
   });
 }
 const escapeHtml = (x) => String(x).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 // Text in the chosen script: in a language other than Sanskrit every akṣara carries its weight
 const segmentsHtml = (segs) => segs.map((sg) => (sg.sep != null ? escapeHtml(sg.sep) : sg.weight ? `<ruby>${escapeHtml(sg.text)}<rt>${weightMark(sg.weight)}</rt></ruby>` : escapeHtml(sg.text))).join('');
-const scriptHtml = (text, language = displayLanguage()) => String(text || '').split('\n').map((line) => segmentsHtml(scriptSegments(line, language))).join('<br>');
+const scriptHtml = (text, language = displayLanguage()) => String(text || '').split('\n').map((line) => segmentsHtml(scriptSegments(line, language, { marks: marksOn }))).join('<br>');
 // The transcript of a sloka in the language chosen for speech to text (none if it has not
 // been transcribed in that language yet).
-const transcriptIn = (store, language = sttSettings.language) => pickTranscript(store, language);
+// … or, failing that, whatever it has: the comparison reads every script alike
+const transcriptIn = (store, language = sttSettings.language) => pickTranscript(store, language) || pickTranscript(store);
 let sttDevice = null;
 async function sttTier() {
   if (sttSettings.tier) return sttSettings.tier;
@@ -533,7 +538,7 @@ function shiftTranscript(t, delta, duration) {
 function renderTranscriptText(host, t, toks, flagged, cls, play, dimmed = null, dandas = false, perPada = null) {
   host.innerHTML = '';
   host.lang = sttLanguageTag(displayLanguage());
-  const written = wordSegments(toks.map((tok) => tok.word), displayLanguage()); // each word in the chosen script, its akṣaras marked
+  const written = wordSegments(toks.map((tok) => tok.word), displayLanguage(), { marks: marksOn }); // each word in the chosen script, its akṣaras marked when asked
   if (!toks.length) { host.textContent = t.text || 'Nothing was recognised.'; host.classList.add('muted'); return; }
   host.classList.remove('muted');
   // a śloka's lines end in daṇḍas: after the token that ends each marked line, and a line
@@ -593,7 +598,7 @@ function renderTranscriptText(host, t, toks, flagged, cls, play, dimmed = null, 
 
 // A transcript panel: language/model controls, automatic toggle, progress, text,
 // optional editing. `setSource(fn)` supplies { samples, sampleRate, what } for "Transcribe".
-function createTranscriptPanel(host, { editable = false, play = null, onChange = null, onStale = null, title = 'Transcript', controls = true } = {}) {
+function createTranscriptPanel(host, { editable = false, play = null, onChange = null, onStale = null, title = 'Transcript', controls = false } = {}) {
   host.innerHTML = `
     <div class="tp-head">
       <span class="tp-title"></span>
@@ -2527,6 +2532,14 @@ let slokaLines = (() => { try { return localStorage.getItem(SLOKA_LINES_KEY) ===
     try { if (chandasHintOn) localStorage.removeItem(CHANDAS_HINT_KEY); else localStorage.setItem(CHANDAS_HINT_KEY, '0'); } catch { /* ignore */ }
     renderSlokaTexts();
   });
+  const marksCb = $('#settings-marks');
+  marksCb.checked = marksOn;
+  marksCb.addEventListener('change', () => {
+    marksOn = marksCb.checked;
+    try { if (marksOn) localStorage.removeItem(MARKS_KEY); else localStorage.setItem(MARKS_KEY, '0'); } catch { /* ignore */ }
+    for (const fn of sttLanguageListeners) fn(displayLanguage()); // everything written in a script is drawn again
+    if (sttPractice.heard) renderTranscriptDiff();
+  });
   for (const r of $$('input[name="sloka-lines"]')) {
     r.checked = Number(r.value) === slokaLines;
     r.addEventListener('change', () => {
@@ -2883,7 +2896,7 @@ function hearRestart(ear, p) {
   const since = Math.max(0, ear.counter.count - p.count); // akṣaras heard since the pause ended
   if (k === first) {
     if (p.count < Math.round(plan.total * 0.25)) return; // only just begun: not a restart
-    addSlip(item.id, { kind: 'falseStart', at: Math.round((recSegments ? recSegments.from : 0) * 100) / 100, by: 'sound' });
+    addSlip(item.id, { kind: 'falseStart', at: Math.round((recSegments ? recSegments.from : 0) * 100) / 100, word: padaFirstWord(item, plan, first), by: 'sound' });
     ear.counter.count = since;
     ear.stalled = new Set();
     if (recSegments) recSegments.from = Math.max(recSegments.from, p.at - 0.15);
@@ -2892,10 +2905,20 @@ function hearRestart(ear, p) {
   }
   const sc = startCountOf(plan, k);
   if (p.count < sc + 3) return; // the pāda is simply next
-  addSlip(item.id, { kind: 'restart', at: Math.round(p.at * 100) / 100, pada: k, by: 'sound' });
+  addSlip(item.id, { kind: 'restart', at: Math.round(p.at * 100) / 100, pada: k, word: padaFirstWord(item, plan, k), by: 'sound' });
   ear.counter.count = sc + since;
   ear.stalled = new Set();
   recNote(`${padaName(k)} again: the count goes back to ${sc}`);
+}
+// The first word of a pāda of the sloka in view (the speaker line's for 0), by the akṣaras.
+function padaFirstWord(item, plan, pada) {
+  const base = item && practice.bases.get(item.id);
+  const text = base ? slokaTextOf(base) : '';
+  if (!text || !plan) return undefined;
+  const start = startCountOf(plan, pada);
+  let acc = 0;
+  for (const w of tokenize(text)) { if (acc >= start) return w.word; acc += syllabify(w.word).length; }
+  return undefined;
 }
 // The learner taps a line of the text while the ear listens: "I am here" — the count is
 // set to that line's first pāda; a tap on the count line starts the sloka's count again.
@@ -3126,7 +3149,7 @@ function renderQuizBox() {
 // Share of a sloka's words heard in the take, over the parts that were compared.
 function wordSimilarity(res, baseT, heardT, baseDuration, takeDuration) {
   const d = windowedDiff(res, baseT, heardT, baseDuration, takeDuration);
-  return d.ai.length ? { similarity: d.summary.similarity, phonology: d.phonology } : null;
+  return d.ai.length ? { similarity: d.summary.similarity, phonology: d.phonology, corrections: d.corrections } : null;
 }
 
 // What the comparison decided on the way to its scores, kept with a quiz attempt so a
@@ -3210,11 +3233,15 @@ async function scoreQuizAttempt() {
       }
       if (!live()) return;
       const words = tokenizeTranscript(ref || base.transcript).length;
-      const ws = wordSimilarity(res, ref || base.transcript, heardT, base.duration, take.duration);
+      const heard = await hearAgainIfPoor(res, ref || base.transcript, heardT, base.duration, false);
+      if (!live()) return;
+      heardT = heard.heardT;
+      const ws = heard.ws;
       if (ws) {
         sims.set(id, ws);
         practice.wordSims.set(id, ws.similarity);
         if (ws.phonology) practice.phonology.set(id, ws.phonology);
+        setWordSlips(id, ws.corrections);
         if (confirmByWords(res, ws.similarity, words) && practice.activeId === id) showActiveReport();
       }
     }
@@ -3270,6 +3297,10 @@ function renderQuizScore() {
   $('#quiz-overall').textContent = overall == null ? '–' : String(overall);
   const quizSlips = a.items.flatMap((it) => (Array.isArray(it.slips) ? it.slips : []));
   setGrade($('#quiz-grade'), gradeWithSlips(overall, quizSlips), $('#quiz-words'), { seed: `${quiz.id}:${quiz.attempts ? quiz.attempts.length : 0}`, slips: quizSlips, score: overall, best: practice.progress && practice.progress.quizzes && practice.progress.quizzes[quiz.id] ? practice.progress.quizzes[quiz.id].best : null });
+  const penalised = a.items.filter((it) => selfCorrections(it.slips).length);
+  const qpen = $('#quiz-penalty');
+  qpen.textContent = penalised.length ? `${Math.round(SLIP_PENALTY * 100)} % off for self-correction in ${penalised.length === 1 ? penalised[0].name : `${penalised.length} slokas`}: ${penalised.map((it) => `${penalised.length > 1 ? `${it.name} ` : ''}${slipsLabel(selfCorrections(it.slips))}`).join(' · ')}` : '';
+  setHidden(qpen, !qpen.textContent);
   const n = a.items.length;
   $('#quiz-overall-sub').textContent = !corr ? 'Scoring…' : `${n} sloka${n === 1 ? '' : 's'} · ${a.recited ?? 0} recited · weighted on ${quiz.categories.map((c) => catLabel(c).toLowerCase()).join(', ')}`;
   const vEl = $('#quiz-verdict');
@@ -3325,7 +3356,7 @@ function renderQuizScore() {
       const mark = w == null ? '' : `<span class="mark ${w ? 'ok' : 'bad'}" title="${w ? 'within' : 'outside'} ${tol[c.id]} %">${w ? '✓' : '✗'}</span>`;
       cells.push(`<td class="${on ? 'on' : 'off'}">${v == null ? '–' : v}${on ? mark : ''}</td>`);
     }
-    cells.push(`<td class="on">${it.missing ? '–' : gradeCell(overallScore(it, quiz.categories, aw), it.slips)}</td>`);
+    cells.push(`<td class="on">${it.missing ? '–' : gradeCell(itemOverall(it, quiz.categories, aw), it.slips)}</td>`);
     if (tol) {
       const v = itemVerdict(it, quiz.categories, tol);
       cells.push(`<td class="on">${v.ok === null ? '–' : v.ok ? 'yes' : 'no'}</td>`);
@@ -3976,8 +4007,10 @@ const weightsOf = (a) => (a && a.weights ? normalizeWeights(a.weights) : CATEGOR
 // The weighted overall of a report over the categories that could be judged, and its grade.
 function reportOverall(id) {
   const sc = reportScores(id);
-  const overall = sc ? overallScore(sc, verdictCategories(), activeWeights()) : null;
-  return { overall, grade: gradeWithSlips(overall, slipsOf(id)) };
+  const slips = slipsOf(id);
+  const raw = sc ? overallScore(sc, verdictCategories(), activeWeights()) : null;
+  const overall = applySlipPenalty(raw, slips); // 15 % off for self-correction
+  return { overall, raw, grade: gradeWithSlips(overall, slips), slips };
 }
 // A grade as it is shown: its emoji and its word ("🌟 Excellent"), or the word alone when
 // the Settings ask for plain labels. The word is always there, so the emoji never carries
@@ -4043,10 +4076,13 @@ function renderTiles(res, id) {
   setHidden(fold, !unjudged.length);
   $('#scores-unjudged-title').textContent = `Not judged: ${unjudged.map((t) => catLabel(t.dataset.cat).toLowerCase()).join(', ')}`;
   // the overall: weighted over what was judged
-  const { overall, grade } = reportOverall(id);
+  const { overall, raw, grade, slips } = reportOverall(id);
   $('#score-ring').style.setProperty('--pct', String(overall == null ? 0 : overall));
   $('#score-overall').textContent = overall == null ? '–' : String(overall);
-  setGrade($('#score-grade'), grade, $('#score-words'), { seed: id, slips: slipsOf(id), score: overall, best: bestBeforeOf(id) });
+  setGrade($('#score-grade'), grade, $('#score-words'), { seed: id, slips, score: overall, best: bestBeforeOf(id) });
+  const pen = $('#score-penalty');
+  pen.textContent = penaltyText(raw, overall, slips);
+  setHidden(pen, !pen.textContent);
   const aw = activeWeights();
   $('#score-overall-sub').textContent = judged.length ? `weighted: ${judged.map((t) => `${catLabel(t.dataset.cat).toLowerCase()} ${aw[t.dataset.cat]}`).join(', ')}` : 'nothing could be judged';
   $('#score-overall-sub').title = 'The overall is the weighted mean of the categories that could be judged';
@@ -4410,15 +4446,8 @@ async function refreshLibrary() {
 
 const sttPractice = { base: null, heard: null };
 const sttProgress = mirrored(progressUI('stt-progress'), 'words'); // the take's words; the Evaluating block shows it too
-buildSttControls($('#stt-controls'));
-// the same controls on the Settings page, with the Automatic switch
-buildSttControls($('#settings-stt-controls'));
-{
-  const cb = $('#settings-stt-auto');
-  cb.checked = sttSettings.auto;
-  cb.addEventListener('change', () => { sttSettings.auto = cb.checked; saveStt(); syncSttAuto(); });
-  sttAutoBoxes.add(cb);
-}
+// (no model dropdown and no Transcribe button anywhere: the words are heard automatically,
+// with the model chosen for this computer)
 $('#stt-run').addEventListener('click', () => transcribeBoth(true));
 
 function resetTranscriptUI() {
@@ -4453,14 +4482,13 @@ function heardPartOf(res) {
 }
 const partKey = (win) => (win ? `${win[0].toFixed(1)}-${win[1].toFixed(1)}` : 'all');
 
-async function transcribeTakePart(win, force) {
+async function transcribeTakePart(win, force, language = sttSettings.language) {
   const take = practice.take;
   if (!take) return null;
-  const language = sttSettings.language;
   const tier = await sttTier();
   const fits = (t) => !!t && t.language === language && (!force || t.tier === tier);
   if (practice.take !== take) return null;
-  const key = partKey(win);
+  const key = language === sttSettings.language ? partKey(win) : `${language}:${partKey(win)}`; // a hearing in another language is kept apart
   const have = practice.heardTranscripts.get(key);
   if (fits(have)) return have;
   const seg = !force ? segmentFor(win) : null;
@@ -4484,7 +4512,7 @@ async function transcribeTakePart(win, force) {
   const samples = win ? take.samples.subarray(from, to) : take.samples;
   const what = win ? `your attempt (${fmtTime(win[0])}–${fmtTime(win[1])})` : 'your attempt';
   sttProgress.show('Starting…', () => ctrl.abort());
-  job.promise = runTranscription(samples, sr, sttProgress, what, ctrl.signal)
+  job.promise = runTranscription(samples, sr, sttProgress, what, ctrl.signal, { language })
     .then((t) => {
       const abs = win ? shiftTranscript(t, from / sr, take.duration) : t;
       if (practice.take === take) practice.heardTranscripts.set(key, abs);
@@ -4494,6 +4522,20 @@ async function transcribeTakePart(win, force) {
     .finally(() => { if (practice.heardJobs.get(key) === job) { practice.heardJobs.delete(key); if (!practice.heardJobs.size) sttProgress.hide(); } });
   practice.heardJobs.set(key, job);
   return job.promise;
+}
+// The take's words for a report are heard in the language the text is shown in; Whisper
+// knows Sanskrit chant far better as Sanskrit than as Kannada, Telugu or English, so when
+// that hearing is poor (under 40 % of the sloka's words) the part is heard again as
+// Sanskrit and the better of the two kept — written in the chosen script either way.
+async function hearAgainIfPoor(res, refT, heardT, baseDuration, force = false) {
+  const take = practice.take;
+  const ws = refT && heardT && take ? wordSimilarity(res, refT, heardT, baseDuration, take.duration) : null;
+  if (!take || !refT || !heardT || sttSettings.language === 'sanskrit' || (ws && ws.similarity >= 0.4)) return { heardT, ws };
+  let again = null;
+  try { again = await transcribeTakePart(heardPartOf(res), force, 'sanskrit'); } catch { again = null; }
+  if (practice.take !== take || !again) return { heardT, ws };
+  const ws2 = wordSimilarity(res, refT, again, baseDuration, take.duration);
+  return ws2 && (!ws || ws2.similarity > ws.similarity) ? { heardT: again, ws: ws2 } : { heardT, ws };
 }
 // Every report's words in the background once the take is compared: each sloka's stretch of
 // the take is transcribed in turn, the open report's first, and its word scores computed as
@@ -4516,7 +4558,7 @@ async function transcribeAllParts() {
       const base = await ensureBase(id);
       const ref = typedReference(base, res) || base.transcript;
       if (!ref) continue; // the sloka has no words yet: its report transcribes it when opened
-      const ws = wordSimilarity(res, ref, heardT, base.duration, take.duration);
+      const { ws } = await hearAgainIfPoor(res, ref, heardT, base.duration, false);
       if (practice.take !== take || !ws) continue;
       if (!practice.wordSims.has(id)) {
         practice.wordSims.set(id, ws.similarity);
@@ -4567,13 +4609,15 @@ function transcribeBoth(force) {
       if (!baseT) {
         baseT = await practicePanel.wait();
         if (!current()) return;
-        const stale = !baseT || (!baseT.edited && (baseT.language !== language || (force && baseT.tier !== tier)));
+        const stale = !baseT || (force && !baseT.edited && baseT.tier !== tier); // any script serves: the comparison reads them alike
         if (stale) baseT = await practicePanel.transcribe();
         if (!current()) return;
         if (!baseT) throw new Error('The sloka could not be transcribed.');
       }
-      const heardT = await transcribeTakePart(heardPartOf(practice.result), force);
+      let heardT = await transcribeTakePart(heardPartOf(practice.result), force);
       if (!current() || !heardT) return; // stopped: the report stays without a word diff
+      heardT = (await hearAgainIfPoor(practice.result, baseT, heardT, practice.base.duration, force)).heardT;
+      if (!current()) return;
       sttPractice.base = baseT;
       sttPractice.heard = heardT;
       renderTranscriptDiff();
@@ -4615,7 +4659,39 @@ function windowedDiff(res, baseT, heardT, baseDuration, takeDuration) {
   const perPada = ai.length === A.toks.length ? identifyChandas(baseT.text).perPada : null;
   const offset = perPada ? uvacaOffset(baseT.text) : 0; // the pādas start after "arjuna uvāca"
   const phonology = ai.length ? comparePhonology(ai.map((i) => A.toks[i].word).join(' '), bi.map((i) => B.toks[i].word).join(' '), { perPada, offset }) : null;
-  return { A, B, ai, bi, delA, insB, dimA, dimB, summary: cmp.summary, phonology };
+  // the learner correcting themself: a word said twice, a pāda or the sloka started again
+  let corrections = [];
+  if (ai.length) {
+    const refToks = ai.map((i) => A.toks[i]);
+    const heardToks = bi.map((i) => B.toks[i]);
+    let refPada = null;
+    if (perPada) { refPada = []; let acc = 0; for (const t of refToks) { refPada.push(acc < offset ? 0 : 1 + Math.floor((acc - offset) / perPada)); acc += syllabify(t.word).length; } }
+    corrections = findSelfCorrections(refToks, heardToks, { refPada }).map((c) => { const tok = heardToks[c.at]; const ch = tok && heardT.chunks && heardT.chunks[tok.chunk]; return { ...c, at: ch && typeof ch.start === 'number' ? ch.start : undefined }; });
+  }
+  return { A, B, ai, bi, delA, insB, dimA, dimB, summary: cmp.summary, phonology, corrections };
+}
+// What the words found the learner correcting, kept as this sloka's slips (replacing what
+// the words found before; a restart the sound heard already only gains its word).
+function setWordSlips(id, corrections) {
+  if (!id) return;
+  const list = (practice.slips.get(id) || []).filter((x) => !(x.by === 'words' && (x.kind === 'repeat' || x.kind === 'restart')));
+  for (const c of corrections || []) {
+    if (c.kind === 'restart') {
+      const same = list.find((x) => x.kind === 'restart' && x.pada != null && x.pada === c.pada);
+      if (same) { if (!same.word) same.word = c.word; continue; }
+    }
+    const slip = { kind: c.kind, word: c.word, by: 'words' };
+    if (c.pada != null) slip.pada = c.pada;
+    if (c.at != null) slip.at = Math.round(c.at * 100) / 100;
+    list.push(slip);
+  }
+  practice.slips.set(id, list);
+}
+// The points a sloka lost to self-correction, said under its score.
+function penaltyText(raw, overall, slips) {
+  const sc = selfCorrections(slips);
+  if (!sc.length || raw == null || overall == null) return '';
+  return `Lost ${raw - overall} point${raw - overall === 1 ? '' : 's'} (${Math.round(SLIP_PENALTY * 100)} %) for self-correction: ${slipsLabel(sc)}`;
 }
 
 // The akṣara-and-phoneme breakdown under the word diff: what kind of slips, with examples.
@@ -4666,10 +4742,11 @@ function renderPhonologyReport(host, ph) {
 function renderTranscriptDiff() {
   const res = practice.result;
   if (!res || !practice.base || !practice.take || !sttPractice.base || !sttPractice.heard) return;
-  const { A, B, ai, delA, insB, dimA, dimB, summary: sm, phonology } = windowedDiff(res, sttPractice.base, sttPractice.heard, practice.base.duration, practice.take.duration);
+  const { A, B, ai, delA, insB, dimA, dimB, summary: sm, phonology, corrections } = windowedDiff(res, sttPractice.base, sttPractice.heard, practice.base.duration, practice.take.duration);
   if (ai.length) {
     practice.wordSims.set(practice.activeId, sm.similarity);
     if (phonology) practice.phonology.set(practice.activeId, phonology);
+    setWordSlips(practice.activeId, corrections);
     // a "not this sloka" verdict from the timbre is overturned when the words say otherwise
     if (confirmByWords(res, sm.similarity, ai.length)) {
       toast('The words confirm this is the sloka, though the recordings sound different; its scores now count.', 'info', 7000);
@@ -4680,6 +4757,7 @@ function renderTranscriptDiff() {
     syncSession();
   }
   renderPhonologyReport($('#stt-phon'), phonology);
+  renderCorrections($('#stt-corrections'), slipsOf(practice.activeId));
   refreshVerdicts();
   // both rows in the sloka's metre: its lines and daṇḍas, the recitation laid out the same way
   const pp = (chandasOf(practice.base.record, sttPractice.base.text) || {}).perPada || null;
@@ -4688,9 +4766,29 @@ function renderTranscriptDiff() {
   practicePanel.highlight(delA, 'w-del', dimA);
   $('#stt-summary').textContent = ai.length
     ? `${Math.round(sm.similarity * 100)}% of the sloka's ${sttPractice.base.typed ? 'typed text' : 'text'} heard (${sm.matched} of ${ai.length} words) · ${sm.missing} missing · ${sm.extra} extra or different · ${sttLanguageLabel(sttPractice.base.language)}`
-    : 'Nothing was recognised in the sloka. Try another language or model.';
+    : 'Nothing was recognised in the sloka. Try again.';
   setHidden($('#stt-out'), false);
   settleEvaluating(); // the open report's words are on screen
+}
+
+// Under the words: what the learner corrected — the word said again, the word a pāda or
+// the sloka was started again at — and what it cost.
+function renderCorrections(host, slips) {
+  const sc = selfCorrections(slips);
+  host.innerHTML = '';
+  setHidden(host, !sc.length);
+  if (!sc.length) return;
+  const lead = document.createElement('b');
+  lead.textContent = `Self-correction · ${Math.round(SLIP_PENALTY * 100)} % off this sloka's score: `;
+  host.appendChild(lead);
+  const ul = document.createElement('ul');
+  for (const x of sc) {
+    const li = document.createElement('li');
+    const w = x.word ? `<span class="cw">${escapeHtml(inScript(x.word, displayLanguage()))}</span>` : '';
+    li.innerHTML = x.kind === 'repeat' ? `the word ${w} said twice` : x.kind === 'falseStart' || x.pada === 0 || (x.pada === 1 && x.by === 'words' && x.refIndex === 0) ? `the sloka started again${w ? ` at ${w}` : ''}` : `pāda ${x.pada != null ? x.pada : '?'} started again${w ? ` at ${w}` : ''}`;
+    ul.appendChild(li);
+  }
+  host.appendChild(ul);
 }
 
 // Library › what a sloka's sidecar says, in a glance: who, how judged, text, voice.
