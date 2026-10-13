@@ -87,6 +87,11 @@
           <footer>Bhagavad Gītā 18.66</footer>
         </blockquote>
       </div>
+      <!-- the learner's badges: a quiz mastered (three Excellent attempts), a chapter by heart -->
+      <div class="card home-badges" id="home-badges" hidden>
+        <div class="hb-lead" id="home-badges-lead">Badges</div>
+        <ul class="hb-list" id="home-badges-list"></ul>
+      </div>
     </section>
 
     <!-- ================= LEARN ================= -->
@@ -619,6 +624,8 @@
         <div class="tol-off">
           <label class="toggle"><input type="checkbox" id="settings-grade-words" /><span>Grades with an emoji and a word of encouragement</span></label>
           <p class="muted small">🌟 Excellent · 😊 Good · 💪 Fair · 🌱 Needs practice, each with a few words under the overall score. Switched off, the grades are the plain words. A slip in the recitation itself — a restart, getting stuck in a pāda, akṣaras dropped — is still scored in full, but makes the grade Needs practice whatever the score, for that sloka and for the take; the row says which slip.</p>
+          <label class="toggle"><input type="checkbox" id="settings-badge-days" /><span>A badge needs three Excellent attempts on three different days</span></label>
+          <p class="muted small">A badge 🏅 marks a quiz mastered by the chosen learner: the quiz completed with the grade Excellent at least three times — every sloka recited, no slip — a star added at five and at ten. On three different days, it says the quiz stays Excellent; switched off, three Excellent attempts on any days earn it. Chapter 📖 and Gītā 🪔 badges follow when the badged quizzes cover every verse. Badges live in badges.json beside the recordings, by profile id; <code>node tools/badges.mjs --recompute</code> rebuilds them.</p>
         </div>
       </div>
 
@@ -858,5 +865,12 @@
 </dialog>
 
 <script type="module" src="js/app.js"></script>
+  <!-- a badge earned: shown over the results for a moment -->
+  <div class="badge-card" id="badge-card" hidden role="status" aria-live="polite">
+    <div class="bc-emoji" id="badge-card-emoji"></div>
+    <h3 id="badge-card-title"></h3>
+    <p class="muted" id="badge-card-sub"></p>
+    <button class="btn btn-primary btn-sm" id="badge-card-close" type="button">Lovely</button>
+  </div>
 </body>
 </html>

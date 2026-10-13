@@ -29,6 +29,7 @@ import { normalizeStore, pickTranscript, putInStore, removeFromStore, shiftStore
 import { transliterateTranscript } from './js/translit.js';
 import { assessmentsFromQuiz, assessmentFromSession, byDateDesc } from './js/reports.js';
 import { chandasForRecord } from './js/chandas.js';
+import { computeBadges, quizBadges, coverageBadges, diffBadges, mergeBadges, DEFAULT_RULE, BADGES_VERSION } from './js/badges.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const DATA = resolveDataDir(ROOT);
@@ -37,6 +38,7 @@ const INDEX = path.join(LIB, 'index.json');
 const QUIZZES = path.join(DATA, 'quizzes');
 const SESSIONS = path.join(DATA, 'sessions');
 const PROFILES = path.join(DATA, 'profiles.json');
+const BADGES = path.join(DATA, 'badges.json');
 const REFERENCE_DIRS = resolveReferenceDirs(ROOT);
 initReference(REFERENCE_DIRS, { customDir: path.join(DATA, 'reference') }); // customisations beside the data, the datasets themselves read-only
 const HOST = '127.0.0.1';
@@ -422,7 +424,10 @@ async function handleQuizzes(req, res, parts) {
     q.attempts = Array.isArray(q.attempts) ? q.attempts : [];
     q.attempts.push(attempt);
     await writeQuiz(q);
-    return sendJson(res, 201, q);
+    // a badge earned or raised by this attempt (see js/badges.js) comes back with the quiz
+    let awards = [];
+    try { awards = await awardBadges(q); } catch (err) { console.warn(`Badges could not be awarded: ${err.message}`); }
+    return sendJson(res, 201, { ...q, awards });
   }
   // PUT /api/quizzes/:id/attempts/:n/audio  (body: WAV bytes) — the take of attempt n (1-based),
   // kept as quizzes/<id>/attempt-<n>.wav so a scoring can be looked into afterwards.
@@ -650,6 +655,78 @@ async function fileExists(p) {
 
 // ---------- API ----------
 
+// ---------- badges ----------
+// Derived from the quizzes' attempts (js/badges.js) and kept in <data>/badges.json by the
+// learner's profile id (names stay in profiles.json). Awarded on each attempt, idempotent;
+// rebuilt whole by a recompute (the tool, or a change of the rule).
+async function readBadges() {
+  try {
+    const b = JSON.parse(await fsp.readFile(BADGES, 'utf8'));
+    return { rule: { ...DEFAULT_RULE, ...(b && b.rule && typeof b.rule === 'object' ? { differentDays: !!b.rule.differentDays } : {}) }, badges: b && Array.isArray(b.badges) ? b.badges : [] };
+  } catch { return { rule: { ...DEFAULT_RULE }, badges: [] }; }
+}
+async function writeBadges(store) { await fsp.writeFile(BADGES, JSON.stringify({ schemaVersion: BADGES_VERSION, rule: store.rule, badges: store.badges }, null, 2) + '\n'); }
+let badgesLock = Promise.resolve();
+function withBadges(fn) {
+  const run = badgesLock.then(async () => {
+    const store = await readBadges();
+    const before = JSON.stringify(store);
+    const out = await fn(store);
+    if (JSON.stringify(store) !== before) await writeBadges(store);
+    return out;
+  });
+  badgesLock = run.catch(() => {});
+  return run;
+}
+// the verse ids each sloka of the library is linked to, for the chapter and Gītā badges
+async function verseIdsIndex() {
+  const map = new Map();
+  for (const r of await readIndex()) { const item = await withMeta(r); map.set(r.id, item.meta && item.meta.verse && item.meta.verse.id ? [item.meta.verse.id] : []); }
+  return map;
+}
+async function allQuizzes() {
+  let names = [];
+  try { names = await fsp.readdir(QUIZZES); } catch { return []; }
+  const out = [];
+  for (const n of names) { if (!n.endsWith('.json')) continue; const q = await readQuiz(n.slice(0, -5)); if (q) out.push(q); }
+  return out;
+}
+async function awardBadges(quiz) {
+  return withBadges(async (store) => {
+    const vmap = await verseIdsIndex();
+    const merged = mergeBadges(store.badges, quizBadges(quiz, store.rule));
+    const next = mergeBadges(merged, coverageBadges(merged.filter((b) => b.kind === 'quiz'), (id) => vmap.get(id) || []));
+    const awards = diffBadges(store.badges, next);
+    store.badges = next;
+    return awards;
+  });
+}
+async function recomputeBadges(rule = null) {
+  return withBadges(async (store) => {
+    if (rule && typeof rule === 'object' && 'differentDays' in rule) store.rule = { ...store.rule, differentDays: !!rule.differentDays };
+    const vmap = await verseIdsIndex();
+    store.badges = computeBadges(await allQuizzes(), { rule: store.rule, verseIdsOf: (id) => vmap.get(id) || [] });
+    return { rule: store.rule, badges: store.badges };
+  });
+}
+// GET /api/badges[?learner=<profile id>] · POST /api/badges/recompute · PATCH /api/badges {differentDays}
+async function handleBadges(req, res, parts, url) {
+  const sub = parts[2];
+  if (!sub && req.method === 'GET') {
+    const store = await readBadges();
+    const learner = url.searchParams.get('learner');
+    return sendJson(res, 200, { rule: store.rule, badges: learner ? store.badges.filter((b) => b.learner === learner) : store.badges });
+  }
+  if (sub === 'recompute' && req.method === 'POST') return sendJson(res, 200, await recomputeBadges());
+  if (!sub && req.method === 'PATCH') {
+    let body = null;
+    try { body = JSON.parse((await readBody(req, 1e5)).toString('utf8')); } catch { body = null; }
+    if (!body || typeof body !== 'object') return sendJson(res, 400, { error: 'Invalid JSON' });
+    return sendJson(res, 200, await recomputeBadges(body));
+  }
+  return sendJson(res, 405, { error: 'Method not allowed' });
+}
+
 // ---------- speaker profiles ----------
 // GET /api/profiles · POST /api/profiles {name, voiceType, ageGroup, roles}
 // PATCH /api/profiles/:id · DELETE /api/profiles/:id
@@ -873,6 +950,7 @@ async function handleApi(req, res, url) {
   if (parts[1] === 'assessments') return handleAssessments(req, res);
   if (parts[1] === 'folders') return handleFolders(req, res);
   if (parts[1] === 'profiles') return handleProfiles(req, res, parts);
+  if (parts[1] === 'badges') return handleBadges(req, res, parts, url);
   if (parts[1] === 'reference') return handleReference(req, res, parts);
   if (parts[1] !== 'baselines') return sendJson(res, 404, { error: 'Not found' });
   const id = parts[2];

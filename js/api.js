@@ -273,3 +273,17 @@ export async function wordsFromVerses(ds, body = {}) {
   const res = await check(await fetch(refUrl(ds, '/words'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }));
   return res.json();
 }
+
+// ---------- badges (a quiz mastered; see js/badges.js) ----------
+export async function listBadges(learner = '') {
+  const res = await check(await fetch(`/api/badges${learner ? `?learner=${encodeURIComponent(learner)}` : ''}`));
+  return res.json();
+}
+export async function recomputeBadges() {
+  const res = await check(await fetch('/api/badges/recompute', { method: 'POST' }));
+  return res.json();
+}
+export async function patchBadgeRule(rule) {
+  const res = await check(await fetch('/api/badges', jsonReq('PATCH', rule)));
+  return res.json();
+}

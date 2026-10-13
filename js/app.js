@@ -18,10 +18,11 @@ import { Transcriber, STT_LANGUAGES, STT_LANGUAGE_CODES, STT_TIERS, sttLanguageL
 import { segments as scriptSegments, wordSegments, toDeva, weightMark } from './lipi.js';
 import { scriptToLatin, latinToScript } from './translit.js';
 import { mapNameToVerse, parseVerseId, verseBody, versePlan } from './verses.js';
+import { badgeEmoji, DEVICE as BADGE_DEVICE } from './badges.js';
 import { normalizeStore, putInStore, pickTranscript, availableLanguages } from './transcripts.js';
 import { transliterateTranscript } from './translit.js';
 import { identifyChandas, layoutSloka, padaBreaks, linesFor, uvacaOffset, chandasLabel, chandasPattern, gitaVerse, gitaFamily, aksharaPlan } from './chandas.js';
-import { periodRange, shiftPeriod, inRange, isoDate, slokaRows, summarize, KIND_LABEL } from './reports.js';
+import { periodRange, shiftPeriod, inRange, isoDate, slokaRows, summarize, KIND_LABEL, progress } from './reports.js';
 import { diffWords, diffSummary, compareWords, tokenizeTranscript, windowedTokens, tokenize, dandaMarks, withDandas, uvacaWords, isUvacaLine } from './textdiff.js';
 import { AGE_GROUPS, VOICE_TYPES, STYLE_MODES, DEFAULT_STYLE_MODE, presetsFor, ADULT_PRESET, compareModeFor, speakerLabel, ageGroupLabel, styleMode, voiceStats, deriveText } from './meta.js';
 
@@ -285,6 +286,7 @@ function showView(name) {
   if (running) renderModeChrome();
   if (name === 'reports') refreshReports();
   if (name === 'learn') refreshLearnFolders();
+  if (name === 'home') renderHomeBadges();
   redrawAll();
 }
 $$('.nav-btn').forEach((b) => b.addEventListener('click', () => showView(b.dataset.view)));
@@ -851,6 +853,63 @@ function fillSelect(sel, items, value) {
 const voiceOptions = () => VOICE_TYPES.map((v) => ({ value: v.id, label: v.label }));
 const ageOptions = () => AGE_GROUPS.map((a) => ({ value: a.id, label: a.label }));
 
+// ---------- badges: a quiz mastered (see js/badges.js) ----------
+// The badges on file, every learner's; the chosen learner's are shown (the device's when
+// no one is chosen). Fetched once, again after an attempt or a change of the rule.
+let badgesCache = null; // { rule, badges }
+let badgesLoading = null;
+function getBadges(force = false) {
+  if (badgesCache && !force) return Promise.resolve(badgesCache);
+  if (!badgesLoading) badgesLoading = api.listBadges().then((b) => { badgesCache = b; return b; }).catch(() => (badgesCache = badgesCache || { rule: { differentDays: true }, badges: [] })).finally(() => { badgesLoading = null; });
+  return badgesLoading;
+}
+const learnerBadges = () => (badgesCache ? badgesCache.badges.filter((b) => b.learner === (learnerId || BADGE_DEVICE)) : []);
+const fmtBadgeDay = (iso) => new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+async function renderHomeBadges() {
+  await getBadges();
+  const box = $('#home-badges');
+  const list = $('#home-badges-list');
+  const mine = learnerBadges().slice().sort((a, b) => String(b.earnedAt).localeCompare(String(a.earnedAt)));
+  list.innerHTML = '';
+  $('#home-badges-lead').textContent = learnerName() ? `${learnerName()}'s badges` : 'Badges';
+  for (const b of mine) {
+    const li = document.createElement('li');
+    li.innerHTML = '<span class="hb-emoji"></span><span class="hb-title"></span><span class="hb-when"></span>';
+    li.firstChild.textContent = badgeEmoji(b);
+    li.children[1].textContent = b.title;
+    li.lastChild.textContent = `${b.kind === 'quiz' ? 'mastered' : 'by heart'} ${fmtBadgeDay(b.earnedAt)}${b.level > 1 ? ` · level ${b.level}` : ''}`;
+    li.title = b.kind === 'quiz' ? `Excellent ${b.evidence ? b.evidence.length : 3} times, every sloka recited, no slip${b.itemNames ? ` · ${b.itemNames.length} slokas: ${b.itemNames.slice(0, 6).join(', ')}${b.itemNames.length > 6 ? '…' : ''}` : ''}` : 'Every verse covered by a mastered quiz';
+    list.appendChild(li);
+  }
+  setHidden(box, !mine.length);
+}
+// A badge earned (or its level raised) by the attempt just saved: a card over the results
+// for a moment, calm — the badge, what it is for, and how it was earned.
+let badgeCardTimer = null;
+function showBadgeCard(awards, quiz) {
+  const a = awards.find((x) => x.kind === 'quiz') || awards[0];
+  if (!a) return;
+  const card = $('#badge-card');
+  $('#badge-card-emoji').textContent = awards.map(badgeEmoji).join(' ');
+  $('#badge-card-title').textContent = a.kind === 'quiz' ? (a.change === 'raised' ? `Level ${a.level} on ${a.title}!` : `You mastered ${a.title}!`) : `${a.title}!`;
+  const days = a.kind === 'quiz' && quiz && Array.isArray(a.evidence) ? a.evidence.map((n) => quiz.attempts && quiz.attempts[n - 1] ? fmtBadgeDay(quiz.attempts[n - 1].at) : null).filter(Boolean) : [];
+  const others = awards.filter((x) => x !== a).map((x) => x.title);
+  $('#badge-card-sub').textContent = [days.length ? `Excellent on ${days.join(', ')}` : '', others.length ? `And with it: ${others.join(', ')}` : ''].filter(Boolean).join(' · ');
+  setHidden(card, false);
+  clearTimeout(badgeCardTimer);
+  badgeCardTimer = setTimeout(() => setHidden(card, true), 12000);
+  getBadges(true).then(() => { renderHomeBadges(); renderQuizList(); });
+}
+$('#badge-card-close').addEventListener('click', () => { clearTimeout(badgeCardTimer); setHidden($('#badge-card'), true); });
+// the rule: three different days, or any
+{
+  const cb = $('#settings-badge-days');
+  getBadges().then((b) => { cb.checked = !!(b.rule && b.rule.differentDays); });
+  cb.addEventListener('change', async () => {
+    try { badgesCache = await api.patchBadgeRule({ differentDays: cb.checked }); renderHomeBadges(); renderQuizList(); toast(cb.checked ? 'Badges now need three Excellent attempts on three different days.' : 'Badges now need three Excellent attempts on any days.', 'info', 4000); } catch (err) { toast(err.message, 'error'); cb.checked = !cb.checked; }
+  });
+}
+
 const learnerListeners = new Set(); // re-rendered when the learner or the people change
 async function renderLearnerSelect() {
   const profiles = await getProfiles();
@@ -1291,7 +1350,34 @@ let practice = {
   teach: false, // Teach: one sloka at a time, Play then Listen
   session: null, // the stored record of this take (Self Evaluation / Teach), see saveSession()
   slips: new Map(), // id → what went wrong in the recitation itself this take: [{ kind, at, pada, … }] (see quizscore.js)
+  progress: null, // what the history says about this take once it is saved (reports.progress): moments, bests
 };
+// The moments of the take just saved — a first Excellent, a new best, a streak — read from
+// the whole history (every session and attempt of this learner), and the best each sloka
+// had before, for "not your best today".
+let progressToken = 0;
+async function refreshProgress(key) {
+  const token = ++progressToken;
+  let list;
+  try { list = await api.listAssessments(); } catch { return; }
+  if (token !== progressToken || !practice.take) return;
+  assessmentsCache = list;
+  practice.progress = progress(list, { profileId: learnerId || null, current: key });
+  renderMoments();
+  refreshVerdicts();
+  renderQuizScore();
+}
+function renderMoments() {
+  const p = practice.progress;
+  for (const [sel, on] of [['#score-moments', !practice.quiz], ['#quiz-moments', !!practice.quiz]]) {
+    const el = $(sel);
+    el.innerHTML = '';
+    const ms = on && p && gradeWordsOn ? p.moments : [];
+    for (const m of ms) { const li = document.createElement('li'); li.textContent = `${m.emoji} ${m.text}`; el.appendChild(li); }
+    setHidden(el, !ms.length);
+  }
+}
+const bestBeforeOf = (id) => (practice.progress && practice.progress.slokas && practice.progress.slokas[id] ? practice.progress.slokas[id].best : null);
 // The slips of a sloka in this take, as far as they are sure. The ear's count is good to
 // a tenth at best, so what it marks on its own is provisional: "akṣaras dropped" stands
 // once the words are in and miss akṣaras too; "stuck in a pāda" stands once the sound
@@ -1603,7 +1689,7 @@ function renderLearnerNote() {
   const desc = speakerLabel(who);
   el.textContent = `Judging ${learnerName()}${desc ? ` (${desc})` : ''}: pitch within ${st}, pace ${p.speedBand[0]}–${p.speedBand[1]}× when speed is judged, pronunciation tolerance ${p.pronunciationTolerance} %.${who.ageGroup === '12to15' ? ' A voice changes fast at this age: re-record your own baselines every few months.' : ''}`;
 }
-learnerListeners.add(() => { renderToleranceFields(); renderLearnerNote(); refreshVerdicts(); });
+learnerListeners.add(() => { renderToleranceFields(); renderLearnerNote(); refreshVerdicts(); renderHomeBadges(); });
 // Scores of one report in the seven categories (null where not judgeable), for verdicts.
 function reportScores(id) {
   const r = practice.results.get(id);
@@ -2193,6 +2279,7 @@ async function saveSession() {
     session.id = saved.id;
     session.pending = false;
     session.sent = JSON.stringify(items);
+    refreshProgress(`session:${saved.id}`);
     api.putSessionAudio(saved.id, take.blob).catch((err) => console.warn(`The session's recording could not be kept: ${err.message}`));
     if (session.dirty) syncSession();
   } catch (err) {
@@ -2214,7 +2301,7 @@ function syncSession() {
     session.sent = body;
     session.dirty = false;
     const sum = sessionSummary(items);
-    try { await api.updateSession(session.id, { items, overall: sum.overall, grade: sum.grade, tolerance: activeTolerance(), noTolerance: tolOff, weights: activeWeights() }); } catch (err) { console.warn(`The session could not be updated: ${err.message}`); }
+    try { await api.updateSession(session.id, { items, overall: sum.overall, grade: sum.grade, tolerance: activeTolerance(), noTolerance: tolOff, weights: activeWeights() }); refreshProgress(`session:${session.id}`); } catch (err) { console.warn(`The session could not be updated: ${err.message}`); }
   }, 600);
 }
 
@@ -2973,6 +3060,8 @@ async function scoreQuizAttempt() {
     quiz.attempts = saved.attempts;
     attempt.saved = true;
     toast(`Quiz attempt ${quiz.attempts.length} saved.`, 'success');
+    refreshProgress(`quiz:${quiz.id}:${quiz.attempts.length}`);
+    if (Array.isArray(saved.awards) && saved.awards.length) showBadgeCard(saved.awards, quiz);
     // the take itself is kept with the quiz, so a scoring can be looked into afterwards
     api.putQuizAttemptAudio(quiz.id, quiz.attempts.length, take.blob).catch((err) => console.warn(`The attempt's recording could not be kept: ${err.message}`));
   } catch (err) {
@@ -3000,7 +3089,7 @@ function renderQuizScore() {
   $('#quiz-ring').style.setProperty('--pct', String(overall == null ? 0 : overall));
   $('#quiz-overall').textContent = overall == null ? '–' : String(overall);
   const quizSlips = a.items.flatMap((it) => (Array.isArray(it.slips) ? it.slips : []));
-  setGrade($('#quiz-grade'), gradeWithSlips(overall, quizSlips), $('#quiz-words'), { seed: `${quiz.id}:${quiz.attempts ? quiz.attempts.length : 0}`, slips: quizSlips, score: overall });
+  setGrade($('#quiz-grade'), gradeWithSlips(overall, quizSlips), $('#quiz-words'), { seed: `${quiz.id}:${quiz.attempts ? quiz.attempts.length : 0}`, slips: quizSlips, score: overall, best: practice.progress && practice.progress.quizzes && practice.progress.quizzes[quiz.id] ? practice.progress.quizzes[quiz.id].best : null });
   const n = a.items.length;
   $('#quiz-overall-sub').textContent = !corr ? 'Scoring…' : `${n} sloka${n === 1 ? '' : 's'} · ${a.recited ?? 0} recited · weighted on ${quiz.categories.map((c) => catLabel(c).toLowerCase()).join(', ')}`;
   const vEl = $('#quiz-verdict');
@@ -3234,6 +3323,19 @@ function renderReports() {
   const range = reportsRange();
   const inPeriod = reportsInPeriod();
   const shown = reports.mode === 'folder' && reports.folder ? inPeriod.filter((a) => a.folders.some((f) => f === reports.folder || f.startsWith(`${reports.folder}/`))) : inPeriod;
+  const strip = $('#reports-progress');
+  const pr = progress(assessmentsCache || [], { profileId: learnerId || null });
+  const pbits = [];
+  if (pr.streak.days >= 2) pbits.push(`🔥 ${pr.streak.days} days in a row`);
+  if (pr.streak.weeks >= 1) pbits.push(`🗓️ ${pr.streak.weeks} week${pr.streak.weeks === 1 ? '' : 's'} of steady practice`);
+  for (const m of pr.all || []) if (!['dayStreak', 'weekStreak'].includes(m.kind) && pbits.length < 5) pbits.push(`${m.emoji} ${m.text}`);
+  if (!pbits.length && pr.plateau) pbits.push(`${pr.plateau.emoji} ${pr.plateau.text}`);
+  const nb = learnerBadges().length;
+  if (nb) pbits.push(`🏅 ${nb} badge${nb === 1 ? '' : 's'}`);
+  strip.innerHTML = '';
+  if (pbits.length) { const lead = document.createElement('span'); lead.className = 'lead'; lead.textContent = learnerName() ? `${learnerName()}'s progress` : 'Progress'; strip.appendChild(lead); }
+  for (const b of pbits) { const sp = document.createElement('span'); sp.textContent = b; strip.appendChild(sp); }
+  setHidden(strip, !pbits.length || !gradeWordsOn);
   const sum = summarize(shown);
   const summary = $('#reports-summary');
   summary.innerHTML = '';
@@ -3468,6 +3570,7 @@ $('#quiz-start').addEventListener('click', async () => {
 });
 
 function renderQuizList() {
+  if (!badgesCache) getBadges().then(() => renderQuizList()); // the marks, once the badges are known
   const ul = $('#quiz-list');
   ul.innerHTML = '';
   setHidden($('#quiz-none'), quizListCache.length > 0);
@@ -3487,6 +3590,8 @@ function renderQuizList() {
       <div class="quiz-item-meta"></div>
       <div class="quiz-item-details" hidden></div>`;
     $('.quiz-item-name', li).textContent = q.name;
+    const badge = learnerBadges().find((b) => b.kind === 'quiz' && b.quizId === q.id);
+    if (badge) { const m = document.createElement('span'); m.className = 'quiz-badge'; m.textContent = badgeEmoji(badge); m.title = `Mastered on ${fmtBadgeDay(badge.earnedAt)}${badge.level > 1 ? ` · level ${badge.level}` : ''}`; $('.quiz-item-name', li).appendChild(m); }
     const lastGrade = q.last && q.last.overall != null ? gradeById(q.last.grade) || gradeOf(q.last.overall) : null;
     // an attempt judged without a tolerance has no correctness: its overall and grade lead
     $('.quiz-item-score', li).textContent = lastScore == null ? (lastGrade ? '' : q.attempts ? '–' : 'not taken') : `${lastScore}% correct`;
@@ -3598,6 +3703,8 @@ function unfoldSteps() {
 }
 
 function hideResults() {
+  practice.progress = null;
+  renderMoments();
   unfoldSteps();
   stopDuet();
   practice.result = null;
@@ -3759,7 +3866,7 @@ function renderTiles(res, id) {
   const { overall, grade } = reportOverall(id);
   $('#score-ring').style.setProperty('--pct', String(overall == null ? 0 : overall));
   $('#score-overall').textContent = overall == null ? '–' : String(overall);
-  setGrade($('#score-grade'), grade, $('#score-words'), { seed: id, slips: slipsOf(id), score: overall });
+  setGrade($('#score-grade'), grade, $('#score-words'), { seed: id, slips: slipsOf(id), score: overall, best: bestBeforeOf(id) });
   const aw = activeWeights();
   $('#score-overall-sub').textContent = judged.length ? `weighted: ${judged.map((t) => `${catLabel(t.dataset.cat).toLowerCase()} ${aw[t.dataset.cat]}`).join(', ')}` : 'nothing could be judged';
   $('#score-overall-sub').title = 'The overall is the weighted mean of the categories that could be judged';

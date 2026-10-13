@@ -620,6 +620,22 @@ textarea.locked { background: var(--surface-2); color: var(--muted); cursor: not
 .reports-progress[hidden] { display: none; }
 .reports-progress .lead { font-family: var(--display); font-weight: 600; color: var(--indigo); }
 :root[data-theme="dark"] .reports-progress .lead { color: #f3e7c8; }
+/* badges: the learner's on Home, a mark in the quiz list, the card when one is earned */
+.home-badges { margin: 18px auto 0; max-width: 640px; }
+.home-badges[hidden] { display: none; }
+.home-badges .hb-lead { font-family: var(--display); font-weight: 600; font-size: 1.05rem; color: var(--indigo); margin-bottom: 8px; }
+:root[data-theme="dark"] .home-badges .hb-lead { color: #f3e7c8; }
+.home-badges .hb-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 6px 14px; }
+.home-badges .hb-list li { display: flex; align-items: baseline; gap: 8px; }
+.home-badges .hb-emoji { font-size: 1.3rem; }
+.home-badges .hb-when { color: var(--muted); font-size: 0.82rem; }
+.quiz-badge { margin-left: 6px; font-size: 1rem; }
+.badge-card { position: fixed; left: 50%; top: 18%; transform: translateX(-50%); z-index: 60; width: min(92vw, 380px); padding: 22px 24px; border-radius: 16px; background: var(--surface); border: 1px solid var(--gold); box-shadow: 0 14px 40px -12px rgba(0, 0, 0, .35); text-align: center; }
+.badge-card[hidden] { display: none; }
+.badge-card .bc-emoji { font-size: 3rem; line-height: 1; margin-bottom: 8px; }
+.badge-card h3 { margin: 0 0 6px; font-family: var(--display); }
+.badge-card p { margin: 0 0 14px; }
+@media print { .sidebar, .nav, .btn, .home-hero { display: none !important; } .home-badges { display: block !important; box-shadow: none; } }
 /* categories that could not be judged: collapsed, at the bottom of the report */
 .unjudged { margin-top: 24px; padding: 10px 14px; border-radius: 12px; border: 1px dashed var(--border); }
 .unjudged summary { cursor: pointer; font-weight: 600; color: var(--muted); font-size: 0.9rem; }
