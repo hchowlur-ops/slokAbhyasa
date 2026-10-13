@@ -310,7 +310,7 @@ const sttSettings = (() => {
   try { s = { ...d, ...JSON.parse(localStorage.getItem(STT_KEY) || '{}') }; } catch { /* defaults */ }
   // the model: a choice made before the dropdown went stays in force; otherwise chosen for this computer (see sttTier)
   if (s.tier && s.tier !== 'tiny' && !STT_TIERS.some((t) => t.id === s.tier)) s.tier = null;
-  s.auto = true; // transcripts are always made: there is no Transcribe button any more
+  s.auto = s.auto !== false; // hear the words after Self Evaluation and quizzes (the Settings switch); on by default
   s.autoV = 2;
   if (!Array.isArray(s.cpuTiers)) s.cpuTiers = [];
   return s;
@@ -341,6 +341,8 @@ const marksShown = () => marksOn;
 }
 const escapeHtml = (x) => String(x).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 // What a sloka without words is told (its words are the Gītā's or the typed text, never its recording's transcription)
+// What the results say when the words were not heard because the switch is off
+const WORDS_OFF_NOTE = 'The words were not heard: "Hear the words" is off in Settings, so phonemes, vowel length and syllables are not judged, and the overall rests on the sound alone (emphasis, pitch contour, phrasing, timing).';
 const NO_WORDS_NOTE = 'No words for this sloka yet: link it to the Gītā in the Library (its name as CH12-03 does that by itself), or type its text under Details there. The recording itself is not transcribed.';
 // Text in the chosen script: in a language other than Sanskrit every akṣara carries its weight
 const segmentsHtml = (segs) => segs.map((sg) => (sg.sep != null ? escapeHtml(sg.sep) : sg.weight ? `<ruby>${escapeHtml(sg.text)}<rt>${weightMark(sg.weight)}</rt></ruby>` : escapeHtml(sg.text))).join('');
@@ -2218,7 +2220,7 @@ async function analyseAttempt() {
     // The words are needed soon (word diff, quiz pronunciation): for a take that is
     // transcribed whole, the speech worker starts on them now, while the analysis worker
     // compares the take. (A longer take is transcribed part by part once the parts are known.)
-    if ((sttSettings.auto || practice.quiz) && take.duration <= TAKE_WHOLE_MAX_SEC && practice.selection.length === 1) transcribeTakePart(null, false).catch(() => {}); // several slokas: each stretch once it is found
+    if (sttSettings.auto && take.duration <= TAKE_WHOLE_MAX_SEC && practice.selection.length === 1) transcribeTakePart(null, false).catch(() => {}); // several slokas: each stretch once it is found
     practice.heard = await analyzer.features(take.samples, take.sampleRate, (p) => practiceProgress.set(p * 0.6), { warps: true });
     practice.options = {
       ignoreKey: $('#practice-ignorekey').checked,
@@ -2435,7 +2437,8 @@ function renderTakeBoard(ids) {
   if (notFound.length) bits.push(`${notFound.length} not recited`);
   if (pending.length) bits.push(`${pending.length} still comparing`);
   const waiting = recited.filter((it) => !practice.wordSims.has(it.id)).length;
-  if (waiting && !practice.listenStopped) bits.push(`the words of ${waiting} on their way`);
+  if (!sttSettings.auto) bits.push('the words not heard (Settings)');
+  else if (waiting && !practice.listenStopped) bits.push(`the words of ${waiting} on their way`);
   if (practice.listenStopped) bits.push('listening stopped');
   $('#take-sub').textContent = `${bits.join(' · ')} — the overall is the mean over the slokas recited`;
   const cards = $('#take-cards');
@@ -2462,7 +2465,7 @@ function renderTakeBoard(ids) {
       $('.tc-score', card).textContent = overall == null ? '–' : String(overall);
       if (g) { $('.tc-grade', card).textContent = gradeText(g); $('.tc-grade', card).classList.add(g.id); }
       const sl = slipsOf(id);
-      noteEl.textContent = sl.length ? slipsLabel(sl) : practice.wordSims.has(id) ? '' : practice.listenStopped ? 'sound only' : 'words on their way';
+      noteEl.textContent = sl.length ? slipsLabel(sl) : practice.wordSims.has(id) ? '' : practice.listenStopped || !sttSettings.auto ? 'sound only' : 'words on their way';
       if (sl.length) noteEl.classList.add('bad');
     }
     card.title = id === practice.activeId ? 'This report is open below' : 'Open this sloka\'s report';
@@ -2592,6 +2595,7 @@ function showActiveReport() {
   renderResult(r);
   renderQuizScore();
   if (sttSettings.auto || practice.heardTranscripts.size) transcribeBoth(false);
+  else $('#stt-summary').textContent = WORDS_OFF_NOTE; // the sloka's words still shown; yours not heard
   // its words (or the quiz's score) still on their way: Evaluating… until they come (the
   // body, just shown, hides again under it)
   if (evaluating || moreComing(r)) setEvaluating(true);
@@ -2730,6 +2734,7 @@ const playShown = () => !practice.quiz || !!practice.take;
 // finds it ready: the loading is what used to make the page stutter.
 const warmed = new Set(); // "tier:device" already asked for in this page
 function warmStt() {
+  if (!sttSettings.auto) return; // the words are not heard: no model to load
   sttTier().then((tier) => {
     const device = sttSettings.cpuTiers.includes(tier) ? 'wasm' : null;
     const key = `${tier}:${device || 'auto'}`;
@@ -2858,8 +2863,8 @@ function markSegment(item, toSec = null, { transcribe = true } = {}) {
   if (to - from < 2) return; // a page turned back and forth: nothing to hear
   const seg = { from, to, id: item ? item.id : null, name: item ? item.name : '', promise: null, transcript: null, done: true, ctrl: null };
   recSegments.parts.push(seg);
-  // less than half recited, or the listening stopped: the stretch is kept apart, its words never asked for
-  if (!transcribe || recSegments.stopped) { seg.skipped = true; seg.promise = Promise.resolve(null); return; }
+  // less than half recited, the listening stopped, or the words not wanted: the stretch is kept apart, its words never asked for
+  if (!transcribe || recSegments.stopped || !sttSettings.auto) { seg.skipped = true; seg.promise = Promise.resolve(null); return; }
   const sr = snap.sampleRate;
   const samples = snap.samples.slice(Math.round(from * sr), Math.round(to * sr));
   const parts = recSegments.parts;
@@ -3104,7 +3109,7 @@ async function savePace(ear) {
 function startEar(rec) {
   stopEar();
   const items = slokaTextItems();
-  if (items.length < 2 || !(sttSettings.auto || practice.quiz)) return;
+  if (items.length < 2) return; // the ear counts whether or not the words are heard
   const sr = rec.ctx.sampleRate;
   const pace = learnerPace();
   const ear = { rec, counter: new SyllableCounter(sr), read: 0, samplesRead: 0, item: null, plan: null, fp: null, expected: null, expectedMs: 0, tempo: pace.tempoRatio, tempoN: 0, aksPerSec: pace.aksPerSec, speedN: 0, countRatio: pace.countRatio, countRatioN: 0, activeMs: 0, lastElapsed: 0, pos: 0, stalled: new Set(), prevPause: 0, pending: null, padaPauses: [], slokaPauses: [], done: false, listener: null };
@@ -3350,11 +3355,11 @@ async function scoreQuizAttempt() {
     // sloka's own words (stored transcripts are reused). Pronunciation is left out of the
     // attempt altogether when the listening fails, and for the slokas not reached when it is
     // stopped.
-    let stt = true;
+    let stt = sttSettings.auto; // off in Settings: the words are not heard, the word categories not judged
     const sims = new Map();
     // every sloka that was compared, matched or not: a "not found" that the timbre gave
     // (another microphone than the sloka's) is overturned when the words are there
-    const ids = quiz.items.map((it) => it.id).filter((id) => isReport(practice.results.get(id)));
+    const ids = stt ? quiz.items.map((it) => it.id).filter((id) => isReport(practice.results.get(id))) : [];
     for (let k = 0; k < ids.length; k++) {
       const id = ids[k];
       if (!live()) return;
@@ -3434,7 +3439,7 @@ function renderQuizScore() {
   $('#quiz-score-name').textContent = quiz.name;
   const status = $('#quiz-score-status');
   const tol = attemptTolerance(a);
-  status.textContent = a.error ? `Not saved: ${a.error}` : !a.saved ? 'Scoring…' : `Attempt ${quiz.attempts.length} · saved ${fmtDate(a.at)}${a.sttAvailable ? '' : ' · pronunciation not available'}`;
+  status.textContent = a.error ? `Not saved: ${a.error}` : !a.saved ? 'Scoring…' : `Attempt ${quiz.attempts.length} · saved ${fmtDate(a.at)}${a.sttAvailable ? '' : sttSettings.auto ? ' · pronunciation not available' : ' · the words not heard (off in Settings): phonemes, vowel length and syllables not judged'}`;
   const corr = a.saved || a.error ? correctness(a.items, quiz.categories, tol) : null;
   const pct = corr ? corr.pct : null;
   const tolText = (c) => (tol ? `tolerance ${tol[c]} %` : 'no tolerance');
@@ -4200,7 +4205,7 @@ function renderTiles(res, id) {
   };
   // the words: phonemes, vowel length, syllables — once the transcript is in
   const ph = practice.phonology.get(id) || null;
-  const waiting = practice.heardTranscripts.size || sttSettings.auto || practice.quiz ? 'waiting for the transcript' : 'transcribe to judge';
+  const waiting = practice.heardTranscripts.size || sttSettings.auto ? 'waiting for the transcript' : 'not heard: "Hear the words" is off in Settings';
   const errs = ph ? ph.errors : {};
   const slipList = (kinds) => { const parts = kinds.filter((k) => errs[k]).map((k) => `${errs[k]} ${ERROR_LABEL[k].split(' (')[0]}`); return parts.length ? parts.join(', ') : 'all right'; };
   put('phoneme', sc.phoneme, !ph ? waiting : `${ph.counts.phonemesCompared} sounds · ${slipList(['aspiration', 'voicing', 'place', 'nasality', 'visarga', 'length', 'vowel', 'missing', 'added', 'other'])}`);
@@ -4593,7 +4598,13 @@ async function refreshLibrary() {
 const sttPractice = { base: null, heard: null };
 const sttProgress = mirrored(progressUI('stt-progress'), 'words'); // the take's words; the Evaluating block shows it too
 // (no model dropdown and no Transcribe button anywhere: the words are heard automatically,
-// with the model chosen for this computer)
+// with the model chosen for this computer — unless the Settings switch is off)
+{
+  const cb = $('#settings-stt-auto');
+  cb.checked = sttSettings.auto;
+  cb.addEventListener('change', () => { sttSettings.auto = cb.checked; saveStt(); syncSttAuto(); if (cb.checked) warmStt(); });
+  sttAutoBoxes.add(cb);
+}
 $('#stt-run').addEventListener('click', () => transcribeBoth(true));
 
 function resetTranscriptUI() {

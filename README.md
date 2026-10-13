@@ -728,11 +728,20 @@ three Excellent attempts on three different days or on any days — this one is 
 server, with the badges), **Tolerance**
 (the acceptable variation per category for Self Evaluation and Teach; a quiz always uses the
 defaults for the chosen learner; and the "Ignore tolerances" switch that turns every
-within/outside verdict off, leaving scores and grades), **Speech recognition** (a note only:
-the words are heard automatically, in the language the text is shown in, by the Best model
-unless one was chosen before — on one and the same recording Best heard 91, Better 68 and
-Fast 72 — a graphics card that gets it wrong sending it to the processor; there is no model
-dropdown and no Transcribe button anywhere), and **Sloka text** (whether the slokas' text is
+within/outside verdict off, leaving scores and grades), **Speech recognition** (the switch
+**Hear the words after Self Evaluation and quizzes**, on by default: the words of what you
+sang are heard in the language the text is shown in, by the Best model unless one was
+chosen before — on one and the same recording Best heard 91, Better 68 and Fast 72 — a
+graphics card that gets it wrong sending it to the processor; there is no model dropdown
+and no Transcribe button anywhere. Switched off, nothing is transcribed, and these are not
+evaluated: phonemes, vowel length and syllables — the three word categories, 70 of the 100
+weight by default, so the overall is the weighted mean of the sound categories alone —
+the self-corrections found in the words and akṣaras dropped, the transcript block, and a
+quiz's correctness on the word categories (a quiz scored on the word categories alone then
+has no correctness and no overall: choose sound categories too). Still evaluated: the
+four sound categories, the ear's count and pāda, a restart heard by the sound, a stall
+confirmed by the sound comparison, less than half recited, and the grades, moments and
+badges on what was scored), and **Sloka text** (whether the slokas' text is
 shown during Self Evaluation and while reciting a quiz, both on by default; whether the
 Transcript block is hidden in the results (off by default: on, the sloka's words and yours
 and the words-heard line, at the top of the Analysis fold, are left out, in Self Evaluation
