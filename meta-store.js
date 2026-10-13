@@ -278,6 +278,18 @@ export function sanitizeProfile(body, current = null) {
   const voiceType = VOICE_IDS.has(b.voiceType) ? b.voiceType : (current && current.voiceType) || 'preferNotToSay';
   const ageGroup = AGE_IDS.has(b.ageGroup) ? b.ageGroup : (current && current.ageGroup) || 'unspecified';
   const roles = Array.isArray(b.roles) ? b.roles.filter((r) => r === 'learner' || r === 'teacher') : (current && current.roles) || ['learner'];
+  // the learner's pace, as the ear measures it take by take: their tempo against the
+  // teacher's, and their pauses between pādas and between slokas (ms), a running mean
+  const num = (v, lo, hi) => (Number.isFinite(Number(v)) && Number(v) >= lo && Number(v) <= hi ? Number(v) : null);
+  let pace = current && current.pace ? current.pace : null;
+  if (b.pace && typeof b.pace === 'object') {
+    const p = {};
+    const tr = num(b.pace.tempoRatio, 0.3, 3); if (tr != null) p.tempoRatio = Math.round(tr * 100) / 100;
+    const pp = num(b.pace.padaPauseMs, 0, 5000); if (pp != null) p.padaPauseMs = Math.round(pp);
+    const sp = num(b.pace.slokaPauseMs, 0, 10000); if (sp != null) p.slokaPauseMs = Math.round(sp);
+    p.n = Math.round(Math.max(0, Math.min(20, Number(b.pace.n) || 0)));
+    pace = Object.keys(p).length > 1 ? p : null;
+  } else if (b.pace === null) pace = null;
   const now = new Date().toISOString();
   return {
     profile: {
@@ -286,6 +298,7 @@ export function sanitizeProfile(body, current = null) {
       voiceType,
       ageGroup,
       roles: roles.length ? roles : ['learner'],
+      ...(pace ? { pace } : {}),
       createdAt: (current && current.createdAt) || now,
       updatedAt: now,
     },

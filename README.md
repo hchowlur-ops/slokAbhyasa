@@ -192,10 +192,23 @@ slokas you had ticked there.
    * The **overall score**, in the middle: a ring with the weighted mean of the seven
      categories (see "What is scored" below — phonemes 30, vowel length 25, syllables 15,
      emphasis 10, pitch contour 10, phrasing 5, timing 5 by default; the **Settings** page
-     changes them) and its **grade**: Excellent from 90, Good from 80, Fair from 65, Needs
-     practice below. Only the categories that could be judged count; the overall is
-     recomputed when the word scores arrive with the transcript. The ring also carries the
-     verdict for the whole report (**within tolerance** or not, see below).
+     changes them) and its **grade**: 🌟 Excellent from 90, 😊 Good from 80, 💪 Fair from
+     65, 🌱 Needs practice below, each shown as its emoji and its word with a few words of
+     encouragement under it (the same ones each time for a given sloka; plainer for a
+     grown-up learner; "not your best today, your best is still 84" rather than praise for
+     a take below the learner's best; plain labels instead with a switch in Settings). Only
+     the categories that could be judged count; the overall is recomputed when the word
+     scores arrive with the transcript. A **slip** in the recitation itself — a restart of a
+     pāda or of the sloka, getting stuck inside a pāda, akṣaras dropped, heard by the ear
+     while recording several slokas and confirmed by the sound comparison or the words —
+     leaves the score as it is but makes the grade Needs practice, for that sloka and for
+     the take; the report row says which ("restarted pāda 3", "stuck in pāda 2"). Under the
+     grade, once the take is saved, a line or two from the learner's history: a first
+     Excellent on this sloka, a new best, a climb since last week, "you kept at it: four
+     takes today and the last was your best", a streak of days, a welcome back after a
+     fortnight; or, when a sloka has not moved in five takes, a nudge towards Teach mode
+     instead. The ring also carries the verdict for the whole report (**within tolerance**
+     or not, see below).
    * **"Play both together"**, directly under the overall, plays the sloka and your attempt
      at once, the sloka in the left ear and yours in the right, from the start of the part
      that was compared and at the same speed, so the difference is heard rather than read
@@ -234,10 +247,28 @@ Afterwards each report's stretch of the take takes those words when the recorded
 overlaps it well enough, so the words are there the moment the results open. You need not
 turn the pages at all: while several slokas are recorded the app **listens for the end of
 each sloka** by itself — it counts the akṣaras it hears (the syllable nuclei of the
-loudness envelope) against the akṣaras of the sloka in view, and once they are all but in
-and a pause follows, that sloka's stretch goes to the speech worker and the panel turns to
-the next sloka ("24 of 33 akṣaras" under the timer shows the count as it grows, "every
-sloka heard · tap to stop" when the last is in). The queued stretches are transcribed one
+loudness envelope) against the **akṣara plan** of the sloka in view (the speaker line's
+count and each pāda's, from the verse's text by its metre — the custom file can set a plan
+for a verse that does not scan), and once the count is at the sloka's end and a pause
+follows, of the length this learner leaves between slokas, that sloka's stretch goes to the
+speech worker and the panel turns to the next sloka ("24 of 33 akṣaras · pāda 3 of 4"
+under the timer shows the count as it grows and lights the line of the text the learner is
+in; "every sloka heard · tap to stop" when the last is in). A count well short needs a long
+pause, longer still when the clock has run far past the teacher's time for the sloka. The
+ear also listens to what the learner sings after each pause: matched against the first
+moments of each pāda in the teacher's recording (the **pāda-start fingerprints**, kept with
+the sloka's features), a start the count has already passed is a **restart** — the count
+goes back to that pāda, or, for the sloka's own opening, starts again with what came
+before marked a false start — and a long pause inside a pāda is a **stall**; both are
+slips (above). A match is believed only when it is clearly nearer than any other start and
+under a threshold set from the teacher's own recording, so a different voice means fewer
+restarts heard rather than wrong ones. When the words of a closed stretch come back as
+another sloka's than the page assumed, the stretch is relabelled and the page turns on
+from the sloka actually heard. And you can always say where you are: **tap a line** of
+the text to set the count to that line's first pāda, or tap the count line to count the
+sloka from the top. The learner's pace — their tempo against the teacher's, their pauses
+between pādas and slokas — is folded into the chosen profile take by take, so the ear's
+patience fits them. The queued stretches are transcribed one
 after another in the background until none is left, so the words of every sloka but the
 last are ready when the take stops. The count is a guide, not a judge: the comparison
 afterwards finds each sloka in the take on its own, and a page turned by hand still works.
@@ -550,8 +581,10 @@ A memory test drawn from your library.
 vowel length, syllables, emphasis, pitch contour, phrasing, timing); a sloka that was not
 found in your recording scores 0 everywhere. The results lead with the quiz's **overall
 score** in the ring: each sloka's weighted mean over the chosen categories, with the weights
-in force when the attempt was made, averaged over the slokas, with its **grade** — Excellent
-from 90, Good from 80, Fair from 65, Needs practice below — and, under it, the
+in force when the attempt was made, averaged over the slokas, with its **grade** — 🌟
+Excellent from 90, 😊 Good from 80, 💪 Fair from 65, 🌱 Needs practice below, a slip in any
+sloka making it Needs practice (see Self Evaluation), with a few words of encouragement
+and the moments from the learner's history under it — and, under those, the
 **correctness**: the share of the picked slokas that are *correct*, a sloka being correct
 when every chosen category is within the quiz tolerance (fixed: the defaults for the
 learner). The chosen categories are **phonemes, vowel length and syllables** by default; click
@@ -629,11 +662,35 @@ updated as more slokas are ticked or pronunciation scores arrive).
   under each sloka with its number of assessments and best score. Click a line to open that
   session's results.
 
+A **Progress** strip at the top shows what the history says for the chosen learner (or
+this device when no one is chosen): the streak of days with a take, weeks of steady
+practice (three practice days each), the latest take's moments (a first Excellent, a new
+best, a climb…), and how many badges they hold.
+
 The choices (mode, period, date, folder, grouping) are remembered.
+
+### Badges
+A badge marks a quiz **mastered**: the same learner completes the quiz with the grade
+Excellent at least three times — every sloka recited, no slip — on three different days by
+default, so the badge says the quiz *stays* Excellent rather than that it was Excellent
+three times in one sitting (a Settings switch counts attempts on any days instead). A star
+is added at five such attempts and at ten. When a learner's badged quizzes together cover
+every verse of a chapter, the chapter is **by heart** 📖; every chapter, the Gītā 🪔. The
+badge is awarded the moment the attempt is saved — a calm card over the results says what
+it is for and on which days it was earned — and shown on **Home** for the chosen learner
+(with the date and the slokas), beside a mastered quiz in the Quiz list, and counted in
+the Reports strip. Badges are derived data: they live in `badges.json` beside the
+recordings, by profile id (names stay in `profiles.json`), and
+`node tools/badges.mjs --recompute` rebuilds the file from the attempts at any time
+(`node tools/badges.mjs` lists them). A quiz edited or deleted afterwards keeps the badge
+it earned, with the slokas it was earned with.
 
 ### Settings
 Four cards, all remembered in the browser: **Weights** (what the overall score is made of,
-see "What is scored"; "Defaults" restores the recommended 30/25/15/10/10/5/5), **Tolerance**
+see "What is scored"; "Defaults" restores the recommended 30/25/15/10/10/5/5; the switch
+for grades with an emoji and a word of encouragement, or plain labels; and the badge rule,
+three Excellent attempts on three different days or on any days — this one is kept on the
+server, with the badges), **Tolerance**
 (the acceptable variation per category for Self Evaluation and Teach; a quiz always uses the
 defaults for the chosen learner; and the "Ignore tolerances" switch that turns every
 within/outside verdict off, leaving scores and grades), **Speech recognition** (the model,
@@ -900,13 +957,16 @@ js/lipi.js             the Sanskrit text written in Kannada, Telugu or IAST, ak�
 js/textdiff.js         word tokenisation and diff for transcripts
 js/quizscore.js        the seven categories, weights, tolerances, grades and quiz scoring (pure, Node-testable)
 js/phon.js             akṣaras and phonemes from Indic text; the recitation against the text, slip by slip (pure)
-js/reports.js          periods, assessments in one shape, per-sloka rows for the Reports dashboard (pure, shared)
+js/reports.js          periods, assessments in one shape, per-sloka rows, progress (moments, streaks) for the Reports dashboard (pure, shared)
+js/badges.js           a quiz mastered: three Excellent attempts on three days, levels, chapter and Gītā badges (pure, shared)
+js/dsp/starts.js       pāda-start fingerprints: templates from a recording's MFCC frames, a banded DTW, a calibrated match (pure)
 js/libutil.js          folder-name cleaning, sloka file names, WAV header reading (shared with the server)
 js/dsp/                features, alignment, locating a part inside a longer recording, deviations,
                        scoring, silence trimming (pure, Node-testable)
 js/visualizer.js       waveforms and the comparison chart
 datadir.js             where the data folder is (local.json / SLOKABHYASA_DATA, else the project folder)
 tools/trim-library.mjs command-line trimming of every WAV in the library
+tools/badges.mjs       lists the badges on file, or rebuilds them from the quizzes' attempts (--recompute)
 tools/analyse-attempt.mjs  re-runs a kept quiz recording through the comparison and prints what it saw
 test/                  synthetic signal generators and the DSP tests
 reports/               the research the presets and the details file follow

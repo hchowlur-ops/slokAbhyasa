@@ -612,6 +612,10 @@ textarea.locked { background: var(--surface-2); color: var(--muted); cursor: not
 .score-words[hidden] { display: none; }
 /* what went wrong in the recitation itself (a restart, a stall…), in a report row */
 .rr-slip { font-weight: 600; color: var(--danger); }
+/* the line of the sloka the ear hears the learner in; a tap on a line resyncs the count */
+.sloka-line { border-radius: 6px; padding: 0 4px; margin: 0 -4px; transition: background .2s; }
+.sloka-line.current { background: color-mix(in srgb, var(--gold) 24%, transparent); }
+#practice-rec-count { cursor: pointer; }
 /* moments: a first Excellent, a new best, a streak… under the grade, and the Reports strip */
 .score-moments { list-style: none; margin: 8px auto 0; padding: 0; max-width: 320px; font-size: 0.88rem; line-height: 1.35; color: var(--muted); }
 .score-moments[hidden] { display: none; }

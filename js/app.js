@@ -7,12 +7,13 @@ import { encodeWav } from './wav.js';
 import * as api from './api.js';
 import { Analyzer } from './analyzer.js';
 import { drawWaveform, drawLiveWave, ComparisonChart } from './visualizer.js';
-import { serializeFeatures, deserializeFeatures, isValidFeatures } from './dsp/features.js';
+import { serializeFeatures, deserializeFeatures, isValidFeatures, extractFeatures, SR as FEAT_SR } from './dsp/features.js';
+import { padaStarts, startTemplates, calibrate, matchStart, mfccRows, meanOf, TEMPLATE_SEC, TEMPLATE_FRAMES, MIN_TEMPLATE_FRAMES } from './dsp/starts.js';
 import { MISMATCH_CONTRAST, confirmByWords } from './dsp/compare.js';
 import { QUIZ_CATEGORIES, LEGACY_CATEGORIES, DEFAULT_QUIZ_CATEGORIES, DEFAULT_TOLERANCE, CATEGORY_WEIGHTS, categoryLabel, normalizeWeights, itemScores, attemptSummary, scoreFor, normalizeCategories, normalizeTolerance, recordTolerance, withinTolerance, itemVerdict, correctness, pickBaselines, overallScore, attemptOverall, gradeOf, gradeById, gradeWithSlips, gradeWords, slipsLabel, anySlips, modernCategories } from './quizscore.js';
 import { comparePhonology, ERROR_LABEL, syllabify } from './phon.js';
 import { SyllableCounter } from './dsp/syllables.js';
-import { mixToMono } from './dsp/resample.js';
+import { mixToMono, resample } from './dsp/resample.js';
 import { trimSilence } from './dsp/trim.js';
 import { Transcriber, STT_LANGUAGES, STT_LANGUAGE_CODES, STT_TIERS, sttLanguageLabel, sttLanguageTag, sttTierLabel, isStopped } from './stt.js';
 import { segments as scriptSegments, wordSegments, toDeva, weightMark } from './lipi.js';
@@ -1392,7 +1393,12 @@ function slipsOf(id) {
     if (!slip.unsure) { out.push(slip); continue; }
     const { unsure, ...sure } = slip;
     if (slip.kind === 'dropped') { if (ph && ph.counts && ph.counts.missing >= 2) out.push({ ...sure, by: 'words' }); continue; }
-    if (slip.kind === 'stall') { const pd = res && res.scores && res.scores.phrasingDetail; if (pd && pd.extra >= 1) out.push({ ...sure, by: 'sound' }); continue; }
+    if (slip.kind === 'stall') { // a pause the sloka does not have, found by the comparison at that very moment
+      const devs = res && Array.isArray(res.deviations) ? res.deviations : [];
+      const near = slip.at != null && devs.some((d) => d.tHeard && (d.types || [d.type]).includes('timing') && slip.at >= d.tHeard[0] - 0.75 && slip.at <= d.tHeard[1] + 0.75);
+      if (near) out.push({ ...sure, by: 'sound' });
+      continue;
+    }
     out.push(slip);
   }
   return out;
@@ -2125,6 +2131,7 @@ $('#practice-rec').addEventListener('click', async () => {
     take.blob = encodeWav(take.samples, take.sampleRate);
     // the stretches transcribed while recording, in the take's time (the trimmed lead taken off)
     take.segments = segments && segments.parts.length ? segments.parts.map((p) => ({ ...p, from: p.from - removedStart, to: p.to - removedStart })) : null;
+    for (const list of practice.slips.values()) for (const x of list) if (x.at != null) x.at = Math.max(0, Math.round((x.at - removedStart) * 100) / 100); // the slips in the take's time too
     practice.take = take;
     await heardPlayer.load(take.blob);
     showEvaluating(); // the results card, with Evaluating… in it, from now until the sloka's report is in
@@ -2654,7 +2661,7 @@ async function renderSlokaTexts() {
     hintEl.textContent = hint;
     hintEl.title = hint ? chandasPattern(ch) : '';
     setHidden(hintEl, !hint);
-    if (text) body.innerHTML = scriptHtml(withDandas(layoutSloka(text, { perPada: ch ? ch.perPada : null, lines: slokaLines })));
+    if (text) body.innerHTML = scriptHtml(withDandas(layoutSloka(text, { perPada: ch ? ch.perPada : null, lines: slokaLines }))).split('<br>').map((l, i) => `<span class="sloka-line" data-line="${i}">${l}</span>`).join('<br>');
     else body.textContent = 'No text yet: transcribe this sloka, or type its text under Details in the Library.';
     body.classList.toggle('muted', !text);
     setHidden($('#practice-text-legend'), !(text && marksShown()));
@@ -2724,14 +2731,42 @@ function markSegment(item, toSec = null) {
   if (to - from < 2) return; // a page turned back and forth: nothing to hear
   const sr = snap.sampleRate;
   const samples = snap.samples.slice(Math.round(from * sr), Math.round(to * sr));
-  const seg = { from, to, name: item ? item.name : '', promise: null, transcript: null, done: false };
+  const seg = { from, to, id: item ? item.id : null, name: item ? item.name : '', promise: null, transcript: null, done: false };
   recSegments.parts.push(seg);
   const parts = recSegments.parts;
   recNote(`Listening to ${seg.name || 'that stretch'} in the background…`);
   seg.promise = runTranscription(samples, sr, null, seg.name || 'your recording', undefined, { background: true })
-    .then((t) => { seg.transcript = t; return t; })
+    .then((t) => { seg.transcript = t; try { checkSegmentWords(seg); } catch { /* a guess only */ } return t; })
     .catch(() => null)
     .finally(() => { seg.done = true; if (parts.every((p) => p.done)) recNote(''); else { const busy = parts.find((p) => !p.done); recNote(`Listening to ${busy.name || 'that stretch'} in the background…`); } });
+}
+// The words of a stretch heard in the background, against every sloka of the take: when
+// they are clearly another sloka's than the page assumed (the learner skipped ahead, or
+// went back), the stretch is relabelled and, while the recording goes on, the page turns
+// to the sloka after the one actually heard — the count going on as it is.
+function checkSegmentWords(seg) {
+  const t = seg.transcript;
+  if (!t || !seg.id) return;
+  const heard = tokenizeTranscript(t).map((w) => w.word);
+  if (heard.length < 4) return;
+  const items = slokaTextItems();
+  if (items.length < 2) return;
+  const sims = items.map((it) => { const base = practice.bases.get(it.id); const text = base ? slokaTextOf(base) : ''; if (!text) return 0; const c = compareWords(tokenize(text).map((w) => w.word), heard); return c ? c.summary.similarity : 0; });
+  const assumed = items.findIndex((it) => it.id === seg.id);
+  let best = 0;
+  for (let i = 1; i < sims.length; i++) if (sims[i] > sims[best]) best = i;
+  if (assumed < 0 || best === assumed || sims[best] < 0.55 || sims[best] < sims[assumed] + 0.25) return;
+  seg.id = items[best].id;
+  seg.name = items[best].name;
+  seg.relabelled = true;
+  const now = slokaTextItems();
+  const i = currentTextIndex(now);
+  if (recordingNow() && liveEar && i === assumed + 1 && best + 1 < now.length && best + 1 !== i) {
+    if (practice.quiz) quizTextIndex = best + 1; else recTextIndex = best + 1;
+    renderSlokaTexts();
+    liveEar.retarget(best + 1);
+  }
+  toast(`That was ${items[best].name}, not ${items[assumed].name}.`, 'info', 5000);
 }
 function recNote(text) {
   const el = $('#practice-rec-note');
@@ -2783,23 +2818,154 @@ function padaAt(plan, count) {
   const pada = plan.speakerLine ? k : k + 1;
   return { pada, atBoundary, padas: plan.padas.length };
 }
+// The count at which a pāda begins (0 the speaker line).
+function startCountOf(plan, pada) {
+  const cps = plan.checkpoints;
+  if (pada === 0) return 0;
+  return plan.speakerLine ? cps[pada - 1] : pada === 1 ? 0 : cps[pada - 2];
+}
+const padaName = (p) => (p === 0 ? 'the speaker line' : `pāda ${p}`);
+// The pāda-start fingerprints of a sloka (dsp/starts.js): from its features and the timings
+// of its transcript, made once and kept with the loaded sloka; null when the recording
+// has no timings, or its starts are too alike to tell apart.
+function fingerprintsOf(item, plan) {
+  const base = item && practice.bases.get(item.id);
+  if (!base || !base.features || !plan) return null;
+  if (base.fingerprints !== undefined && base.fingerprintsPlan === plan.total) return base.fingerprints;
+  let fp = null;
+  try {
+    const chunks = base.transcript && Array.isArray(base.transcript.chunks) ? base.transcript.chunks : [];
+    const templates = startTemplates(base.features, padaStarts(chunks, plan));
+    if (templates.length >= 2) { const { threshold } = calibrate(templates, base.features); if (threshold != null) fp = { templates, threshold }; }
+  } catch { fp = null; }
+  base.fingerprints = fp;
+  base.fingerprintsPlan = plan.total;
+  return fp;
+}
+// The samples of the recording between two moments (seconds), from the recorder's chunks.
+function samplesBetween(rec, fromSec, toSec) {
+  const sr = rec.ctx.sampleRate;
+  const a = Math.max(0, Math.round(fromSec * sr));
+  const b = Math.max(a, Math.round(toSec * sr));
+  const out = new Float32Array(b - a);
+  let at = 0;
+  for (const c of rec.chunks) {
+    const end = at + c.length;
+    if (end > a && at < b) out.set(c.subarray(Math.max(0, a - at), Math.min(c.length, b - at)), Math.max(0, at - a));
+    at = end;
+    if (at >= b) break;
+  }
+  return out;
+}
+// The MFCC frames of what was sung from `at` for a template's length, with the mean of the
+// last few seconds taken off (as the teacher's recording has its own mean taken off).
+function liveRows(rec, at) {
+  const ctx = Math.max(0, at - 3);
+  const x = resample(samplesBetween(rec, ctx, at + TEMPLATE_SEC + 0.05), rec.ctx.sampleRate, FEAT_SR);
+  if (x.length < FEAT_SR * (TEMPLATE_SEC + 0.1)) return null;
+  const F = extractFeatures(x);
+  return mfccRows(F, Math.round((at - ctx) / F.hopSec), TEMPLATE_FRAMES, { mean: meanOf(F) });
+}
+// Sound after a pause: where in the sloka does it begin? A start the count has already
+// passed is a restart — of a pāda (the count goes back to its start) or of the sloka (what
+// came before was a false start; the stretch begins again here). A start that is simply
+// next is the recitation going on. Nothing is done on a doubtful match.
+function hearRestart(ear, p) {
+  const { plan, fp, rec, item } = ear;
+  if (!plan || !fp || !item) return;
+  let rows = null;
+  try { rows = liveRows(rec, p.at); } catch { rows = null; }
+  if (!rows || rows.length < MIN_TEMPLATE_FRAMES) return;
+  const m = matchStart(rows, fp.templates, { threshold: fp.threshold });
+  if (!m.confident) return;
+  const k = m.best.pada;
+  const first = plan.speakerLine ? 0 : 1;
+  const since = Math.max(0, ear.counter.count - p.count); // akṣaras heard since the pause ended
+  if (k === first) {
+    if (p.count < Math.round(plan.total * 0.25)) return; // only just begun: not a restart
+    addSlip(item.id, { kind: 'falseStart', at: Math.round((recSegments ? recSegments.from : 0) * 100) / 100, by: 'sound' });
+    ear.counter.count = since;
+    ear.stalled = new Set();
+    if (recSegments) recSegments.from = Math.max(recSegments.from, p.at - 0.15);
+    recNote(`${item.name} from the top: the count starts again`);
+    return;
+  }
+  const sc = startCountOf(plan, k);
+  if (p.count < sc + 3) return; // the pāda is simply next
+  addSlip(item.id, { kind: 'restart', at: Math.round(p.at * 100) / 100, pada: k, by: 'sound' });
+  ear.counter.count = sc + since;
+  ear.stalled = new Set();
+  recNote(`${padaName(k)} again: the count goes back to ${sc}`);
+}
+// The learner taps a line of the text while the ear listens: "I am here" — the count is
+// set to that line's first pāda; a tap on the count line starts the sloka's count again.
+function earResync(line) {
+  const ear = liveEar;
+  if (!ear || !ear.plan || !recordingNow()) return;
+  const plan = ear.plan;
+  const lines = $$('#practice-text-body .sloka-line').length;
+  const sp = plan.speakerLine ? 1 : 0;
+  const bodyLines = Math.max(1, lines - sp);
+  const per = Math.max(1, Math.round(plan.padas.length / bodyLines));
+  const pada = line == null ? (sp ? 0 : 1) : sp && line === 0 ? 0 : Math.min(plan.padas.length, (line - sp) * per + 1);
+  ear.counter.count = startCountOf(plan, pada);
+  ear.stalled = new Set();
+  ear.pending = null;
+  ear.manual = true;
+  renderEar(ear, ear.counter.state_());
+  recNote(line == null ? `${ear.item ? ear.item.name : 'The sloka'} from the top` : `From ${padaName(pada)}`);
+}
+$('#practice-text-body').addEventListener('click', (e) => { const line = e.target.closest('.sloka-line'); if (line && liveEar && recordingNow()) earResync(Number(line.dataset.line)); });
+$('#practice-rec-count').addEventListener('click', () => { if (liveEar && recordingNow()) earResync(null); });
+// The line of the text that holds a pāda (the speaker line first when there is one).
+function lineOfPada(plan, pada) {
+  const lines = $$('#practice-text-body .sloka-line').length;
+  const sp = plan.speakerLine ? 1 : 0;
+  if (pada === 0) return 0;
+  const bodyLines = Math.max(1, lines - sp);
+  const per = Math.max(1, Math.round(plan.padas.length / bodyLines));
+  return Math.min(lines - 1, sp + Math.floor((pada - 1) / per));
+}
+// What the ear learnt of the learner's pace this take — the ratio of their tempo to the
+// teacher's, their pauses between pādas and between slokas — folded into the chosen
+// profile as a running mean (twenty takes deep, so it follows them as they change).
+async function savePace(ear) {
+  const p = profileById(learnerId);
+  if (!p || !ear || !ear.tempoN) return;
+  const median = (a) => { if (!a.length) return null; const z = a.slice().sort((x, y) => x - y); return z[Math.floor(z.length / 2)]; };
+  const cur = p.pace && typeof p.pace === 'object' ? p.pace : {};
+  const n = Math.max(0, Math.min(20, Number(cur.n) || 0));
+  const mix = (old, val) => (val == null ? (old == null ? null : old) : old == null || !n ? val : (old * n + val) / (n + 1));
+  const pace = {};
+  const tr = mix(cur.tempoRatio, ear.tempo); if (tr != null) pace.tempoRatio = Math.round(tr * 100) / 100;
+  const pp = mix(cur.padaPauseMs, median(ear.padaPauses)); if (pp != null) pace.padaPauseMs = Math.round(pp);
+  const sp = mix(cur.slokaPauseMs, median(ear.slokaPauses)); if (sp != null) pace.slokaPauseMs = Math.round(sp);
+  pace.n = n + 1;
+  try { const saved = await api.patchProfile(p.id, { pace }); Object.assign(p, saved); } catch { /* next time */ }
+}
 function startEar(rec) {
   stopEar();
   const items = slokaTextItems();
   if (items.length < 2 || !(sttSettings.auto || practice.quiz)) return;
   const sr = rec.ctx.sampleRate;
   const pace = learnerPace();
-  const ear = { rec, counter: new SyllableCounter(sr), read: 0, samplesRead: 0, item: null, plan: null, expected: null, expectedMs: 0, tempo: pace.tempoRatio, tempoN: 0, stalled: new Set(), done: false, listener: null };
-  const begin = () => {
-    const i = currentTextIndex(slokaTextItems());
+  const ear = { rec, counter: new SyllableCounter(sr), read: 0, samplesRead: 0, item: null, plan: null, fp: null, expected: null, expectedMs: 0, tempo: pace.tempoRatio, tempoN: 0, stalled: new Set(), prevPause: 0, pending: null, padaPauses: [], slokaPauses: [], done: false, listener: null };
+  // the sloka in view: its plan, its fingerprints, the teacher's time for it
+  const target = (i) => {
     ear.item = slokaTextItems()[i] || null;
     ear.plan = planOf(ear.item);
+    ear.fp = fingerprintsOf(ear.item, ear.plan);
     ear.expected = ear.plan ? ear.plan.total : null;
     ear.expectedMs = (expectedSecOf(ear.item) || 0) * 1000;
     ear.stalled = new Set();
+    ear.pending = null;
+  };
+  const begin = () => {
+    target(currentTextIndex(slokaTextItems()));
     ear.counter.reset();
     ear.done = false;
   };
+  ear.retarget = target; // the page turned on by the words: the count goes on, the sloka changes
   ear.begin = begin;
   begin();
   ear.listener = () => {
@@ -2808,6 +2974,15 @@ function startEar(rec) {
     const st = ear.counter.state_();
     renderEar(ear, st);
     if (ear.done) return;
+    // sound again after a pause: a pause at a pāda's end is a breath (measured, for the
+    // learner's pace); what the sound begins with says whether it is a restart
+    if (ear.prevPause >= 250 && st.pauseMs < ear.prevPause) {
+      const resumedAt = ear.samplesRead / sr - st.pauseMs / 1000;
+      if (ear.plan && ear.prevPause < 3000 && padaAt(ear.plan, st.count).atBoundary) ear.padaPauses.push(ear.prevPause);
+      if (ear.fp && ear.prevPause >= 400 && !ear.pending) ear.pending = { at: resumedAt, count: st.count };
+    }
+    ear.prevPause = st.pauseMs;
+    if (ear.pending && ear.samplesRead / sr - ear.pending.at >= TEMPLATE_SEC + 0.15) { const p = ear.pending; ear.pending = null; hearRestart(ear, p); }
     const sung = st.elapsedMs - st.pauseMs; // sound heard before the pause, in this sloka
     if (sung < 3000) return;
     const exp = ear.expected;
@@ -2829,6 +3004,7 @@ function startEar(rec) {
       }
       return;
     }
+    ear.slokaPauses.push(st.pauseMs);
     if (ear.item && exp && st.count < exp - 2) addSlip(ear.item.id, { kind: 'dropped', at: Math.round(pauseBegan * 100) / 100, count: st.count, expected: exp, unsure: true, by: 'ear' }); // the words will say
     else if (ear.expectedMs > 0 && exp) { const r = Math.max(0.5, Math.min(2.5, sung / ear.expectedMs)); ear.tempo = ear.tempoN ? (ear.tempo * ear.tempoN + r) / (ear.tempoN + 1) : r; ear.tempoN++; } // the learner's pace, from a sloka recited whole
     const now = slokaTextItems();
@@ -2847,8 +3023,9 @@ function startEar(rec) {
   liveEar = ear;
 }
 function stopEar() {
-  if (liveEar) { liveEar.rec.removeEventListener('level', liveEar.listener); liveEar = null; }
+  if (liveEar) { liveEar.rec.removeEventListener('level', liveEar.listener); const ear = liveEar; liveEar = null; savePace(ear); }
   $('#practice-rec-count').textContent = '';
+  for (const el of $$('#practice-text-body .sloka-line.current')) el.classList.remove('current');
 }
 // a page turned by hand while the ear listens: the count starts again for the sloka now in view
 function earPageTurned() { if (liveEar) liveEar.begin(); }
@@ -2859,6 +3036,9 @@ function renderEar(ear, st) {
   const { pada, padas } = padaAt(ear.plan, st.count);
   const where = pada == null || st.count >= ear.expected ? '' : pada === 0 ? ' · the speaker line' : ` · pāda ${pada} of ${padas}`;
   el.textContent = `${st.count} of ${ear.expected} akṣaras${where}`;
+  el.title = 'Tap a line of the text to say "I am here"; tap here to count this sloka from the top';
+  const cur = pada != null && st.count < ear.expected ? lineOfPada(ear.plan, pada) : -1;
+  $$('#practice-text-body .sloka-line').forEach((ln, i) => ln.classList.toggle('current', i === cur));
 }
 // The recorded stretch whose words serve a report's stretch of the take: the best overlap,
 // when it covers it well (the page was turned near the sloka's end).

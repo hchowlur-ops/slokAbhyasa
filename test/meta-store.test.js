@@ -146,3 +146,15 @@ test('the verse link in a sidecar is validated, kept across patches, and cleared
   assert.equal(sanitizeVerse({ id: '12.3' }), null, 'a link needs its dataset');
   assert.equal(sanitizeVerse({ dataset: 'gita' }), null);
 });
+
+test('a profile keeps the learner\'s pace, within bounds, and drops it on null', () => {
+  const { profile } = sanitizeProfile({ name: 'Ananya', pace: { tempoRatio: 1.237, padaPauseMs: 640.4, slokaPauseMs: 1500, n: 3 } });
+  assert.deepEqual(profile.pace, { tempoRatio: 1.24, padaPauseMs: 640, slokaPauseMs: 1500, n: 3 });
+  const { profile: kept } = sanitizeProfile({ voiceType: 'child' }, profile);
+  assert.deepEqual(kept.pace, profile.pace, 'a patch without pace keeps it');
+  const { profile: bounded } = sanitizeProfile({ pace: { tempoRatio: 9, padaPauseMs: 300, n: 99 } }, profile);
+  assert.deepEqual(bounded.pace, { padaPauseMs: 300, n: 20 }, 'out of bounds: left out; n capped');
+  const { profile: none } = sanitizeProfile({ pace: null }, profile);
+  assert.equal(none.pace, undefined);
+  assert.equal(sanitizeProfile({ name: 'X' }).profile.pace, undefined, 'no pace until the ear has measured one');
+});
