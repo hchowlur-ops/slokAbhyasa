@@ -224,8 +224,8 @@ slokas you had ticked there.
      - the **transcript** of the sloka and of your attempt, with the words that differ
        highlighted (see "Transcripts" below). Each row has a **play button** by its label —
        "Sloka ▶" plays the sloka, "Yours ▶" plays your recording (the words are heard
-       automatically, in the language the text is shown in; there is no Transcribe button
-       and no model dropdown anywhere);
+       automatically, in the language the text is shown in, by the Best model unless one
+       was chosen before; there is no Transcribe button and no model dropdown anywhere);
      - the seven **category tiles**, each with its score, what it rests on and whether it
        is within tolerance; a category that cannot be judged for this report (no
        transcript yet, pitch shown for interest only for recited text) is collapsed under
@@ -259,8 +259,13 @@ count and each pāda's, from the verse's text by its metre — the custom file c
 for a verse that does not scan), and once the count is at the sloka's end and a pause
 follows, of the length this learner leaves between slokas, that sloka's stretch goes to the
 speech worker and the panel turns to the next sloka ("24 of 33 akṣaras · pāda 3 of 4"
-under the timer shows the count as it grows and lights the line of the text the learner is
-in; "every sloka heard · tap to stop" when the last is in). A count well short needs a long
+under the timer shows where the learner is and lights the line of the text they are in;
+"every sloka heard · tap to stop" when the last is in). Where they are is read from **their
+own speed**, never the teacher's: the syllable count calibrated to their voice (how many
+nuclei the counter hears per akṣara of it, learnt from each sloka they recite whole) and,
+once their speed is known — this take's earlier slokas, or their profile — blended half and
+half with the time they have been singing at that speed, which rides over the counter's
+slips; both are kept in the chosen learner's profile take by take. A count well short needs a long
 pause, longer still when the clock has run far past the teacher's time for the sloka. The
 ear also listens to what the learner sings after each pause: matched against the first
 moments of each pāda in the teacher's recording (the **pāda-start fingerprints**, kept with
@@ -701,8 +706,10 @@ server, with the badges), **Tolerance**
 (the acceptable variation per category for Self Evaluation and Teach; a quiz always uses the
 defaults for the chosen learner; and the "Ignore tolerances" switch that turns every
 within/outside verdict off, leaving scores and grades), **Speech recognition** (a note only:
-the words are heard automatically, in the language the text is shown in, by the model chosen
-for this computer — there is no model dropdown and no Transcribe button anywhere), and **Sloka text** (whether the slokas' text is
+the words are heard automatically, in the language the text is shown in, by the Best model
+unless one was chosen before — on one and the same recording Best heard 91, Better 68 and
+Fast 72 — a graphics card that gets it wrong sending it to the processor; there is no model
+dropdown and no Transcribe button anywhere), and **Sloka text** (whether the slokas' text is
 shown during Self Evaluation and while reciting a quiz, both on by default; whether the
 Transcript block is hidden in the results (off by default: on, the sloka's words and yours
 and the words-heard line, at the top of the Analysis fold, are left out, in Self Evaluation

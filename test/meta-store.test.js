@@ -148,8 +148,9 @@ test('the verse link in a sidecar is validated, kept across patches, and cleared
 });
 
 test('a profile keeps the learner\'s pace, within bounds, and drops it on null', () => {
-  const { profile } = sanitizeProfile({ name: 'Ananya', pace: { tempoRatio: 1.237, padaPauseMs: 640.4, slokaPauseMs: 1500, n: 3 } });
-  assert.deepEqual(profile.pace, { tempoRatio: 1.24, padaPauseMs: 640, slokaPauseMs: 1500, n: 3 });
+  const { profile } = sanitizeProfile({ name: 'Ananya', pace: { tempoRatio: 1.237, padaPauseMs: 640.4, slokaPauseMs: 1500, aksPerSec: 2.456, countRatio: 1.12, n: 3 } });
+  assert.deepEqual(profile.pace, { tempoRatio: 1.24, padaPauseMs: 640, slokaPauseMs: 1500, aksPerSec: 2.46, countRatio: 1.12, n: 3 });
+  assert.equal(sanitizeProfile({ name: 'X', pace: { aksPerSec: 40, countRatio: 3, n: 1 } }).profile.pace, undefined, 'a speed no reciter has is left out, and nothing else is left');
   const { profile: kept } = sanitizeProfile({ voiceType: 'child' }, profile);
   assert.deepEqual(kept.pace, profile.pace, 'a patch without pace keeps it');
   const { profile: bounded } = sanitizeProfile({ pace: { tempoRatio: 9, padaPauseMs: 300, n: 99 } }, profile);

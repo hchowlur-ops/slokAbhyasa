@@ -308,7 +308,8 @@ const sttSettings = (() => {
   const d = { language: 'sanskrit', tier: null, auto: true, autoV: 2, cpuTiers: [] };
   let s = d;
   try { s = { ...d, ...JSON.parse(localStorage.getItem(STT_KEY) || '{}') }; } catch { /* defaults */ }
-  s.tier = null; // the model is chosen for this computer (see sttTier); there is no dropdown any more
+  // the model: a choice made before the dropdown went stays in force; otherwise chosen for this computer (see sttTier)
+  if (s.tier && s.tier !== 'tiny' && !STT_TIERS.some((t) => t.id === s.tier)) s.tier = null;
   s.auto = true; // transcripts are always made: there is no Transcribe button any more
   s.autoV = 2;
   if (!Array.isArray(s.cpuTiers)) s.cpuTiers = [];
@@ -347,10 +348,14 @@ const scriptHtml = (text, language = displayLanguage()) => String(text || '').sp
 // … or, failing that, whatever it has: the comparison reads every script alike
 const transcriptIn = (store, language = sttSettings.language) => pickTranscript(store, language) || pickTranscript(store);
 let sttDevice = null;
+// The model: one chosen before the dropdown went, else the Best (whisper-large-v3-turbo) —
+// on the same recording it heard 91 where Better heard 68 and Fast 72, and on a graphics
+// card that can run it, it is the quickest too. A card that gets it wrong sends it to the
+// processor (cpuTiers): slower, but right.
 async function sttTier() {
   if (sttSettings.tier) return sttSettings.tier;
   if (!sttDevice) sttDevice = await stt.probe().catch(() => 'wasm');
-  return sttDevice === 'webgpu' ? 'better' : 'fast';
+  return 'best';
 }
 function saveStt() { try { localStorage.setItem(STT_KEY, JSON.stringify(sttSettings)); } catch { /* ignore */ } }
 
@@ -1419,7 +1424,23 @@ function addSlip(id, slip) {
 function learnerPace() {
   const p = profileById(learnerId);
   const pace = p && p.pace && typeof p.pace === 'object' ? p.pace : {};
-  return { tempoRatio: Number(pace.tempoRatio) > 0 ? Number(pace.tempoRatio) : 1, padaPauseMs: Number(pace.padaPauseMs) > 0 ? Number(pace.padaPauseMs) : 600, slokaPauseMs: Number(pace.slokaPauseMs) > 0 ? Number(pace.slokaPauseMs) : 1000 };
+  return {
+    tempoRatio: Number(pace.tempoRatio) > 0 ? Number(pace.tempoRatio) : 1,
+    padaPauseMs: Number(pace.padaPauseMs) > 0 ? Number(pace.padaPauseMs) : 600,
+    slokaPauseMs: Number(pace.slokaPauseMs) > 0 ? Number(pace.slokaPauseMs) : 1000,
+    aksPerSec: Number(pace.aksPerSec) > 0 ? Number(pace.aksPerSec) : null, // akṣaras per second of their singing, once measured
+    countRatio: Number(pace.countRatio) > 0 ? Number(pace.countRatio) : 1, // syllable nuclei the counter hears per akṣara of their voice
+  };
+}
+// Where the learner is in the sloka, in akṣaras: the syllable count calibrated to their
+// voice, and — once their speed is known (this take's earlier slokas, or their profile) —
+// blended half and half with the time they have been singing at that speed, which rides
+// over the counter's slips. The learner's speed, never the teacher's.
+function earPosition(ear, st) {
+  const byCount = st.count / (ear.countRatio || 1);
+  if (!ear.aksPerSec || !ear.expected) return byCount;
+  const byTime = Math.min(ear.expected + 2, (ear.activeMs / 1000) * ear.aksPerSec);
+  return 0.5 * byCount + 0.5 * byTime;
 }
 // How many slokas one take may hold (Self Evaluation, a quiz): a chapter's worth. The take
 // stays in memory whole, and every sloka's stretch is transcribed from it, so the number is
@@ -2893,20 +2914,22 @@ function hearRestart(ear, p) {
   if (!m.confident) return;
   const k = m.best.pada;
   const first = plan.speakerLine ? 0 : 1;
-  const since = Math.max(0, ear.counter.count - p.count); // akṣaras heard since the pause ended
+  const since = Math.max(0, ear.counter.count - p.count) / (ear.countRatio || 1); // akṣaras heard since the pause ended
+  const setPosition = (aks) => { ear.counter.count = Math.round(aks * (ear.countRatio || 1)); ear.activeMs = ear.aksPerSec ? (aks / ear.aksPerSec) * 1000 : 0; };
+  const was = p.pos != null ? p.pos : p.count;
   if (k === first) {
-    if (p.count < Math.round(plan.total * 0.25)) return; // only just begun: not a restart
+    if (was < plan.total * 0.25) return; // only just begun: not a restart
     addSlip(item.id, { kind: 'falseStart', at: Math.round((recSegments ? recSegments.from : 0) * 100) / 100, word: padaFirstWord(item, plan, first), by: 'sound' });
-    ear.counter.count = since;
+    setPosition(since);
     ear.stalled = new Set();
     if (recSegments) recSegments.from = Math.max(recSegments.from, p.at - 0.15);
     recNote(`${item.name} from the top: the count starts again`);
     return;
   }
   const sc = startCountOf(plan, k);
-  if (p.count < sc + 3) return; // the pāda is simply next
+  if (was < sc + 3) return; // the pāda is simply next
   addSlip(item.id, { kind: 'restart', at: Math.round(p.at * 100) / 100, pada: k, word: padaFirstWord(item, plan, k), by: 'sound' });
-  ear.counter.count = sc + since;
+  setPosition(sc + since);
   ear.stalled = new Set();
   recNote(`${padaName(k)} again: the count goes back to ${sc}`);
 }
@@ -2931,7 +2954,9 @@ function earResync(line) {
   const bodyLines = Math.max(1, lines - sp);
   const per = Math.max(1, Math.round(plan.padas.length / bodyLines));
   const pada = line == null ? (sp ? 0 : 1) : sp && line === 0 ? 0 : Math.min(plan.padas.length, (line - sp) * per + 1);
-  ear.counter.count = startCountOf(plan, pada);
+  const aks = startCountOf(plan, pada);
+  ear.counter.count = Math.round(aks * (ear.countRatio || 1));
+  ear.activeMs = ear.aksPerSec ? (aks / ear.aksPerSec) * 1000 : 0;
   ear.stalled = new Set();
   ear.pending = null;
   ear.manual = true;
@@ -2954,7 +2979,7 @@ function lineOfPada(plan, pada) {
 // profile as a running mean (twenty takes deep, so it follows them as they change).
 async function savePace(ear) {
   const p = profileById(learnerId);
-  if (!p || !ear || !ear.tempoN) return;
+  if (!p || !ear || (!ear.tempoN && !ear.speedN)) return;
   const median = (a) => { if (!a.length) return null; const z = a.slice().sort((x, y) => x - y); return z[Math.floor(z.length / 2)]; };
   const cur = p.pace && typeof p.pace === 'object' ? p.pace : {};
   const n = Math.max(0, Math.min(20, Number(cur.n) || 0));
@@ -2963,6 +2988,8 @@ async function savePace(ear) {
   const tr = mix(cur.tempoRatio, ear.tempo); if (tr != null) pace.tempoRatio = Math.round(tr * 100) / 100;
   const pp = mix(cur.padaPauseMs, median(ear.padaPauses)); if (pp != null) pace.padaPauseMs = Math.round(pp);
   const sp = mix(cur.slokaPauseMs, median(ear.slokaPauses)); if (sp != null) pace.slokaPauseMs = Math.round(sp);
+  if (ear.speedN) { const v = mix(cur.aksPerSec, ear.aksPerSec); if (v != null) pace.aksPerSec = Math.round(v * 100) / 100; }
+  if (ear.countRatioN) { const v = mix(cur.countRatio, ear.countRatio); if (v != null) pace.countRatio = Math.round(v * 100) / 100; }
   pace.n = n + 1;
   try { const saved = await api.patchProfile(p.id, { pace }); Object.assign(p, saved); } catch { /* next time */ }
 }
@@ -2972,7 +2999,7 @@ function startEar(rec) {
   if (items.length < 2 || !(sttSettings.auto || practice.quiz)) return;
   const sr = rec.ctx.sampleRate;
   const pace = learnerPace();
-  const ear = { rec, counter: new SyllableCounter(sr), read: 0, samplesRead: 0, item: null, plan: null, fp: null, expected: null, expectedMs: 0, tempo: pace.tempoRatio, tempoN: 0, stalled: new Set(), prevPause: 0, pending: null, padaPauses: [], slokaPauses: [], done: false, listener: null };
+  const ear = { rec, counter: new SyllableCounter(sr), read: 0, samplesRead: 0, item: null, plan: null, fp: null, expected: null, expectedMs: 0, tempo: pace.tempoRatio, tempoN: 0, aksPerSec: pace.aksPerSec, speedN: 0, countRatio: pace.countRatio, countRatioN: 0, activeMs: 0, lastElapsed: 0, pos: 0, stalled: new Set(), prevPause: 0, pending: null, padaPauses: [], slokaPauses: [], done: false, listener: null };
   // the sloka in view: its plan, its fingerprints, the teacher's time for it
   const target = (i) => {
     ear.item = slokaTextItems()[i] || null;
@@ -2986,6 +3013,9 @@ function startEar(rec) {
   const begin = () => {
     target(currentTextIndex(slokaTextItems()));
     ear.counter.reset();
+    ear.activeMs = 0;
+    ear.lastElapsed = 0;
+    ear.pos = 0;
     ear.done = false;
   };
   ear.retarget = target; // the page turned on by the words: the count goes on, the sloka changes
@@ -2995,14 +3025,19 @@ function startEar(rec) {
     if (!rec.active || liveEar !== ear) return;
     for (; ear.read < rec.chunks.length; ear.read++) { ear.counter.push(rec.chunks[ear.read]); ear.samplesRead += rec.chunks[ear.read].length; }
     const st = ear.counter.state_();
+    const dt = st.elapsedMs - ear.lastElapsed; // the time sung: the clock runs while there is sound
+    ear.lastElapsed = st.elapsedMs;
+    if (dt > 0 && st.pauseMs < 200) ear.activeMs += dt;
+    const pos = earPosition(ear, st);
+    ear.pos = pos;
     renderEar(ear, st);
     if (ear.done) return;
     // sound again after a pause: a pause at a pāda's end is a breath (measured, for the
     // learner's pace); what the sound begins with says whether it is a restart
     if (ear.prevPause >= 250 && st.pauseMs < ear.prevPause) {
       const resumedAt = ear.samplesRead / sr - st.pauseMs / 1000;
-      if (ear.plan && ear.prevPause < 3000 && padaAt(ear.plan, st.count).atBoundary) ear.padaPauses.push(ear.prevPause);
-      if (ear.fp && ear.prevPause >= 400 && !ear.pending) ear.pending = { at: resumedAt, count: st.count };
+      if (ear.plan && ear.prevPause < 3000 && padaAt(ear.plan, pos).atBoundary) ear.padaPauses.push(ear.prevPause);
+      if (ear.fp && ear.prevPause >= 400 && !ear.pending) ear.pending = { at: resumedAt, count: st.count, pos };
     }
     ear.prevPause = st.pauseMs;
     if (ear.pending && ear.samplesRead / sr - ear.pending.at >= TEMPLATE_SEC + 0.15) { const p = ear.pending; ear.pending = null; hearRestart(ear, p); }
@@ -3017,19 +3052,28 @@ function startEar(rec) {
     const slokaPause = Math.max(500, Math.round(pace.slokaPauseMs * 0.6));
     const overTime = ear.expectedMs > 0 && sung > 1.6 * ear.expectedMs * ear.tempo;
     const complete = exp
-      ? (st.count >= exp - 2 && st.pauseMs >= slokaPause) || (st.count >= Math.round(exp * (overTime ? 0.35 : 0.5)) && st.pauseMs >= 1500) || (st.count >= Math.round(exp * 1.3) && st.pauseMs >= 400)
+      ? (pos >= exp - 2 && st.pauseMs >= slokaPause) || (pos >= exp * (overTime ? 0.35 : 0.5) && st.pauseMs >= 1500) || (pos >= exp * 1.3 && st.pauseMs >= 400)
       : sung >= 4000 && st.pauseMs >= 1500;
     if (!complete) {
       // a long pause inside a pāda (not at a pāda's end) is a stall: marked once per pāda
-      if (ear.plan && ear.item && st.pauseMs >= 1200 && st.count < exp - 2) {
-        const { pada, atBoundary } = padaAt(ear.plan, st.count);
+      if (ear.plan && ear.item && st.pauseMs >= 1200 && pos < exp - 2) {
+        const { pada, atBoundary } = padaAt(ear.plan, pos);
         if (!atBoundary && !ear.stalled.has(pada)) { ear.stalled.add(pada); addSlip(ear.item.id, { kind: 'stall', at: Math.round(pauseBegan * 100) / 100, pada, unsure: true, by: 'ear' }); } // the sound comparison will say
       }
       return;
     }
     ear.slokaPauses.push(st.pauseMs);
-    if (ear.item && exp && st.count < exp - 2) addSlip(ear.item.id, { kind: 'dropped', at: Math.round(pauseBegan * 100) / 100, count: st.count, expected: exp, unsure: true, by: 'ear' }); // the words will say
-    else if (ear.expectedMs > 0 && exp) { const r = Math.max(0.5, Math.min(2.5, sung / ear.expectedMs)); ear.tempo = ear.tempoN ? (ear.tempo * ear.tempoN + r) / (ear.tempoN + 1) : r; ear.tempoN++; } // the learner's pace, from a sloka recited whole
+    if (ear.item && exp && pos < exp - 2) addSlip(ear.item.id, { kind: 'dropped', at: Math.round(pauseBegan * 100) / 100, count: Math.round(pos), expected: exp, unsure: true, by: 'ear' }); // the words will say
+    else if (exp) {
+      // a sloka recited whole teaches the ear this learner: their speed, how their voice
+      // counts, and their pace against the teacher's
+      const mean = (old, n, v) => (n ? (old * n + v) / (n + 1) : v);
+      const secs = ear.activeMs / 1000;
+      if (secs > 1) { const v = Math.max(0.5, Math.min(15, exp / secs)); ear.aksPerSec = ear.aksPerSec ? mean(ear.aksPerSec, ear.speedN, v) : v; ear.speedN++; }
+      const cr = st.count / exp;
+      if (cr >= 0.6 && cr <= 1.6) { ear.countRatio = mean(ear.countRatio, ear.countRatioN, cr); ear.countRatioN++; }
+      if (ear.expectedMs > 0) { const r = Math.max(0.5, Math.min(2.5, sung / ear.expectedMs)); ear.tempo = mean(ear.tempo, ear.tempoN, r); ear.tempoN++; }
+    }
     const now = slokaTextItems();
     const i = currentTextIndex(now);
     markSegment(now[i], pauseBegan + 0.25); // the stretch ends where the pause began
@@ -3056,11 +3100,12 @@ function renderEar(ear, st) {
   const el = $('#practice-rec-count');
   if (ear.done) { el.textContent = `every sloka heard · tap to stop`; return; }
   if (!ear.expected) { el.textContent = `${st.count} akṣaras`; return; }
-  const { pada, padas } = padaAt(ear.plan, st.count);
-  const where = pada == null || st.count >= ear.expected ? '' : pada === 0 ? ' · the speaker line' : ` · pāda ${pada} of ${padas}`;
-  el.textContent = `${st.count} of ${ear.expected} akṣaras${where}`;
-  el.title = 'Tap a line of the text to say "I am here"; tap here to count this sloka from the top';
-  const cur = pada != null && st.count < ear.expected ? lineOfPada(ear.plan, pada) : -1;
+  const pos = Math.round(earPosition(ear, st));
+  const { pada, padas } = padaAt(ear.plan, pos);
+  const where = pada == null || pos >= ear.expected ? '' : pada === 0 ? ' · the speaker line' : ` · pāda ${pada} of ${padas}`;
+  el.textContent = `${pos} of ${ear.expected} akṣaras${where}`;
+  el.title = `Where you are, by your own speed${ear.aksPerSec ? ` (${ear.aksPerSec.toFixed(1)} akṣaras a second)` : ''} and the syllables heard. Tap a line of the text to say "I am here"; tap here to count this sloka from the top`;
+  const cur = pada != null && pos < ear.expected ? lineOfPada(ear.plan, pada) : -1;
   $$('#practice-text-body .sloka-line').forEach((ln, i) => ln.classList.toggle('current', i === cur));
 }
 // The recorded stretch whose words serve a report's stretch of the take: the best overlap,
