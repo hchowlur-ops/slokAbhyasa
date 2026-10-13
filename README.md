@@ -92,6 +92,15 @@ localhost is, so do not open `index.html` directly from the file system.
 ## Workflows
 
 ### Learn
+The recording itself is never transcribed. A sloka's **words** are the Gītā's: name it as a
+verse (CH12-03 for 12.3, in a chapter folder such as CH-12) and the verse's text is shown in
+the "Sloka text" panel as you type the name and linked when you save; a sloka outside the
+Gītā gets its words from the text typed under Details. The same holds in Self Evaluation
+and a quiz: only what the learner sang is heard, and the sloka's side of the word
+comparison is the verse's text, or the typed text, or a transcript someone corrected in the
+Library — never Whisper's hearing of the teacher. A sloka with none of these shows a note
+saying so, and its word categories are not judged.
+
 * **Listen with the microphone** – tap the red button, play or perform the material, tap again.
   Review what SlokAbhyasa heard, name it, save.
 * **Use an audio file** – pick a file and save it directly as a sloka. Files are converted to

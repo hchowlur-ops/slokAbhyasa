@@ -340,6 +340,8 @@ const marksShown = () => marksOn;
   });
 }
 const escapeHtml = (x) => String(x).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+// What a sloka without words is told (its words are the Gītā's or the typed text, never its recording's transcription)
+const NO_WORDS_NOTE = 'No words for this sloka yet: link it to the Gītā in the Library (its name as CH12-03 does that by itself), or type its text under Details there. The recording itself is not transcribed.';
 // Text in the chosen script: in a language other than Sanskrit every akṣara carries its weight
 const segmentsHtml = (segs) => segs.map((sg) => (sg.sep != null ? escapeHtml(sg.sep) : sg.weight ? `<ruby>${escapeHtml(sg.text)}<rt>${weightMark(sg.weight)}</rt></ruby>` : escapeHtml(sg.text))).join('');
 const scriptHtml = (text, language = displayLanguage()) => String(text || '').split('\n').map((line) => segmentsHtml(scriptSegments(line, language, { marks: marksOn }))).join('<br>');
@@ -603,7 +605,7 @@ function renderTranscriptText(host, t, toks, flagged, cls, play, dimmed = null, 
 
 // A transcript panel: language/model controls, automatic toggle, progress, text,
 // optional editing. `setSource(fn)` supplies { samples, sampleRate, what } for "Transcribe".
-function createTranscriptPanel(host, { editable = false, play = null, onChange = null, onStale = null, title = 'Transcript', controls = false } = {}) {
+function createTranscriptPanel(host, { editable = false, play = null, onChange = null, onStale = null, title = 'Transcript', controls = false, emptyText = 'No transcript yet.' } = {}) {
   host.innerHTML = `
     <div class="tp-head">
       <span class="tp-title"></span>
@@ -658,7 +660,7 @@ function createTranscriptPanel(host, { editable = false, play = null, onChange =
     setHidden(editHint, !editing);
     setHidden(runBtn, editing || !controls); // … and without a Transcribe button
     runBtn.textContent = transcript ? 'Transcribe again' : 'Transcribe';
-    if (!transcript) { statusEl.textContent = 'No transcript yet.'; return; }
+    if (!transcript) { statusEl.textContent = emptyText; return; }
     renderTranscriptText(textEl, transcript, tokenizeTranscript(transcript), flagged, flagClass, play, dimmed, true);
     const how = transcript.from === 'reference' ? `the Gītā's words${transcript.verse ? `, verse ${transcript.verse}` : ''}` : transcript.edited ? (transcript.editedIn === 'file' ? 'edited in the text file' : 'corrected by you') : sttTierLabel(transcript.tier);
     const lang = transcript.language && transcript.language !== 'unknown' ? sttLanguageLabel(transcript.language) : 'Text';
@@ -1101,7 +1103,24 @@ const learnPreview = new Player();
 let learnTake = null; // { samples, sampleRate, duration, blob }
 const drawLearnPreview = bindWave($('#learn-prev-wave'), learnPreview, () => learnTake && learnTake.samples, $('#learn-prev-cur'), $('#learn-prev-dur'));
 bindPlayButton($('#learn-prev-play'), learnPreview);
-const learnPanel = createTranscriptPanel($('#learn-transcript'), { editable: true, play: (s, e) => learnPreview.playRange(s, e) });
+const learnPanel = createTranscriptPanel($('#learn-transcript'), { title: 'Sloka text', editable: false, emptyText: 'Name the sloka as a verse of the Gītā (CH12-03 for 12.3, in a chapter folder) and its words appear here; otherwise type its text under Details below. The recording itself is not transcribed.' });
+// The words a Learn recording will have: the Gītā's, when the name (with the folder) names
+// a verse of the dataset here. Shown as it is typed; linked by the server when saved.
+let learnVerseToken = 0;
+async function showLearnVerse(panel, name, folder) {
+  const token = ++learnVerseToken;
+  const ids = await referenceDatasets().catch(() => []);
+  if (token !== learnVerseToken) return;
+  const guess = ids.length ? mapNameToVerse(String(name || '').trim(), folder || '') : null;
+  if (!guess) { panel.set(null); return; }
+  let entry = null;
+  try { entry = await api.getVerse(ids[0], guess.id); } catch { entry = null; }
+  if (token !== learnVerseToken) return;
+  if (!entry) { panel.set(null); return; }
+  const lines = verseBody(entry, { speakerLine: true }).split('\n').filter(Boolean);
+  panel.set({ text: lines.join(' '), chunks: lines.map((l) => ({ text: l })), language: 'sanskrit', from: 'reference', verse: entry.id, edited: true, editedIn: 'reference' });
+}
+const learnVerseDebounce = (panel, nameEl) => { let t = null; return () => { clearTimeout(t); t = setTimeout(() => showLearnVerse(panel, nameEl.value, learnFolder()), 250); }; };
 const learnMeta = buildMetaFields($('#learn-meta'));
 
 $('#learn-rec').addEventListener('click', async () => {
@@ -1123,8 +1142,7 @@ $('#learn-rec').addEventListener('click', async () => {
     drawLearnPreview();
     $('#learn-name').focus();
     learnPanel.reset();
-    learnPanel.setSource(() => ({ samples: take.samples, sampleRate: take.sampleRate, what: 'what SlokAbhyasa heard' }));
-    if (sttSettings.auto) learnPanel.transcribe();
+    showLearnVerse(learnPanel, $('#learn-name').value, learnFolder()); // the Gītā's words for this name, not a transcription
   } else {
     try {
       learnPreview.pause();
@@ -1167,6 +1185,8 @@ function saveTranscriptLater(late, rec, adjust = (t) => t) {
   });
 }
 
+$('#learn-name').addEventListener('input', learnVerseDebounce(learnPanel, $('#learn-name')));
+$('#learn-folder').addEventListener('change', () => { if (learnTake) showLearnVerse(learnPanel, $('#learn-name').value, learnFolder()); });
 $('#learn-save-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   if (!learnTake) return;
@@ -1176,14 +1196,9 @@ $('#learn-save-form').addEventListener('submit', async (e) => {
   btn.disabled = true;
   try {
     learnPreview.pause();
-    const late = learnPanel.busy ? learnPanel.detach() : null;
     const rec = await saveBaseline({ name, ...learnTake, source: 'mic', meta: learnMeta.read() }, learnProgress);
-    const transcript = late ? null : learnPanel.transcript;
-    if (transcript) await api.putTranscript(rec.id, transcript).catch(() => toast('The transcript could not be saved.', 'error'));
-    if (late) saveTranscriptLater(late, rec);
-    // the other languages follow in the background, from the take still in memory
-    transcribeSavedInAllLanguages(rec, learnTake.samples, learnTake.sampleRate, transcript ? [transcript.language] : []);
-    toast(`Saved "${rec.name}"${transcript ? ' with its transcript' : ''} to the library.${late ? ' Its transcript is still being written and will be added when ready.' : ''} The other languages are transcribed in the background.`, 'success', late ? 5000 : 3500);
+    const link = rec.meta && rec.meta.verse;
+    toast(`Saved "${rec.name}" to the library${link ? `, linked to Gītā ${link.id}: its words are the verse's` : ''}.`, 'success', 4000);
     $('#learn-discard').click();
   } catch (err) {
     toast(err.message, 'error', 6000);
@@ -1274,7 +1289,8 @@ async function saveBaseline({ name, samples, sampleRate, duration, blob, source,
 let learnFile = null;
 const drawLearnFile = () => { if (learnFile) drawWaveform($('#learn-file-wave'), learnFile.samples, { progress: 0 }); };
 redraws.add(drawLearnFile);
-const learnFilePanel = createTranscriptPanel($('#learn-file-transcript'), { editable: true });
+const learnFilePanel = createTranscriptPanel($('#learn-file-transcript'), { title: 'Sloka text', editable: false, emptyText: 'Name the sloka as a verse of the Gītā (CH12-03 for 12.3, in a chapter folder) and its words appear here; otherwise type its text under Details below. The file itself is not transcribed.' });
+$('#learn-file-name-input').addEventListener('input', learnVerseDebounce(learnFilePanel, $('#learn-file-name-input')));
 const learnFileMeta = buildMetaFields($('#learn-file-meta-fields'), { compact: true });
 function setLearnFile(l) {
   if (learnFile !== l) { learnFilePanel.cancel(); learnFilePanel.reset(); learnFileMeta.reset(); }
@@ -1287,7 +1303,7 @@ function setLearnFile(l) {
   $('#learn-file-name-input').value = l.name.replace(/\.[^.]+$/, '');
   $('#learn-file-wave')._peaks = null;
   drawLearnFile();
-  learnFilePanel.setSource(() => ({ samples: l.samples, sampleRate: l.sampleRate, what: `"${l.name}"` }));
+  showLearnVerse(learnFilePanel, $('#learn-file-name-input').value, learnFolder());
 }
 $('#learn-file-browse').addEventListener('click', () => $('#learn-file-input').click());
 $('#learn-file-change').addEventListener('click', () => $('#learn-file-input').click());
@@ -1307,7 +1323,6 @@ $('#learn-file-input').addEventListener('change', async (e) => {
   if (!f) return;
   await loadFile(f);
   activateTab('learn-file');
-  if (learnFile && sttSettings.auto) learnFilePanel.transcribe();
 });
 $('#learn-file-form').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -1320,14 +1335,9 @@ $('#learn-file-form').addEventListener('submit', async (e) => {
     // Re-encode as mono 16-bit WAV so every sloka in the library is uniform.
     const { take, info, changed, removedStart = 0, removedEnd = 0 } = trimTake(learnFile, $('#learn-file-trim').checked);
     const blob = encodeWav(take.samples, take.sampleRate);
-    const late = learnFilePanel.busy ? learnFilePanel.detach() : null;
     const rec = await saveBaseline({ name, samples: take.samples, sampleRate: take.sampleRate, duration: take.duration, blob, source: 'file', meta: learnFileMeta.read(), edit: { trimStartSec: removedStart, trimEndSec: removedEnd } }, learnProgress);
-    const adjust = (t) => shiftTranscript(t, -(removedStart || 0), take.duration);
-    const transcript = late ? null : adjust(learnFilePanel.transcript);
-    if (transcript) await api.putTranscript(rec.id, transcript).catch(() => toast('The transcript could not be saved.', 'error'));
-    if (late) saveTranscriptLater(late, rec, adjust);
-    transcribeSavedInAllLanguages(rec, take.samples, take.sampleRate, transcript ? [transcript.language] : []);
-    toast(`Saved "${rec.name}"${transcript ? ' with its transcript' : ''} to the library.${changed ? ` ${info}` : ''}${late ? ' Its transcript is still being written and will be added when ready.' : ''}`, 'success', changed || late ? 5000 : 3500);
+    const link = rec.meta && rec.meta.verse;
+    toast(`Saved "${rec.name}" to the library${link ? `, linked to Gītā ${link.id}: its words are the verse's` : ''}.${changed ? ` ${info}` : ''}`, 'success', changed ? 5000 : 4000);
   } catch (err) {
     toast(err.message, 'error', 6000);
   } finally {
@@ -1524,6 +1534,7 @@ bindPlayButton($('#res-play-base'), basePlayer);
 bindPlayButton($('#res-play-heard'), heardPlayer);
 const practicePanel = createTranscriptPanel($('#practice-transcript'), {
   title: 'Sloka text',
+  emptyText: NO_WORDS_NOTE,
   editable: false, // the words are corrected in the Library alone
   play: (s, e) => { heardPlayer.pause(); basePlayer.playRange(s, e); },
   // a transcription that finished after another sloka was opened still belongs to its own sloka
@@ -2107,9 +2118,7 @@ async function setActiveBase(id) {
     setHidden($('#practice-base'), !previewShown());
     drawBaseWave();
     practicePanel.reset();
-    practicePanel.setSource(() => ({ samples: base.samples, sampleRate: base.sampleRate, what: `“${base.record.name}”` }), id);
-    if (base.transcript) practicePanel.set(base.transcript, base.transcripts);
-    else { practicePanel.set(null, base.transcripts); if (sttSettings.auto) practicePanel.transcribe(); }
+    practicePanel.set(referenceWords(base), base.transcripts); // the Gītā's words, or the typed text; the recording is not transcribed
     showActiveReport();
   } catch (err) {
     if (token !== activeToken) return;
@@ -3264,21 +3273,11 @@ async function scoreQuizAttempt() {
         break;
       }
       if (!live()) return;
-      // the sloka's words: its typed text when there is one, else its transcript
-      let ref = typedReference(base, res);
-      if (!ref && !base.transcript && practice.activeId === id) { await practicePanel.wait(); }
-      if (!ref && !base.transcript) {
-        try {
-          prog.show(`Quiz: listening to the words of “${base.record.name}” (${k + 1} of ${ids.length})…`, stop);
-          const t = await runTranscription(base.samples, base.sampleRate, prog, `“${base.record.name}”`, skip.signal);
-          base.transcript = t;
-          api.putTranscript(id, t).then((store) => { base.transcripts = store; notifyTranscripts(id, store); }).catch(() => {});
-          if (practice.activeId === id) practicePanel.set(t, base.transcripts);
-        } catch { continue; }
-      }
-      if (!live()) return;
-      const words = tokenizeTranscript(ref || base.transcript).length;
-      const heard = await hearAgainIfPoor(res, ref || base.transcript, heardT, base.duration, false);
+      // the sloka's words: the Gītā's, or the typed text; a sloka without words has no word scores
+      const ref = referenceWords(base, res);
+      if (!ref) continue;
+      const words = tokenizeTranscript(ref).length;
+      const heard = await hearAgainIfPoor(res, ref, heardT, base.duration, false);
       if (!live()) return;
       heardT = heard.heardT;
       const ws = heard.ws;
@@ -4601,8 +4600,8 @@ async function transcribeAllParts() {
       const heardT = await transcribeTakePart(heardPartOf(res), false);
       if (practice.take !== take || !heardT) return;
       const base = await ensureBase(id);
-      const ref = typedReference(base, res) || base.transcript;
-      if (!ref) continue; // the sloka has no words yet: its report transcribes it when opened
+      const ref = referenceWords(base, res);
+      if (!ref) continue; // the sloka has no words: nothing to compare the words with
       const { ws } = await hearAgainIfPoor(res, ref, heardT, base.duration, false);
       if (practice.take !== take || !ws) continue;
       if (!practice.wordSims.has(id)) {
@@ -4623,6 +4622,19 @@ function stopTakeTranscriptions() {
 
 // The sloka's typed text as the reference for its words, when the whole sloka was compared
 // (a text has no timings, so it cannot be windowed to a part). null: use the transcript.
+// The sloka's words, for the comparison and the Sloka text row: the Gītā's (the verse the
+// recording is linked to, with its timings), else the text typed in its details, else a
+// transcript someone corrected — never Whisper's hearing of the teacher's recording, which
+// is not transcribed in Learn, Self Evaluation or a quiz. null when the sloka has no words.
+function referenceWords(base, res = null) {
+  if (!base) return null;
+  const t = base.transcript;
+  if (t && t.from === 'reference') return t;
+  const typed = typedReference(base, res);
+  if (typed) return typed;
+  if (t && t.edited) return t;
+  return null;
+}
 function typedReference(base, res) {
   const meta = base.record && base.record.meta;
   const text = meta && meta.text && meta.text.body && meta.text.origin !== 'transcript' ? meta.text : null;
@@ -4648,17 +4660,8 @@ function transcribeBoth(force) {
     btn.disabled = true;
     try {
       getCtx();
-      const language = sttSettings.language;
-      const tier = await sttTier();
-      let baseT = typedReference(practice.base, practice.result);
-      if (!baseT) {
-        baseT = await practicePanel.wait();
-        if (!current()) return;
-        const stale = !baseT || (force && !baseT.edited && baseT.tier !== tier); // any script serves: the comparison reads them alike
-        if (stale) baseT = await practicePanel.transcribe();
-        if (!current()) return;
-        if (!baseT) throw new Error('The sloka could not be transcribed.');
-      }
+      const baseT = referenceWords(practice.base, practice.result);
+      if (!baseT) { $('#stt-summary').textContent = NO_WORDS_NOTE; settleEvaluating(); return; } // no words to compare with: the report stands on the sound alone
       let heardT = await transcribeTakePart(heardPartOf(practice.result), force);
       if (!current() || !heardT) return; // stopped: the report stays without a word diff
       heardT = (await hearAgainIfPoor(practice.result, baseT, heardT, practice.base.duration, force)).heardT;
