@@ -134,6 +134,38 @@ export function padaBreaks(words, perPada, lines = 2) {
 // way: । after the second pāda, ॥ after the fourth.
 export const linesFor = (perPada, preferred = 2) => (perPada === 11 ? 4 : preferred === 4 ? 4 : 2);
 
+// The akṣara plan of a text: how many akṣaras the speaker line has (0 without one) and how
+// many each pāda has, in order, so a count of akṣaras heard can be read as "pāda 3 of 4".
+// A line of the text that holds two pādas (a half-verse) is split at the word boundary
+// nearest the metre's count; a line that holds the whole sloka into four; a line that fits
+// no metre (a colophon, prose) is one unit. `checkpoints` are the cumulative counts at the
+// end of the speaker line and of each pāda.
+//   aksharaPlan('अर्जुन उवाच\nये त्वक्षरम… ।\nसर्वत्रगम… ॥', { perPada: 8 })
+//   → { speakerLine: 5, padas: [8, 8, 8, 8], total: 37, checkpoints: [5, 13, 21, 29, 37] }
+export function aksharaPlan(text, { perPada = null } = {}) {
+  const { prefix, body } = splitUvaca(String(text || ''));
+  const speakerLine = prefix ? syllabify(prefix).length : 0;
+  const pp = perPada || identifyChandas(body).perPada;
+  const padas = [];
+  for (const line of body.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)) {
+    const words = line.split(/[^\p{L}\p{M}]+/u).filter(Boolean);
+    const counts = words.map((w) => syllabify(w).length);
+    const n = counts.reduce((a, b) => a + b, 0);
+    if (!n) continue;
+    const held = pp ? Math.round(n / pp) : 1; // how many pādas the line holds
+    if (!pp || held < 2 || Math.abs(n - held * pp) > 2) { padas.push(n); continue; }
+    // by the metre's count: the pāda boundary often falls inside a word joined by sandhi,
+    // so the words cannot place it; the last pāda takes any surplus or shortfall
+    for (let k = 0; k < held - 1; k++) padas.push(pp);
+    padas.push(n - (held - 1) * pp);
+  }
+  const checkpoints = [];
+  let acc = speakerLine;
+  if (speakerLine) checkpoints.push(acc);
+  for (const p of padas) { acc += p; checkpoints.push(acc); }
+  return { speakerLine, padas, total: acc, checkpoints };
+}
+
 // The text written out in its lines (see linesFor). A text that has its lines already (the
 // dataset's half-verses) is reshaped when the setting asks for the other count: the two
 // half-verses of an anuṣṭubh into its four pādas, or four pādas into two half-verses; any

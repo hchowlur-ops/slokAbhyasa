@@ -9,7 +9,7 @@ import { Analyzer } from './analyzer.js';
 import { drawWaveform, drawLiveWave, ComparisonChart } from './visualizer.js';
 import { serializeFeatures, deserializeFeatures, isValidFeatures } from './dsp/features.js';
 import { MISMATCH_CONTRAST, confirmByWords } from './dsp/compare.js';
-import { QUIZ_CATEGORIES, LEGACY_CATEGORIES, DEFAULT_QUIZ_CATEGORIES, DEFAULT_TOLERANCE, CATEGORY_WEIGHTS, categoryLabel, normalizeWeights, itemScores, attemptSummary, scoreFor, normalizeCategories, normalizeTolerance, recordTolerance, withinTolerance, itemVerdict, correctness, pickBaselines, overallScore, attemptOverall, gradeOf, modernCategories } from './quizscore.js';
+import { QUIZ_CATEGORIES, LEGACY_CATEGORIES, DEFAULT_QUIZ_CATEGORIES, DEFAULT_TOLERANCE, CATEGORY_WEIGHTS, categoryLabel, normalizeWeights, itemScores, attemptSummary, scoreFor, normalizeCategories, normalizeTolerance, recordTolerance, withinTolerance, itemVerdict, correctness, pickBaselines, overallScore, attemptOverall, gradeOf, gradeById, gradeWithSlips, gradeWords, slipsLabel, anySlips, modernCategories } from './quizscore.js';
 import { comparePhonology, ERROR_LABEL, syllabify } from './phon.js';
 import { SyllableCounter } from './dsp/syllables.js';
 import { mixToMono } from './dsp/resample.js';
@@ -17,10 +17,10 @@ import { trimSilence } from './dsp/trim.js';
 import { Transcriber, STT_LANGUAGES, STT_LANGUAGE_CODES, STT_TIERS, sttLanguageLabel, sttLanguageTag, sttTierLabel, isStopped } from './stt.js';
 import { segments as scriptSegments, wordSegments, toDeva, weightMark } from './lipi.js';
 import { scriptToLatin, latinToScript } from './translit.js';
-import { mapNameToVerse, parseVerseId, verseBody } from './verses.js';
+import { mapNameToVerse, parseVerseId, verseBody, versePlan } from './verses.js';
 import { normalizeStore, putInStore, pickTranscript, availableLanguages } from './transcripts.js';
 import { transliterateTranscript } from './translit.js';
-import { identifyChandas, layoutSloka, padaBreaks, linesFor, uvacaOffset, chandasLabel, chandasPattern, gitaVerse, gitaFamily } from './chandas.js';
+import { identifyChandas, layoutSloka, padaBreaks, linesFor, uvacaOffset, chandasLabel, chandasPattern, gitaVerse, gitaFamily, aksharaPlan } from './chandas.js';
 import { periodRange, shiftPeriod, inRange, isoDate, slokaRows, summarize, KIND_LABEL } from './reports.js';
 import { diffWords, diffSummary, compareWords, tokenizeTranscript, windowedTokens, tokenize, dandaMarks, withDandas, uvacaWords, isUvacaLine } from './textdiff.js';
 import { AGE_GROUPS, VOICE_TYPES, STYLE_MODES, DEFAULT_STYLE_MODE, presetsFor, ADULT_PRESET, compareModeFor, speakerLabel, ageGroupLabel, styleMode, voiceStats, deriveText } from './meta.js';
@@ -1290,7 +1290,40 @@ let practice = {
   selected: null,
   teach: false, // Teach: one sloka at a time, Play then Listen
   session: null, // the stored record of this take (Self Evaluation / Teach), see saveSession()
+  slips: new Map(), // id → what went wrong in the recitation itself this take: [{ kind, at, pada, … }] (see quizscore.js)
 };
+// The slips of a sloka in this take, as far as they are sure. The ear's count is good to
+// a tenth at best, so what it marks on its own is provisional: "akṣaras dropped" stands
+// once the words are in and miss akṣaras too; "stuck in a pāda" stands once the sound
+// comparison finds a pause the sloka does not have. Until then neither is shown or graded.
+function slipsOf(id) {
+  const raw = practice.slips.get(id) || [];
+  if (!raw.length) return raw;
+  const res = practice.results.get(id);
+  const ph = practice.phonology.get(id);
+  const out = [];
+  for (const slip of raw) {
+    if (!slip.unsure) { out.push(slip); continue; }
+    const { unsure, ...sure } = slip;
+    if (slip.kind === 'dropped') { if (ph && ph.counts && ph.counts.missing >= 2) out.push({ ...sure, by: 'words' }); continue; }
+    if (slip.kind === 'stall') { const pd = res && res.scores && res.scores.phrasingDetail; if (pd && pd.extra >= 1) out.push({ ...sure, by: 'sound' }); continue; }
+    out.push(slip);
+  }
+  return out;
+}
+function addSlip(id, slip) {
+  if (!id || !slip) return;
+  const list = practice.slips.get(id) || [];
+  list.push(slip);
+  practice.slips.set(id, list);
+}
+// The learner's pace, as far as it is known: the ratio of their tempo to the reference's
+// and their usual pauses (a profile may carry them; see js/meta.js), else sensible defaults.
+function learnerPace() {
+  const p = profileById(learnerId);
+  const pace = p && p.pace && typeof p.pace === 'object' ? p.pace : {};
+  return { tempoRatio: Number(pace.tempoRatio) > 0 ? Number(pace.tempoRatio) : 1, padaPauseMs: Number(pace.padaPauseMs) > 0 ? Number(pace.padaPauseMs) : 600, slokaPauseMs: Number(pace.slokaPauseMs) > 0 ? Number(pace.slokaPauseMs) : 1000 };
+}
 // How many slokas one take may hold (Self Evaluation, a quiz): a chapter's worth. The take
 // stays in memory whole, and every sloka's stretch is transcribed from it, so the number is
 // a matter of the machine's memory and patience; a heuristic from navigator.deviceMemory /
@@ -2019,6 +2052,7 @@ $('#practice-rec').addEventListener('click', async () => {
       practiceUI.setRecording(true);
       setListBusy(true);
       recSegments = { from: 0, parts: [] };
+      practice.slips = new Map();
       recTextIndex = currentTextIndex(slokaTextItems());
       recNote('');
       startEar(rec); // several slokas: each is heard to its end and sent on by itself
@@ -2135,7 +2169,7 @@ function sessionItems() {
     const r = practice.results.get(id);
     const rec = (libraryCache || []).find((x) => x.id === id);
     const sc = itemScores(r, { phonology: practice.phonology.get(id) || null, sttAvailable: practice.wordSims.has(id) });
-    return { id, name: rec ? rec.name : nameOf(id), folder: rec ? rec.folder || '' : '', ...sc, diag: comparisonDiag(r) };
+    return { id, name: rec ? rec.name : nameOf(id), folder: rec ? rec.folder || '' : '', ...sc, diag: comparisonDiag(r), slips: slipsOf(id) };
   });
 }
 // A session's overall counts the slokas recited (ticked ones that were not found in the
@@ -2276,7 +2310,7 @@ function renderReportBrowser() {
       const sEl = $('.rr-score', row);
       sEl.innerHTML = '<span></span><span class="rr-grade"></span>';
       sEl.firstChild.textContent = overall == null ? '–' : String(overall);
-      if (grade) { sEl.lastChild.textContent = grade.label; sEl.lastChild.classList.add(grade.id); }
+      if (grade) { sEl.lastChild.textContent = gradeText(grade); sEl.lastChild.classList.add(grade.id); }
       sEl.title = 'Overall score, weighted over the categories judged so far';
       $('.rr-count', row).textContent = shown.length ? `${shown.length} conflict${shown.length === 1 ? '' : 's'}` : 'No conflicts';
       const v = reportVerdict(id);
@@ -2285,6 +2319,15 @@ function renderReportBrowser() {
         ve.className = `rr-verdict ${v.ok ? 'ok' : 'bad'}`;
         ve.textContent = verdictText(v);
         $('.rr-info', row).insertBefore(ve, $('.rr-flag', row));
+      }
+      // what went wrong in the recitation itself: "restarted pāda 3", "stuck in pāda 2"…
+      const sl = slipsOf(id);
+      if (sl.length) {
+        const se = document.createElement('span');
+        se.className = 'rr-slip';
+        se.textContent = slipsLabel(sl);
+        se.title = 'The recitation is scored in full; a slip like this makes its grade Needs practice';
+        $('.rr-info', row).insertBefore(se, $('.rr-flag', row));
       }
     } else {
       $('.rr-score', row).textContent = '–';
@@ -2421,6 +2464,22 @@ let hideTranscript = (() => { try { return localStorage.getItem(HIDE_TRANSCRIPT_
     hideTranscript = cb.checked;
     try { if (hideTranscript) localStorage.setItem(HIDE_TRANSCRIPT_KEY, '1'); else localStorage.removeItem(HIDE_TRANSCRIPT_KEY); } catch { /* ignore */ }
     setHidden($('#transcript'), hideTranscript);
+  });
+}
+// Grades shown as an emoji and a few words of encouragement (the default), or as the plain
+// labels a teacher reviewing many takes may prefer.
+const GRADE_WORDS_KEY = 'tutor-grade-words';
+let gradeWordsOn = (() => { try { return localStorage.getItem(GRADE_WORDS_KEY) !== '0'; } catch { return true; } })();
+{
+  const cb = $('#settings-grade-words');
+  cb.checked = gradeWordsOn;
+  cb.addEventListener('change', () => {
+    gradeWordsOn = cb.checked;
+    try { if (gradeWordsOn) localStorage.removeItem(GRADE_WORDS_KEY); else localStorage.setItem(GRADE_WORDS_KEY, '0'); } catch { /* ignore */ }
+    refreshVerdicts();
+    renderQuizScore();
+    renderQuizList();
+    if (assessmentsCache) renderReports();
   });
 }
 // The sloka's text in Devanagari: the text typed in its details (in whatever script), else
@@ -2604,18 +2663,56 @@ function recNote(text) {
 // but the last are ready when the take stops. The count is a guide, not a judge: the
 // comparison afterwards finds each sloka in the take on its own (segmentFor).
 let liveEar = null;
-function expectedAksharas(item) {
+// The akṣara plan of a sloka in view (see chandas.aksharaPlan): the dataset's for a linked
+// verse (a custom plan when the verse does not scan), else read from its text.
+function planOf(item) {
   const base = item && practice.bases.get(item.id);
-  const text = base ? slokaTextOf(base) : '';
-  return text ? syllabify(text).length : null;
+  if (!base) return null;
+  const link = base.record && base.record.meta && base.record.meta.verse;
+  if (link && base.verseEntry) { const p = versePlan(base.verseEntry, { speakerLine: link.speakerLineRecited !== false }); if (p && p.total) return p; }
+  const text = slokaTextOf(base);
+  if (!text) return null;
+  const ch = chandasOf(base.record, text);
+  const p = aksharaPlan(text, { perPada: ch ? ch.perPada : null });
+  return p.total ? p : null;
+}
+// How long the sloka takes its teacher: the recording's sounding time, else its length.
+function expectedSecOf(item) {
+  const base = item && practice.bases.get(item.id);
+  if (!base) return null;
+  const v = base.record && base.record.meta && base.record.meta.voice;
+  return v && v.activeSec > 0 ? v.activeSec : base.duration || null;
+}
+// Where a count of akṣaras heard stands in the plan: the pāda in progress (1-based; 0 the
+// speaker line) and whether the count sits at a pāda's end, give or take the counter's
+// tenth. A pause at a boundary is a breath; a pause inside a pāda is a stall.
+function padaAt(plan, count) {
+  if (!plan || !plan.checkpoints.length) return { pada: null, atBoundary: false };
+  const cps = plan.checkpoints;
+  const tolAt = (k) => Math.max(1, Math.round(cps[k] * 0.1));
+  let k = 0;
+  while (k < cps.length - 1 && count > cps[k] + tolAt(k)) k++;
+  const atBoundary = Math.abs(count - cps[k]) <= tolAt(k);
+  const pada = plan.speakerLine ? k : k + 1;
+  return { pada, atBoundary, padas: plan.padas.length };
 }
 function startEar(rec) {
   stopEar();
   const items = slokaTextItems();
   if (items.length < 2 || !(sttSettings.auto || practice.quiz)) return;
   const sr = rec.ctx.sampleRate;
-  const ear = { rec, counter: new SyllableCounter(sr), read: 0, samplesRead: 0, item: null, expected: null, done: false, listener: null };
-  const begin = () => { const i = currentTextIndex(slokaTextItems()); ear.item = slokaTextItems()[i] || null; ear.expected = expectedAksharas(ear.item); ear.counter.reset(); ear.done = false; };
+  const pace = learnerPace();
+  const ear = { rec, counter: new SyllableCounter(sr), read: 0, samplesRead: 0, item: null, plan: null, expected: null, expectedMs: 0, tempo: pace.tempoRatio, tempoN: 0, stalled: new Set(), done: false, listener: null };
+  const begin = () => {
+    const i = currentTextIndex(slokaTextItems());
+    ear.item = slokaTextItems()[i] || null;
+    ear.plan = planOf(ear.item);
+    ear.expected = ear.plan ? ear.plan.total : null;
+    ear.expectedMs = (expectedSecOf(ear.item) || 0) * 1000;
+    ear.stalled = new Set();
+    ear.counter.reset();
+    ear.done = false;
+  };
   ear.begin = begin;
   begin();
   ear.listener = () => {
@@ -2627,13 +2724,29 @@ function startEar(rec) {
     const sung = st.elapsedMs - st.pauseMs; // sound heard before the pause, in this sloka
     if (sung < 3000) return;
     const exp = ear.expected;
+    const pauseBegan = ear.samplesRead / sr - st.pauseMs / 1000;
+    // the sloka is complete when the count is at its end (the counter's tenth allowed) and a
+    // pause follows, of the length this learner leaves between slokas; a count well short
+    // needs a long pause — longer still when the clock has run far past the teacher's time,
+    // which means the learner is stalling or has dropped akṣaras
+    const slokaPause = Math.max(500, Math.round(pace.slokaPauseMs * 0.6));
+    const overTime = ear.expectedMs > 0 && sung > 1.6 * ear.expectedMs * ear.tempo;
     const complete = exp
-      ? (st.count >= Math.round(exp * 0.85) && st.pauseMs >= 600) || (st.count >= Math.round(exp * 0.5) && st.pauseMs >= 1500) || (st.count >= Math.round(exp * 1.3) && st.pauseMs >= 400)
+      ? (st.count >= exp - 2 && st.pauseMs >= slokaPause) || (st.count >= Math.round(exp * (overTime ? 0.35 : 0.5)) && st.pauseMs >= 1500) || (st.count >= Math.round(exp * 1.3) && st.pauseMs >= 400)
       : sung >= 4000 && st.pauseMs >= 1500;
-    if (!complete) return;
+    if (!complete) {
+      // a long pause inside a pāda (not at a pāda's end) is a stall: marked once per pāda
+      if (ear.plan && ear.item && st.pauseMs >= 1200 && st.count < exp - 2) {
+        const { pada, atBoundary } = padaAt(ear.plan, st.count);
+        if (!atBoundary && !ear.stalled.has(pada)) { ear.stalled.add(pada); addSlip(ear.item.id, { kind: 'stall', at: Math.round(pauseBegan * 100) / 100, pada, unsure: true, by: 'ear' }); } // the sound comparison will say
+      }
+      return;
+    }
+    if (ear.item && exp && st.count < exp - 2) addSlip(ear.item.id, { kind: 'dropped', at: Math.round(pauseBegan * 100) / 100, count: st.count, expected: exp, unsure: true, by: 'ear' }); // the words will say
+    else if (ear.expectedMs > 0 && exp) { const r = Math.max(0.5, Math.min(2.5, sung / ear.expectedMs)); ear.tempo = ear.tempoN ? (ear.tempo * ear.tempoN + r) / (ear.tempoN + 1) : r; ear.tempoN++; } // the learner's pace, from a sloka recited whole
     const now = slokaTextItems();
     const i = currentTextIndex(now);
-    markSegment(now[i], ear.samplesRead / sr - st.pauseMs / 1000 + 0.25); // the stretch ends where the pause began
+    markSegment(now[i], pauseBegan + 0.25); // the stretch ends where the pause began
     if (i + 1 < now.length) {
       if (practice.quiz) quizTextIndex = i + 1; else recTextIndex = i + 1;
       renderSlokaTexts();
@@ -2655,7 +2768,10 @@ function earPageTurned() { if (liveEar) liveEar.begin(); }
 function renderEar(ear, st) {
   const el = $('#practice-rec-count');
   if (ear.done) { el.textContent = `every sloka heard · tap to stop`; return; }
-  el.textContent = ear.expected ? `${st.count} of ${ear.expected} akṣaras` : `${st.count} akṣaras`;
+  if (!ear.expected) { el.textContent = `${st.count} akṣaras`; return; }
+  const { pada, padas } = padaAt(ear.plan, st.count);
+  const where = pada == null || st.count >= ear.expected ? '' : pada === 0 ? ' · the speaker line' : ` · pāda ${pada} of ${padas}`;
+  el.textContent = `${st.count} of ${ear.expected} akṣaras${where}`;
 }
 // The recorded stretch whose words serve a report's stretch of the take: the best overlap,
 // when it covers it well (the page was turned near the sloka's end).
@@ -2841,7 +2957,7 @@ async function scoreQuizAttempt() {
     attempt.items = quiz.items.map((it) => {
       const r = practice.results.get(it.id);
       const sc = itemScores(r, { phonology: sims.has(it.id) ? sims.get(it.id).phonology : null, sttAvailable: stt });
-      return { id: it.id, name: it.name, folder: it.folder, ...sc, diag: comparisonDiag(r) };
+      return { id: it.id, name: it.name, folder: it.folder, ...sc, diag: comparisonDiag(r), slips: slipsOf(it.id) };
     });
     const sum = attemptSummary(attempt.items, quiz.categories, attempt.tolerance, attempt.weights);
     Object.assign(attempt, sum);
@@ -2883,7 +2999,8 @@ function renderQuizScore() {
   const overall = corr ? attemptOverall(a.items, quiz.categories, weightsOf(a)) : null;
   $('#quiz-ring').style.setProperty('--pct', String(overall == null ? 0 : overall));
   $('#quiz-overall').textContent = overall == null ? '–' : String(overall);
-  setGrade($('#quiz-grade'), gradeOf(overall));
+  const quizSlips = a.items.flatMap((it) => (Array.isArray(it.slips) ? it.slips : []));
+  setGrade($('#quiz-grade'), gradeWithSlips(overall, quizSlips), $('#quiz-words'), { seed: `${quiz.id}:${quiz.attempts ? quiz.attempts.length : 0}`, slips: quizSlips, score: overall });
   const n = a.items.length;
   $('#quiz-overall-sub').textContent = !corr ? 'Scoring…' : `${n} sloka${n === 1 ? '' : 's'} · ${a.recited ?? 0} recited · weighted on ${quiz.categories.map((c) => catLabel(c).toLowerCase()).join(', ')}`;
   const vEl = $('#quiz-verdict');
@@ -2923,7 +3040,7 @@ function renderQuizScore() {
   // the Correct column exists only when there is a tolerance to be correct against
   head.innerHTML = '<th>Sloka</th><th>Recited</th>' + cats.map((c) => `<th title="${tolText(c.id)} · weight ${aw[c.id]}">${c.label}</th>`).join('') + `<th title="Weighted over the chosen categories">Overall</th>${tol ? '<th>Correct</th>' : ''}`;
   table.appendChild(head);
-  const gradeCell = (o) => { const g = gradeOf(o); return o == null ? '–' : `${o} <span class="rr-grade ${g.id}">${g.label}</span>`; };
+  const gradeCell = (o, slips = null) => { const g = gradeWithSlips(o, slips); return o == null ? '–' : `${o} <span class="rr-grade ${g.id}" title="${slips && slips.length ? slipsLabel(slips) : ''}">${gradeText(g)}</span>` + (slips && slips.length ? ` <span class="muted small">· ${slipsLabel(slips)}</span>` : ''); };
   for (const it of a.items) {
     const tr = document.createElement('tr');
     const openable = practice.results.has(it.id) && isReport(practice.results.get(it.id));
@@ -2939,7 +3056,7 @@ function renderQuizScore() {
       const mark = w == null ? '' : `<span class="mark ${w ? 'ok' : 'bad'}" title="${w ? 'within' : 'outside'} ${tol[c.id]} %">${w ? '✓' : '✗'}</span>`;
       cells.push(`<td class="${on ? 'on' : 'off'}">${v == null ? '–' : v}${on ? mark : ''}</td>`);
     }
-    cells.push(`<td class="on">${it.missing ? '–' : gradeCell(overallScore(it, quiz.categories, aw))}</td>`);
+    cells.push(`<td class="on">${it.missing ? '–' : gradeCell(overallScore(it, quiz.categories, aw), it.slips)}</td>`);
     if (tol) {
       const v = itemVerdict(it, quiz.categories, tol);
       cells.push(`<td class="on">${v.ok === null ? '–' : v.ok ? 'yes' : 'no'}</td>`);
@@ -2953,12 +3070,12 @@ function renderQuizScore() {
     if (tol) {
       const tr = document.createElement('tr');
       tr.className = 'total';
-      tr.innerHTML = `<td>Within tolerance</td><td>${a.recited} of ${a.counted}</td>` + cats.map((c) => { const pr = corr.passRate[c.id]; return `<td class="${quiz.categories.includes(c.id) ? 'on' : 'off'}">${pr ? `${pr.ok}/${pr.n}` : '–'}</td>`; }).join('') + `<td class="on">${gradeCell(overall)}</td><td class="on">${pct == null ? '–' : `${corr.correct} of ${corr.counted} · ${pct}%`}</td>`;
+      tr.innerHTML = `<td>Within tolerance</td><td>${a.recited} of ${a.counted}</td>` + cats.map((c) => { const pr = corr.passRate[c.id]; return `<td class="${quiz.categories.includes(c.id) ? 'on' : 'off'}">${pr ? `${pr.ok}/${pr.n}` : '–'}</td>`; }).join('') + `<td class="on">${gradeCell(overall, quizSlips)}</td><td class="on">${pct == null ? '–' : `${corr.correct} of ${corr.counted} · ${pct}%`}</td>`;
       table.appendChild(tr);
     }
     const avg = document.createElement('tr');
     avg.className = 'total';
-    avg.innerHTML = `<td>Average score</td><td>${tol ? '' : `${a.recited} of ${a.counted}`}</td>` + cats.map((c) => `<td class="${quiz.categories.includes(c.id) ? 'on' : 'off'}">${a.byCategory[c.id] == null ? '–' : a.byCategory[c.id]}</td>`).join('') + `<td class="on">${tol ? '' : gradeCell(overall)}</td>${tol ? '<td></td>' : ''}`;
+    avg.innerHTML = `<td>Average score</td><td>${tol ? '' : `${a.recited} of ${a.counted}`}</td>` + cats.map((c) => `<td class="${quiz.categories.includes(c.id) ? 'on' : 'off'}">${a.byCategory[c.id] == null ? '–' : a.byCategory[c.id]}</td>`).join('') + `<td class="on">${tol ? '' : gradeCell(overall, quizSlips)}</td>${tol ? '<td></td>' : ''}`;
     table.appendChild(avg);
   }
   const nAtt = quiz.attempts ? quiz.attempts.length : 0;
@@ -3083,7 +3200,7 @@ let assessmentsCache = null;
 
 const catCols = QUIZ_CATEGORIES;
 const scoreCell = (v, on = true) => `<td class="${on ? 'on' : 'off'}">${v == null ? '–' : v}</td>`;
-const gradeHtml = (overall) => { const g = gradeOf(overall); return overall == null ? '–' : `${overall} <span class="rr-grade ${g.id}">${g.label}</span>`; };
+const gradeHtml = (overall, grade = null) => { const g = (typeof grade === 'string' ? gradeById(grade) : grade) || gradeOf(overall); return overall == null || !g ? '–' : `${overall} <span class="rr-grade ${g.id}">${gradeText(g)}</span>`; };
 const fmtWhen = (iso) => new Date(iso).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 const fmtWhenShort = (iso) => new Date(iso).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 // "CH-12-1008" for "CH-12-1008 · 2026-10-08 06:58": the date is shown beside it anyway
@@ -3145,9 +3262,9 @@ function renderReportsList(list) {
     kind.classList.toggle('quiz', a.kind === 'quiz');
     $('.label', row).textContent = a.kind === 'quiz' ? a.name : (a.items || []).map((it) => it.name).slice(0, 4).join(', ') + ((a.items || []).length > 4 ? '…' : '');
     $('.sr-count', row).textContent = `${a.recited ?? 0} of ${a.counted ?? (a.items || []).length} recited${a.kind === 'quiz' && a.correct != null ? ` · ${a.correct}% correct` : ''}`;
-    const g = gradeOf(a.overall);
+    const g = gradeById(a.grade) || gradeOf(a.overall);
     $('.sr-score > span:first-child', row).textContent = a.overall == null ? '–' : String(a.overall);
-    if (g) { $('.rr-grade', row).textContent = g.label; $('.rr-grade', row).classList.add(g.id); }
+    if (g) { $('.rr-grade', row).textContent = gradeText(g); $('.rr-grade', row).classList.add(g.id); }
     row.addEventListener('click', () => { reports.selected = reports.selected === a.key ? null : a.key; renderReports(); });
     ul.appendChild(row);
   }
@@ -3191,7 +3308,7 @@ function renderReportsDetail(a) {
     const recited = it.missing ? 'not compared' : it.matched ? 'yes' : `not found${d.contrast != null ? ` <span class="muted small">· contrast ${Number(d.contrast).toFixed(2)}</span>` : ''}`;
     const cells = ['<td class="sloka-cell"></td>', `<td>${recited}</td>`];
     for (const c of cols) cells.push(scoreCell(it[c.id], a.categories.includes(c.id)));
-    cells.push(`<td class="on">${it.missing ? '–' : gradeHtml(it.overall)}</td>`);
+    cells.push(`<td class="on">${it.missing ? '–' : gradeHtml(it.overall, it.grade)}${Array.isArray(it.slips) && it.slips.length ? ` <span class="muted small">· ${slipsLabel(it.slips)}</span>` : ''}</td>`);
     if (judged) { const v = itemVerdict(it, a.categories, a.tolerance); cells.push(`<td class="on">${v.ok === null ? '–' : v.ok ? 'yes' : 'no'}</td>`); }
     tr.innerHTML = cells.join('');
     tr.firstChild.textContent = it.folder ? `${it.name} · ${it.folder}` : it.name;
@@ -3202,7 +3319,7 @@ function renderReportsDetail(a) {
   // a quiz averages every sloka (one not recited counts 0); an evaluation only those recited
   const counted = (a.items || []).filter((it) => !it.missing && (a.kind === 'quiz' || it.matched));
   const avg = (c) => { const vs = counted.filter((it) => it[c] != null).map((it) => it[c]); return vs.length ? Math.round(vs.reduce((x, y) => x + y, 0) / vs.length) : null; };
-  tot.innerHTML = `<td>${a.kind === 'quiz' ? 'Overall' : 'Overall · recited slokas'}</td><td>${a.recited ?? 0} of ${a.counted ?? 0}</td>` + cols.map((c) => scoreCell(avg(c.id), a.categories.includes(c.id))).join('') + `<td class="on">${gradeHtml(a.overall)}</td>${judged ? `<td class="on">${a.correct == null ? '–' : `${a.correct}%`}</td>` : ''}`;
+  tot.innerHTML = `<td>${a.kind === 'quiz' ? 'Overall' : 'Overall · recited slokas'}</td><td>${a.recited ?? 0} of ${a.counted ?? 0}</td>` + cols.map((c) => scoreCell(avg(c.id), a.categories.includes(c.id))).join('') + `<td class="on">${gradeHtml(a.overall, a.grade)}</td>${judged ? `<td class="on">${a.correct == null ? '–' : `${a.correct}%`}</td>` : ''}`;
   table.appendChild(tot);
 }
 
@@ -3233,7 +3350,7 @@ function renderReportsFolder(list) {
     }
     const tr = document.createElement('tr');
     tr.className = r.missing ? 'missing' : r.matched ? '' : 'unmatched';
-    tr.innerHTML = `<td></td>${grouped ? '' : '<td class="sloka-cell"></td>'}<td class="sloka-cell"></td>` + catCols.map((c) => scoreCell(r[c.id])).join('') + `<td class="on">${r.missing ? '–' : gradeHtml(r.overall)}</td>`;
+    tr.innerHTML = `<td></td>${grouped ? '' : '<td class="sloka-cell"></td>'}<td class="sloka-cell"></td>` + catCols.map((c) => scoreCell(r[c.id])).join('') + `<td class="on">${r.missing ? '–' : gradeHtml(r.overall, r.grade)}${r.slips && r.slips.length ? ` <span class="muted small">· ${slipsLabel(r.slips)}</span>` : ''}</td>`;
     tr.children[0].textContent = fmtWhenShort(r.at);
     if (!grouped) tr.children[1].textContent = `${r.sloka}${r.folder && !reports.folder ? ` · ${r.folder}` : ''}`;
     const inCell = tr.children[grouped ? 1 : 2];
@@ -3370,13 +3487,13 @@ function renderQuizList() {
       <div class="quiz-item-meta"></div>
       <div class="quiz-item-details" hidden></div>`;
     $('.quiz-item-name', li).textContent = q.name;
-    const lastGrade = q.last && q.last.overall != null ? gradeOf(q.last.overall) : null;
+    const lastGrade = q.last && q.last.overall != null ? gradeById(q.last.grade) || gradeOf(q.last.overall) : null;
     // an attempt judged without a tolerance has no correctness: its overall and grade lead
     $('.quiz-item-score', li).textContent = lastScore == null ? (lastGrade ? '' : q.attempts ? '–' : 'not taken') : `${lastScore}% correct`;
     if (lastGrade) {
       const g = document.createElement('span');
       g.className = `rr-grade ${lastGrade.id}`;
-      g.textContent = `${lastScore == null ? '' : ' · '}${q.last.overall} ${lastGrade.label}`;
+      g.textContent = `${lastScore == null ? '' : ' · '}${q.last.overall} ${gradeText(lastGrade)}`;
       $('.quiz-item-score', li).appendChild(g);
     }
     $('.quiz-item-score', li).title = 'Latest attempt: share of slokas within tolerance in the chosen categories, then the weighted overall score and its grade';
@@ -3573,12 +3690,24 @@ const weightsOf = (a) => (a && a.weights ? normalizeWeights(a.weights) : CATEGOR
 function reportOverall(id) {
   const sc = reportScores(id);
   const overall = sc ? overallScore(sc, verdictCategories(), activeWeights()) : null;
-  return { overall, grade: gradeOf(overall) };
+  return { overall, grade: gradeWithSlips(overall, slipsOf(id)) };
 }
-// Puts a grade badge in an element (empty when there is no grade).
-function setGrade(el, grade) {
-  el.textContent = grade ? grade.label : '';
+// A grade as it is shown: its emoji and its word ("🌟 Excellent"), or the word alone when
+// the Settings ask for plain labels. The word is always there, so the emoji never carries
+// the grade by itself.
+const gradeText = (g) => (!g ? '' : gradeWordsOn && g.emoji ? `${g.emoji} ${g.label}` : g.label);
+// Puts a grade badge in an element (empty when there is no grade), and, given an element
+// for them, a few words of encouragement under it (see gradeWords): the phrase is picked
+// by `seed` so a report always says the same thing, names the first slip when there was
+// one, and says "not your best" rather than praising a take below the learner's best.
+function setGrade(el, grade, wordsEl = null, opts = {}) {
+  el.textContent = gradeText(grade);
   el.className = `${el.className.split(' ')[0]}${grade ? ` ${grade.id}` : ''}`;
+  if (grade) el.setAttribute('aria-label', grade.label); else el.removeAttribute('aria-label');
+  if (!wordsEl) return;
+  const w = grade && gradeWordsOn ? gradeWords(grade, { ...opts, ageGroup: (learnerSpeaker() || {}).ageGroup || null }) : null;
+  wordsEl.textContent = w ? w.text : '';
+  setHidden(wordsEl, !w);
 }
 
 // The category tiles of the open report, each judged against the tolerance, and the ring
@@ -3630,7 +3759,7 @@ function renderTiles(res, id) {
   const { overall, grade } = reportOverall(id);
   $('#score-ring').style.setProperty('--pct', String(overall == null ? 0 : overall));
   $('#score-overall').textContent = overall == null ? '–' : String(overall);
-  setGrade($('#score-grade'), grade);
+  setGrade($('#score-grade'), grade, $('#score-words'), { seed: id, slips: slipsOf(id), score: overall });
   const aw = activeWeights();
   $('#score-overall-sub').textContent = judged.length ? `weighted: ${judged.map((t) => `${catLabel(t.dataset.cat).toLowerCase()} ${aw[t.dataset.cat]}`).join(', ')}` : 'nothing could be judged';
   $('#score-overall-sub').title = 'The overall is the weighted mean of the categories that could be judged';

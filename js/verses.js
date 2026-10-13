@@ -7,7 +7,7 @@
 // Ids: "12.3" (a verse), "1.21-22" (two or three consecutive verses recited as one),
 // "12.opening" / "12.colophon" (a chapter's invocation or closing line), "dhyana.1",
 // "invocation.1", "other.1" (texts outside the chapters).
-import { GITA_VERSES, gitaVerse, gitaFamily } from './chandas.js';
+import { GITA_VERSES, gitaVerse, gitaFamily, FAMILIES, aksharaPlan as planOfText } from './chandas.js';
 import { syllabify } from './phon.js';
 
 export const KINDS = ['verse', 'combined', 'opening', 'colophon', 'dhyana', 'invocation', 'other'];
@@ -241,7 +241,7 @@ export const linkHashInput = (link) => normalizeVerseText([link && link.text && 
 // A verse's own text corrected, a translation typed in, notes, variant readings: fields
 // laid over the dataset's entry when it is served or linked. The dataset's files are never
 // written; the customisations live in <data>/reference/<dataset>.custom.json.
-export const CUSTOM_FIELDS = ['deva', 'iast', 'speaker', 'translations', 'notes', 'variants'];
+export const CUSTOM_FIELDS = ['deva', 'iast', 'speaker', 'translations', 'notes', 'variants', 'aksharaPlan'];
 const cleanLines = (v, max = 400) => (Array.isArray(v) ? v.filter((l) => typeof l === 'string' && l.trim()).map((l) => l.normalize('NFC').trim().slice(0, max)).slice(0, 12) : null);
 export function sanitizeCustom(fields) {
   if (!fields || typeof fields !== 'object') return null;
@@ -268,6 +268,13 @@ export function sanitizeCustom(fields) {
       .map((x) => ({ line: Number.isInteger(x.line) ? x.line : null, text: x.text.trim().slice(0, 400), replaces: typeof x.replaces === 'string' ? x.replaces.slice(0, 400) : null, note: typeof x.note === 'string' ? x.note.slice(0, 400) : null })).slice(0, 20);
     if (vs.length) out.variants = vs;
   }
+  // the akṣara plan of a verse that does not scan (4.35 has 36, 1.20 has 48): the speaker
+  // line's count and each pāda's, in order
+  if (fields.aksharaPlan && typeof fields.aksharaPlan === 'object') {
+    const ap = fields.aksharaPlan;
+    const padas = Array.isArray(ap.padas) ? ap.padas.filter((n) => Number.isInteger(n) && n >= 1 && n <= 64).slice(0, 16) : [];
+    if (padas.length) out.aksharaPlan = { speakerLine: Number.isInteger(ap.speakerLine) && ap.speakerLine >= 0 ? Math.min(32, ap.speakerLine) : 0, padas };
+  }
   return Object.keys(out).length ? out : null;
 }
 export function mergeCustom(entry, custom) {
@@ -279,7 +286,26 @@ export function mergeCustom(entry, custom) {
   if (custom.translations) out.translations = { ...(entry.translations || {}), ...custom.translations };
   if (custom.notes) out.notes = custom.notes;
   if (custom.variants) out.variants = [...(entry.variants || []), ...custom.variants];
+  if (custom.aksharaPlan) out.aksharaPlan = custom.aksharaPlan;
   return out;
+}
+
+// The akṣara plan of a verse (see chandas.aksharaPlan): the custom file's when the verse
+// has one (a verse that does not scan), else read from its text by its metre. Without the
+// speaker line when the recording did not recite it.
+export function versePlan(entry, { speakerLine = true } = {}) {
+  if (!entry) return null;
+  const custom = entry.aksharaPlan && Array.isArray(entry.aksharaPlan.padas) && entry.aksharaPlan.padas.length ? entry.aksharaPlan : null;
+  if (custom) {
+    const sp = speakerLine && entry.speaker && entry.speaker.deva ? custom.speakerLine || syllabify(entry.speaker.deva).length : 0;
+    const checkpoints = [];
+    let acc = sp;
+    if (sp) checkpoints.push(acc);
+    for (const p of custom.padas) { acc += p; checkpoints.push(acc); }
+    return { speakerLine: sp, padas: custom.padas.slice(), total: acc, checkpoints, custom: true };
+  }
+  const fam = entry.metre && entry.metre.family && FAMILIES[entry.metre.family] ? FAMILIES[entry.metre.family] : null;
+  return planOfText(verseBody(entry, { speakerLine }), { perPada: fam ? fam.perPada : null });
 }
 
 // ---------- the words of a linked recording: the verse's, with the hearing's timings ----------

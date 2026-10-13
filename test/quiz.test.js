@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { cleanFolder, parseBaselineFilename, nameFromSlug, parseWavHeader } from '../js/libutil.js';
 import { encodeWavBytes } from '../js/wav.js';
-import { itemScores, attemptSummary, scoreFor, normalizeCategories, modernCategories, pickBaselines, shuffle, DEFAULT_QUIZ_CATEGORIES, DEFAULT_TOLERANCE, normalizeTolerance, recordTolerance, withinTolerance, itemVerdict, correctness, overallScore, attemptOverall, gradeOf, CATEGORY_WEIGHTS, QUIZ_CATEGORIES, normalizeWeights } from '../js/quizscore.js';
+import { itemScores, attemptSummary, scoreFor, normalizeCategories, modernCategories, pickBaselines, shuffle, DEFAULT_QUIZ_CATEGORIES, DEFAULT_TOLERANCE, normalizeTolerance, recordTolerance, withinTolerance, itemVerdict, correctness, overallScore, attemptOverall, gradeOf, CATEGORY_WEIGHTS, QUIZ_CATEGORIES, normalizeWeights, gradeWithSlips, gradeWords, cleanSlips, slipLabel, slipsLabel, anySlips, GRADES } from '../js/quizscore.js';
 
 test('cleanFolder: usable names pass, traversal and reserved names do not', () => {
   assert.equal(cleanFolder('Chapter 12'), 'Chapter 12');
@@ -219,4 +219,48 @@ test('an old quiz\'s category choice adds up on new-style items, and a new choic
   assert.equal(overallScore(old, ['content', 'pronunciation']), Math.round((80 * 90 + 70 * 80) / 150));
   assert.deepEqual(itemVerdict(old, ['phoneme', 'vowel', 'syllable']).judged, ['content', 'pronunciation']);
   assert.equal(overallScore(old, ['emphasis', 'timing']), Math.round((40 * 60 + 40 * 70) / 80), 'emphasis stood for dynamics');
+});
+
+test('a slip makes the grade Needs practice; the score stays what it was', () => {
+  assert.equal(gradeWithSlips(95, []).id, 'excellent');
+  assert.equal(gradeWithSlips(95, null).id, 'excellent');
+  assert.equal(gradeWithSlips(95, [{ kind: 'restart', pada: 3 }]).id, 'practice');
+  assert.equal(gradeWithSlips(null, [{ kind: 'restart' }]), null, 'nothing judged: no grade');
+  const items = [{ matched: true, missing: false, phoneme: 96, vowel: 95, syllable: 97, slips: [{ kind: 'stall', pada: 2 }] }, { matched: true, missing: false, phoneme: 94, vowel: 96, syllable: 95 }];
+  assert.equal(anySlips(items), true);
+  const sum = attemptSummary(items, ['phoneme', 'vowel', 'syllable']);
+  assert.ok(sum.overall >= 90, `overall ${sum.overall}`);
+  assert.equal(sum.grade, 'practice', 'the take is graded Needs practice for the slip');
+  assert.equal(sum.slips, 1);
+  assert.equal(attemptSummary(items.map((it) => ({ ...it, slips: [] })), ['phoneme', 'vowel', 'syllable']).grade, 'excellent');
+});
+
+test('slips are cleaned to what is known, and said in words', () => {
+  const c = cleanSlips([{ kind: 'restart', at: 12.345, pada: 3, by: 'ear' }, { kind: 'bogus' }, null, { kind: 'dropped', count: 29, expected: 33, unsure: true }, { kind: 'stall', pada: 99 }]);
+  assert.deepEqual(c, [{ kind: 'restart', at: 12.35, pada: 3, by: 'ear' }, { kind: 'dropped', count: 29, expected: 33, unsure: true }, { kind: 'stall' }]);
+  assert.equal(cleanSlips('x').length, 0);
+  assert.equal(slipLabel({ kind: 'restart', pada: 3 }), 'restarted pāda 3');
+  assert.equal(slipLabel({ kind: 'restart', pada: 0 }), 'restarted the speaker line');
+  assert.equal(slipLabel({ kind: 'stall', pada: 2 }), 'stuck in pāda 2');
+  assert.equal(slipLabel({ kind: 'dropped', count: 29, expected: 33 }), 'akṣaras dropped (29 of 33 heard)');
+  assert.equal(slipLabel({ kind: 'skipped' }), 'not recited');
+  assert.equal(slipsLabel([{ kind: 'restart', pada: 3 }, { kind: 'restart', pada: 3 }, { kind: 'stall', pada: 1 }]), 'restarted pāda 3 · stuck in pāda 1');
+});
+
+test('gradeWords: an emoji and a phrase, the same for the same seed, plain for a grown-up, the slip named', () => {
+  for (const g of GRADES) assert.ok(g.emoji && g.words.length >= 3, g.id);
+  const a = gradeWords('excellent', { seed: 'session:1' });
+  assert.equal(a.emoji, '🌟');
+  assert.equal(a.label, 'Excellent');
+  assert.ok(GRADES[0].words.includes(a.text));
+  assert.deepEqual(gradeWords('excellent', { seed: 'session:1' }), a, 'the same seed says the same thing');
+  const seen = new Set(['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((s) => gradeWords('good', { seed: s }).text));
+  assert.ok(seen.size > 1, 'different seeds vary the phrase');
+  assert.equal(gradeWords('fair', { seed: 'zzz', ageGroup: 'adult' }).text, GRADES[2].words[0], 'a grown-up gets the plainest phrase');
+  const s = gradeWords(gradeOf(40), { seed: 'x', slips: [{ kind: 'restart', pada: 3 }] });
+  assert.equal(s.emoji, '🌱');
+  assert.ok(s.text.includes('pāda 3'), s.text);
+  assert.ok(gradeWords('good', { seed: 'x', best: 92, score: 84 }).text.includes('Your best is still 92'));
+  assert.ok(!gradeWords('good', { seed: 'x', best: 86, score: 84 }).text.includes('best'), 'a point or two under the best is not remarked on');
+  assert.deepEqual(gradeWords(null), { emoji: '', label: '', text: '' });
 });

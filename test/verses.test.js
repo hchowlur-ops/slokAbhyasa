@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { parseVerseId, verseIdFor, defaultNameFor, defaultFolderFor, verseBody, normalizeVerseText, verseHashInput, compareVerseOrder, mapNameToVerse, combinedEntry, validateDataset, coverage, verseLink, linkHashInput, sanitizeCustom, mergeCustom, verseTranscript, heardTranscript } from '../js/verses.js';
+import { parseVerseId, verseIdFor, defaultNameFor, defaultFolderFor, verseBody, normalizeVerseText, verseHashInput, compareVerseOrder, mapNameToVerse, combinedEntry, validateDataset, coverage, verseLink, linkHashInput, sanitizeCustom, mergeCustom, verseTranscript, heardTranscript, versePlan } from '../js/verses.js';
 
 const mini = JSON.parse(fs.readFileSync(new URL('./fixtures/reference/gita-mini/verses.json', import.meta.url), 'utf8'));
 const miniManifest = JSON.parse(fs.readFileSync(new URL('./fixtures/reference/gita-mini/manifest.json', import.meta.url), 'utf8'));
@@ -165,4 +165,28 @@ test('a linked recording\'s transcript is the verse\'s lines with the hearing\'s
   assert.equal(heardTranscript(bare), null);
   const again = verseTranscript(v, { previous: t });
   assert.equal(again.heard.text, heard.text, 'redoing the words keeps the hearing');
+});
+
+test('versePlan: a verse\'s akṣara plan by its metre, without the speaker line when not recited, the custom file\'s when it has one', () => {
+  const byId = new Map(mini.verses.map((v) => [v.id, v]));
+  const p = versePlan(byId.get('12.3'));
+  assert.deepEqual(p.padas, [8, 8, 8, 8]);
+  assert.equal(p.total, 32 + p.speakerLine);
+  const t = versePlan(byId.get('2.5'));
+  assert.deepEqual(t.padas, [11, 11, 11, 11]);
+  const withSpeaker = mini.verses.find((v) => v.speaker && v.speaker.deva);
+  if (withSpeaker) {
+    const a = versePlan(withSpeaker, { speakerLine: true });
+    const b = versePlan(withSpeaker, { speakerLine: false });
+    assert.ok(a.speakerLine > 0 && b.speakerLine === 0 && a.total === b.total + a.speakerLine);
+  }
+  const custom = sanitizeCustom({ aksharaPlan: { speakerLine: 0, padas: [8, 8, 10, 10] } });
+  assert.deepEqual(custom.aksharaPlan, { speakerLine: 0, padas: [8, 8, 10, 10] });
+  const merged = mergeCustom(byId.get('12.3'), custom);
+  const cp = versePlan(merged);
+  assert.deepEqual(cp.padas, [8, 8, 10, 10]);
+  assert.equal(cp.custom, true);
+  assert.deepEqual(cp.checkpoints, [8, 16, 26, 36]);
+  assert.equal(sanitizeCustom({ aksharaPlan: { padas: [] } }), null, 'an empty plan is no plan');
+  assert.equal(sanitizeCustom({ aksharaPlan: { padas: [0, -1, 'x'] } }), null);
 });

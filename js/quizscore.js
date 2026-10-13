@@ -47,16 +47,99 @@ export function normalizeWeights(w) {
   return out;
 }
 
-// The grade an overall score earns.
+// The grade an overall score earns. Each is shown as an emoji and a few words of
+// encouragement (gradeWords); the ids are what files, CSS classes and Reports know.
+// The plainest phrase of each pool comes first: a grown-up learner gets that one.
 export const GRADES = [
-  { id: 'excellent', label: 'Excellent', min: 90 },
-  { id: 'good', label: 'Good', min: 80 },
-  { id: 'fair', label: 'Fair', min: 65 },
-  { id: 'practice', label: 'Needs practice', min: 0 },
+  { id: 'excellent', label: 'Excellent', min: 90, emoji: '🌟', words: ['Wonderful recitation', 'Beautiful, just like the teacher', 'Flawless, keep it shining'] },
+  { id: 'good', label: 'Good', min: 80, emoji: '😊', words: ['Very good, nearly there', 'Lovely, a little polish and it is perfect', 'So close to the teacher’s'] },
+  { id: 'fair', label: 'Fair', min: 65, emoji: '💪', words: ['Good effort, now the marked lines', 'Getting there, one more round', 'The shape is right, the details next'] },
+  { id: 'practice', label: 'Needs practice', min: 0, emoji: '🌱', words: ['Keep going, it gets easier each time', 'Every reciter started here, try it again slowly', 'Not yet, and that is fine'] },
 ];
 export function gradeOf(score) {
   if (score == null || !Number.isFinite(score)) return null;
   return GRADES.find((g) => score >= g.min) || GRADES[GRADES.length - 1];
+}
+export const gradeById = (id) => GRADES.find((g) => g.id === id) || null;
+
+// A slip: something that went wrong in the recitation itself, over and above the scores —
+// a restart, a stall, akṣaras dropped, a sloka skipped, a false start. The recitation is
+// still scored in full, but its grade is Needs practice whatever the score (gradeWithSlips).
+//   { kind, at (s into the take), pada (1-based; 0 the speaker line), count, expected, unsure }
+export const SLIP_KINDS = ['restart', 'stall', 'dropped', 'skipped', 'falseStart'];
+export function cleanSlips(list) {
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  for (const s of list) {
+    if (!s || typeof s !== 'object' || !SLIP_KINDS.includes(s.kind)) continue;
+    const o = { kind: s.kind };
+    if (Number.isFinite(Number(s.at))) o.at = Math.round(Number(s.at) * 100) / 100;
+    if (Number.isInteger(s.pada) && s.pada >= 0 && s.pada <= 32) o.pada = s.pada;
+    if (Number.isInteger(s.count) && s.count >= 0) o.count = s.count;
+    if (Number.isInteger(s.expected) && s.expected >= 0) o.expected = s.expected;
+    if (s.unsure) o.unsure = true;
+    if (typeof s.by === 'string' && ['ear', 'words', 'sound', 'manual'].includes(s.by)) o.by = s.by;
+    out.push(o);
+    if (out.length >= 40) break;
+  }
+  return out;
+}
+const padaName = (p) => (p === 0 ? 'the speaker line' : p == null ? 'a pāda' : `pāda ${p}`);
+// One slip in words, for a row: "restarted pāda 3".
+export function slipLabel(s) {
+  if (!s) return '';
+  switch (s.kind) {
+    case 'restart': return `restarted ${padaName(s.pada)}`;
+    case 'stall': return `stuck in ${padaName(s.pada)}`;
+    case 'dropped': return s.count != null && s.expected != null ? `akṣaras dropped (${s.count} of ${s.expected} heard)` : 'akṣaras dropped';
+    case 'skipped': return 'not recited';
+    case 'falseStart': return 'a false start';
+    default: return s.kind;
+  }
+}
+// A whole list in words: "restarted pāda 3 · stuck in pāda 2", each kind once.
+export function slipsLabel(slips) {
+  const seen = new Set();
+  const parts = [];
+  for (const s of slips || []) { const t = slipLabel(s); if (t && !seen.has(t)) { seen.add(t); parts.push(t); } }
+  return parts.join(' · ');
+}
+// The grade with the slips taken into account: Needs practice when there was one, else
+// the score's. The score itself is never changed by a slip.
+export function gradeWithSlips(score, slips) {
+  const g = gradeOf(score);
+  if (!g) return null;
+  return Array.isArray(slips) && slips.length ? gradeById('practice') : g;
+}
+export const anySlips = (items) => (items || []).some((it) => it && Array.isArray(it.slips) && it.slips.length);
+
+// What a slip asks the learner to do, said kindly.
+function slipAdvice(s) {
+  switch (s.kind) {
+    case 'restart': return `You started ${padaName(s.pada)} again: a breath first, then once more from the top.`;
+    case 'stall': return `You got stuck in ${padaName(s.pada)}: slow down there and it will come.`;
+    case 'dropped': return s.count != null && s.expected != null ? `A few akṣaras went missing (${s.count} of ${s.expected} heard): slowly, every one of them.` : 'A few akṣaras went missing: slowly, every one of them.';
+    case 'skipped': return 'This sloka was not heard: recite it on its own first.';
+    case 'falseStart': return 'A false start, then the sloka: a breath before you begin helps.';
+    default: return '';
+  }
+}
+const hashSeed = (seed) => { let h = 2166136261; for (const ch of String(seed == null ? '' : seed)) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619) >>> 0; } return h; };
+// The grade as it is shown: its emoji, its one-word label, and a phrase of encouragement.
+// The phrase is picked by `seed` (an assessment's or a sloka's id), so the same report
+// always says the same thing; a grown-up learner gets the plainest phrase. With slips the
+// phrase names the first one. A take below the learner's best is neither praised nor
+// scolded: `best` (an earlier overall) and `score` say so instead.
+export function gradeWords(grade, { seed = '', slips = null, best = null, score = null, ageGroup = null } = {}) {
+  const g = typeof grade === 'string' ? gradeById(grade) : grade;
+  if (!g) return { emoji: '', label: '', text: '' };
+  const pool = g.words || [g.label];
+  const adult = ageGroup === 'adult' || ageGroup === 'senior';
+  let text = pool[adult ? 0 : hashSeed(seed) % pool.length];
+  const slip = Array.isArray(slips) && slips.length ? slips[0] : null;
+  if (slip) text = slipAdvice(slip) || text;
+  else if (best != null && score != null && Number.isFinite(best) && score < best - 4) text = `Not your best today, that happens. Your best is still ${best}.`;
+  return { emoji: g.emoji || '', label: g.label, text };
 }
 
 // Weighted overall of one set of category scores (an item, or a report's scores), over the
@@ -249,8 +332,9 @@ export function attemptSummary(items, categories = DEFAULT_QUIZ_CATEGORIES, tole
   const recited = items.filter((it) => it.matched).length;
   const corr = correctness(items, categories, tolerance);
   const overall = attemptOverall(items, categories, weights);
-  const grade = gradeOf(overall);
-  return { byCategory, average: scoreFor(byCategory, categories), score: corr.pct, correct: corr.correct, passRate: corr.passRate, counted, recited, overall, grade: grade ? grade.id : null };
+  // a slip in any sloka (a restart, a stall…) makes the take's grade Needs practice; the score stays true
+  const grade = gradeWithSlips(overall, anySlips(items) ? [{ kind: 'restart' }] : null);
+  return { byCategory, average: scoreFor(byCategory, categories), score: corr.pct, correct: corr.correct, passRate: corr.passRate, counted, recited, overall, grade: grade ? grade.id : null, slips: items.reduce((n, it) => n + (it && Array.isArray(it.slips) ? it.slips.length : 0), 0) };
 }
 
 // Keeps a stored category choice sane: known ids only, in canonical order, never empty.

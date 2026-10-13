@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { trimSilence } from './js/dsp/trim.js';
 import { decodeWav, encodeWavBytes } from './js/wav.js';
 import { cleanFolder, parseBaselineFilename, nameFromSlug, parseWavHeader, RESERVED_FOLDERS } from './js/libutil.js';
-import { normalizeCategories, normalizeTolerance, normalizeWeights, recordTolerance, correctness, attemptOverall, gradeOf } from './js/quizscore.js';
+import { normalizeCategories, normalizeTolerance, normalizeWeights, recordTolerance, correctness, attemptOverall, gradeWithSlips, anySlips, cleanSlips } from './js/quizscore.js';
 import { resolveDataDir, resolveReferenceDirs } from './datadir.js';
 import crypto from 'node:crypto';
 import { initReference, datasets as referenceList, dataset as referenceDataset, verse as referenceVerse, verseHash as referenceVerseHash, chapter as referenceChapter, coverage as referenceCoverage, saveCustom as referenceSaveCustom } from './reference.js';
@@ -350,7 +350,7 @@ function quizSummary(q) {
   const scoreOf = (a) => (hasItems(a) ? correctness(a.items, q.categories, recordTolerance(a)).pct : a.score == null ? null : a.score);
   const overallOf = (a) => (hasItems(a) ? attemptOverall(a.items, q.categories, a.weights ? normalizeWeights(a.weights) : undefined) : a.overall == null ? null : a.overall);
   const lastOverall = last ? overallOf(last) : null;
-  const lastGrade = gradeOf(lastOverall);
+  const lastGrade = gradeWithSlips(lastOverall, last && anySlips(last.items) ? [{ kind: 'restart' }] : null); // a slip: Needs practice
   return {
     id: q.id, name: q.name, createdAt: q.createdAt, folders: q.folders, mode: q.mode, maxFiles: q.maxFiles,
     items: q.items, categories: q.categories, attempts: attempts.length,
@@ -359,6 +359,8 @@ function quizSummary(q) {
     bestOverall: attempts.reduce((m, a) => { const s = overallOf(a); return s != null && (m == null || s > m) ? s : m; }, null),
   };
 }
+// The items of an attempt or a session, their slips (a restart, a stall…) kept to what is known.
+const cleanSlippedItems = (items) => (Array.isArray(items) ? items : []).filter((it) => it && typeof it === 'object').map((it) => (Array.isArray(it.slips) ? { ...it, slips: cleanSlips(it.slips) } : it));
 const cleanItems = (items) => (Array.isArray(items) ? items : [])
   .filter((it) => it && typeof it.id === 'string')
   .map((it) => ({ id: it.id, name: String(it.name || '').slice(0, 80), folder: typeof it.folder === 'string' ? it.folder : '' }));
@@ -408,7 +410,7 @@ async function handleQuizzes(req, res, parts) {
       byCategory: a.byCategory,
       counted: Number(a.counted) || 0,
       recited: Number(a.recited) || 0,
-      items: Array.isArray(a.items) ? a.items : [],
+      items: cleanSlippedItems(a.items),
     };
     // the tolerance, weights and learner it was judged with (a child's allowances differ)
     if (a.tolerance && typeof a.tolerance === 'object') attempt.tolerance = normalizeTolerance(a.tolerance);
@@ -490,7 +492,7 @@ async function listSessions() {
   }
   return out;
 }
-const cleanSessionItems = (items) => (Array.isArray(items) ? items : []).filter((it) => it && typeof it.id === 'string').slice(0, 500);
+const cleanSessionItems = (items) => cleanSlippedItems(items).filter((it) => typeof it.id === 'string').slice(0, 500);
 function sessionFields(body, s) {
   if (Array.isArray(body.items)) s.items = cleanSessionItems(body.items);
   if (body.overall !== undefined) s.overall = body.overall == null ? null : Number(body.overall);
