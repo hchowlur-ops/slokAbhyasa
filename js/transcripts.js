@@ -88,3 +88,26 @@ export function publicStore(store) {
   if (!store) return null;
   return { version: STORE_VERSION, current: store.current, available: availableLanguages(store), languages: store.languages };
 }
+
+// Two stretches of a take heard together in one 30-second window (a Whisper encoder pass
+// costs the same for 12 seconds as for 30): the one transcript split into theirs at the
+// boundary between them (seconds from the window's start), by the midpoint of each timed
+// phrase. The second's times are moved back to its own start. A side with no phrase is
+// null: its words are not known from this hearing.
+export function splitTranscriptAt(t, boundarySec) {
+  if (!t) return [null, null];
+  const chunks = Array.isArray(t.chunks) ? t.chunks.filter((c) => c && typeof c.text === 'string') : [];
+  const first = [];
+  const second = [];
+  for (const c of chunks) {
+    const s = typeof c.start === 'number' ? c.start : 0;
+    const e = typeof c.end === 'number' ? c.end : s;
+    ((s + e) / 2 < boundarySec ? first : second).push(c);
+  }
+  const part = (list, shift) => (list.length ? {
+    ...t,
+    text: list.map((c) => c.text.trim()).filter(Boolean).join(' '),
+    chunks: list.map((c) => ({ ...c, start: typeof c.start === 'number' ? Math.max(0, Math.round((c.start - shift) * 100) / 100) : c.start, end: typeof c.end === 'number' ? Math.max(0, Math.round((c.end - shift) * 100) / 100) : c.end })),
+  } : null);
+  return [part(first, 0), part(second, boundarySec)];
+}

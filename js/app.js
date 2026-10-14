@@ -15,6 +15,7 @@ import { comparePhonology, ERROR_LABEL, syllabify } from './phon.js';
 import { SyllableCounter } from './dsp/syllables.js';
 import { mixToMono, resample } from './dsp/resample.js';
 import { trimSilence } from './dsp/trim.js';
+import { soundRuns, packClips, unpackTranscript, PACK_DEFAULTS } from './dsp/pack.js';
 import { Transcriber, STT_LANGUAGES, STT_LANGUAGE_CODES, STT_TIERS, sttLanguageLabel, sttLanguageTag, sttTierLabel, isStopped } from './stt.js';
 import { segments as scriptSegments, wordSegments, toDeva, weightMark, inScript } from './lipi.js';
 import { scriptToLatin, latinToScript } from './translit.js';
@@ -2155,12 +2156,20 @@ transcriptListeners.add((id, store) => {
 $('#practice-rec').addEventListener('click', async () => {
   const rec = getPracticeRecorder();
   if (rec.active) {
-    // the last stretch recorded goes to the speech worker now, when the pages were turned
-    if (recSegments && recSegments.parts.length) markSegment(slokaTextItems()[currentTextIndex(slokaTextItems())]);
+    // the stretch since the last page turn goes to the speech worker now — unless the ear
+    // had already heard every sloka (what is left is silence), or the sloka in view was
+    // barely begun (less than half recited: not scored, not heard); a held stretch is
+    // heard with it in one window when the two fit, else alone
+    if (recSegments && recSegments.parts.length) {
+      const items = slokaTextItems();
+      const item = items[currentTextIndex(items)];
+      const partial = !!(liveEar && liveEar.item && liveEar.expected && liveEar.pos < liveEar.expected * 0.5 && liveEar.counter.state_().elapsedMs >= 2000);
+      if (partial && !partialOf(liveEar.item.id)) addSlip(liveEar.item.id, { kind: 'partial', count: Math.round(liveEar.pos), expected: liveEar.expected, by: 'ear' });
+      if (!liveEar || !liveEar.done) markSegment(item, null, { last: true, transcribe: !partial });
+    }
+    flushHold();
     const segments = recSegments;
     recSegments = null;
-    // the sloka in view when the take stops, barely begun: less than half recited, not scored
-    if (liveEar && liveEar.item && liveEar.expected && liveEar.pos < liveEar.expected * 0.5 && liveEar.counter.state_().elapsedMs >= 2000 && !partialOf(liveEar.item.id)) addSlip(liveEar.item.id, { kind: 'partial', count: Math.round(liveEar.pos), expected: liveEar.expected, by: 'ear' });
     stopEar();
     setHidden($('#practice-rec-stop-listen'), true);
     const raw = await rec.stop();
@@ -2189,6 +2198,7 @@ $('#practice-rec').addEventListener('click', async () => {
       practiceUI.setRecording(true);
       setListBusy(true);
       recSegments = { from: 0, parts: [], stopped: false };
+      if (packHold) { clearTimeout(packHold.timer); packHold = null; }
       practice.slips = new Map();
       practice.listenStopped = false;
       setHidden($('#practice-rec-stop-listen'), true);
@@ -2853,7 +2863,21 @@ function stepText(delta) {
 // the words of the recorded stretch that overlaps it well enough (transcribeTakePart), and is
 // transcribed afresh otherwise.
 let recSegments = null; // { from, parts: [{ from, to, name, promise, transcript }] } in recording time
-function markSegment(item, toSec = null, { transcribe = true } = {}) {
+// Whisper's encoder prices every hearing as a 30-second window, whatever is in it; so two
+// consecutive short slokas (most anuṣṭubh slokas at a normal pace) are heard together in
+// one window — half the cost each — and the one transcript is split at their boundary by
+// its timestamps. A closed stretch waits for the next only when the next is likely to fit
+// (the teacher's time for it at the learner's tempo), and no longer than the window
+// allows; a held stretch whose partner did not come is heard alone.
+const PACK_WINDOW_SEC = 30;
+const packLog = []; // what was decided for each stretch, for the probes (window.__slokabhyasa)
+const packNote = (what, o) => { packLog.push({ what, at: Math.round(performance.now() / 100) / 10, ...o }); if (packLog.length > 50) packLog.shift(); };
+window.__slokabhyasa = { packLog, segments: () => (recSegments ? recSegments.parts.map((p) => ({ id: p.id, name: p.name, from: Math.round(p.from * 10) / 10, to: Math.round(p.to * 10) / 10, skipped: !!p.skipped, packedWith: p.packedWith || null, done: p.done, words: p.transcript ? p.transcript.text.length : null })) : null) };
+const PACK_GAP_SEC = PACK_DEFAULTS.gapSec; // between runs of sound in the packed clip
+// How much sound a stretch holds once its silences are squeezed to the gap (dsp/pack.js).
+const soundSec = (samples, sr) => { const runs = soundRuns(samples, sr); return runs.reduce((n, r) => n + (r.end - r.start) + 2 * PACK_DEFAULTS.edgeSec, 0) + Math.max(0, runs.length - 1) * PACK_GAP_SEC; };
+let packHold = null; // { seg, samples, sr, timer }
+function markSegment(item, toSec = null, { transcribe = true, last = false } = {}) {
   const rec = practiceRecorder;
   if (!rec || !rec.active || !recSegments) return;
   const snap = rec.snapshot();
@@ -2864,24 +2888,90 @@ function markSegment(item, toSec = null, { transcribe = true } = {}) {
   const seg = { from, to, id: item ? item.id : null, name: item ? item.name : '', promise: null, transcript: null, done: true, ctrl: null };
   recSegments.parts.push(seg);
   // less than half recited, the listening stopped, or the words not wanted: the stretch is kept apart, its words never asked for
-  if (!transcribe || recSegments.stopped || !sttSettings.auto) { seg.skipped = true; seg.promise = Promise.resolve(null); return; }
+  if (!transcribe || recSegments.stopped || !sttSettings.auto) { seg.skipped = true; seg.promise = Promise.resolve(null); flushHold(); return; }
   const sr = snap.sampleRate;
   const samples = snap.samples.slice(Math.round(from * sr), Math.round(to * sr));
-  const parts = recSegments.parts;
   seg.done = false;
+  const sound = soundSec(samples, sr); // the window holds sound; the silence is squeezed out
+  if (packHold) {
+    const h = packHold;
+    packHold = null;
+    clearTimeout(h.timer);
+    const packed = packClips([h.samples, samples], sr);
+    if (packed.seconds <= PACK_WINDOW_SEC) { packNote('packed', { first: h.seg.name, second: seg.name, sound1: h.sound, sound2: sound, clip: packed.seconds }); sendPacked(h.seg, seg, packed, sr); return; } // the two in one window
+    packNote('partner too long', { first: h.seg.name, second: seg.name, sound1: h.sound, sound2: sound, clip: packed.seconds });
+    sendStretch(h.seg, h.samples, h.sr); // the partner turned out too long: the held one alone after all
+  }
+  const nextSec = last ? null : nextSlokaSec(item);
+  if (nextSec != null && sound + PACK_GAP_SEC + nextSec <= PACK_WINDOW_SEC - 1 && sound <= PACK_WINDOW_SEC * 0.6) {
+    packNote('held', { name: seg.name, sound, next: nextSec, from, to });
+    packHold = { seg, samples, sr, sound, timer: setTimeout(flushHold, Math.round((PACK_WINDOW_SEC - sound) * 1000) + 3000) };
+    recNote(`${seg.name || 'That stretch'} will be heard with the next sloka, in one window…`);
+    setHidden($('#practice-rec-stop-listen'), false);
+    return;
+  }
+  packNote('alone', { name: seg.name, sound, next: nextSec, last, from, to });
+  sendStretch(seg, samples, sr);
+}
+// How long the sloka after `item` is likely to take this learner: the teacher's time for
+// it at the learner's tempo; null when unknown (then nothing is held for it).
+function nextSlokaSec(item) {
+  if (!item) return null;
+  const items = slokaTextItems();
+  const k = items.findIndex((x) => x.id === item.id);
+  const next = k >= 0 ? items[k + 1] : null;
+  const sec = next ? expectedSecOf(next) : null;
+  return sec ? sec * (liveEar ? liveEar.tempo : 1) : null;
+}
+function flushHold() {
+  if (!packHold) return;
+  const h = packHold;
+  packHold = null;
+  clearTimeout(h.timer);
+  packNote('hold flushed', { name: h.seg.name });
+  if (recSegments && !recSegments.stopped && sttSettings.auto) sendStretch(h.seg, h.samples, h.sr);
+  else { h.seg.skipped = true; h.seg.done = true; h.seg.promise = Promise.resolve(null); }
+}
+const noteBusy = () => {
+  const parts = recSegments ? recSegments.parts : [];
+  const busy = parts.find((p) => !p.done);
+  if (!busy) { if (!recSegments || !recSegments.stopped) recNote(''); setHidden($('#practice-rec-stop-listen'), true); }
+  else recNote(`Listening to ${busy.packedWith ? `${busy.name} and ${busy.packedWith}` : busy.name || 'that stretch'} in the background…`);
+};
+function sendStretch(seg, samples, sr) {
   seg.ctrl = new AbortController();
   recNote(`Listening to ${seg.name || 'that stretch'} in the background…`);
   setHidden($('#practice-rec-stop-listen'), false);
   seg.promise = runTranscription(samples, sr, null, seg.name || 'your recording', seg.ctrl.signal, { background: true })
     .then((t) => { seg.transcript = t; try { checkSegmentWords(seg); } catch { /* a guess only */ } return t; })
     .catch(() => null)
-    .finally(() => { seg.done = true; const busy = parts.find((p) => !p.done); if (!busy) { if (!recSegments.stopped) recNote(''); setHidden($('#practice-rec-stop-listen'), true); } else recNote(`Listening to ${busy.name || 'that stretch'} in the background…`); });
+    .finally(() => { seg.done = true; noteBusy(); });
+}
+function sendPacked(seg1, seg2, packed, sr) {
+  const samples = packed.samples; // the two slokas' sound, the silences squeezed to short gaps: one window
+  const ctrl = new AbortController();
+  seg1.ctrl = ctrl; seg2.ctrl = ctrl;
+  seg1.packedWith = seg2.name; seg2.packedWith = seg1.name;
+  recNote(`Listening to ${seg1.name} and ${seg2.name} in the background, in one window…`);
+  setHidden($('#practice-rec-stop-listen'), false);
+  const job = runTranscription(samples, sr, null, `${seg1.name} and ${seg2.name}`, ctrl.signal, { background: true })
+    .then((t) => {
+      const [a, b] = unpackTranscript(t, packed.map, 2); // each phrase to its stretch, its times put back
+      seg1.transcript = a; seg2.transcript = b;
+      for (const sg of [seg1, seg2]) { try { checkSegmentWords(sg); } catch { /* a guess only */ } }
+      return t;
+    })
+    .catch(() => null)
+    .finally(() => { seg1.done = true; seg2.done = true; noteBusy(); });
+  seg1.promise = job.then(() => seg1.transcript);
+  seg2.promise = job.then(() => seg2.transcript);
 }
 // Stop listening: the background jobs of this take are stopped and no more are queued; the
 // sound is still compared, and the open report can still ask for its words afterwards.
 $('#practice-rec-stop-listen').addEventListener('click', () => {
   if (!recSegments) return;
   recSegments.stopped = true;
+  if (packHold) { clearTimeout(packHold.timer); packHold.seg.skipped = true; packHold.seg.done = true; packHold.seg.promise = Promise.resolve(null); packHold = null; }
   for (const p of recSegments.parts) if (p.ctrl && !p.done) p.ctrl.abort();
   practice.listenStopped = true;
   recNote('Listening stopped for this take: the sound is still compared; the words of the open report come when it is opened.');
@@ -3163,9 +3253,14 @@ function startEar(rec) {
     // needs a long pause — longer still when the clock has run far past the teacher's time,
     // which means the learner is stalling or has dropped akṣaras
     const slokaPause = Math.max(500, Math.round(pace.slokaPauseMs * 0.6));
-    const overTime = ear.expectedMs > 0 && sung > 1.6 * ear.expectedMs * ear.tempo;
+    const expectedSung = ear.expectedMs > 0 ? ear.expectedMs * ear.tempo : 0;
+    const overTime = expectedSung > 0 && sung > 1.6 * expectedSung;
+    // a learner the ear knows nothing of yet (no speed measured, no tempo learnt): the count
+    // alone, which can run ahead on a new voice, may not end a sloka before the teacher's
+    // time for it is nearly up — a sloka cut short would lose its last pāda to the next
+    const earlyByClock = !ear.aksPerSec && !ear.tempoN && expectedSung > 0 && sung < 0.95 * expectedSung;
     const complete = exp
-      ? (pos >= exp - 2 && st.pauseMs >= slokaPause) || (pos >= exp * (overTime ? 0.35 : 0.5) && st.pauseMs >= 1500) || (pos >= exp * 1.3 && st.pauseMs >= 400)
+      ? (pos >= exp - 2 && st.pauseMs >= slokaPause && !earlyByClock) || (pos >= exp * (overTime ? 0.35 : 0.5) && st.pauseMs >= 1500) || (pos >= exp * 1.3 && st.pauseMs >= 400)
       : sung >= 4000 && st.pauseMs >= 1500;
     if (!complete) {
       // a long pause inside a pāda (not at a pāda's end) is a stall: marked once per pāda

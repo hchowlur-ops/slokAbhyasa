@@ -303,7 +303,14 @@ The speech model is loaded the moment slokas are chosen, so it sits ready, idle,
 first sloka ends; the live analysis of what follows a pause runs in the analysis worker, so
 the page stays smooth. A **Stop listening** button under the timer, shown while a stretch
 is being heard, halts the background listening for the rest of the take: the sound is still
-compared, and the open report can still ask for its words afterwards. The queued stretches are transcribed one
+compared, and the open report can still ask for its words afterwards. Whisper's encoder
+prices every hearing as a 30-second window whatever is in it, so **two consecutive short
+slokas are heard together in one window** — half the cost each: a closed stretch waits for
+the next one when the next is likely to fit (the teacher's time for it at your tempo),
+the two go to the worker as one job, and the transcript is split at their boundary by its
+timestamps ("Listening to ch12-10 and ch12-11 in the background, in one window…"). A held
+stretch whose partner turns out too long is heard alone. The sloka in view when the take
+stops has its stretch closed at once, so its words start at the stop rather than after. The queued stretches are transcribed one
 after another in the background until none is left, so the words of every sloka but the
 last are ready when the take stops. The count is a guide, not a judge: the comparison
 afterwards finds each sloka in the take on its own, and a page turned by hand still works.
