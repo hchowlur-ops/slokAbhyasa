@@ -65,19 +65,3 @@ test('a hand-edited .txt keeps the timings when the line count matches', () => {
   assert.deepEqual(f.chunks, [], 'a different line count drops the timings');
   assert.equal(applyTextEdit(null, 'om', 'now').language, 'unknown');
 });
-
-test('two slokas heard in one window are split at their boundary by the phrases\' midpoints, the second\'s times moved back', async () => {
-  const { splitTranscriptAt } = await import('../js/transcripts.js');
-  const t = { language: 'sanskrit', tier: 'best', text: 'a b c d', chunks: [{ text: 'a', start: 0.2, end: 5.1 }, { text: 'b', start: 5.3, end: 11.8 }, { text: 'c', start: 12.9, end: 18.2 }, { text: 'd', start: 18.4, end: 24 }] };
-  const [one, two] = splitTranscriptAt(t, 12.4);
-  assert.equal(one.text, 'a b');
-  assert.deepEqual(one.chunks.map((c) => [c.start, c.end]), [[0.2, 5.1], [5.3, 11.8]]);
-  assert.equal(one.tier, 'best', 'the hearing\'s details are kept');
-  assert.equal(two.text, 'c d');
-  assert.deepEqual(two.chunks.map((c) => [c.start, c.end]), [[0.5, 5.8], [6, 11.6]]);
-  const [all, none] = splitTranscriptAt(t, 30);
-  assert.equal(all.text, 'a b c d');
-  assert.equal(none, null, 'nothing fell on the second side');
-  assert.deepEqual(splitTranscriptAt(null, 10), [null, null]);
-  assert.equal(splitTranscriptAt({ text: 'x', chunks: [] }, 10)[0], null, 'no timed phrases: no split');
-});

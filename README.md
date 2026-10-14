@@ -197,17 +197,21 @@ slokas you had ticked there.
    they appear, steps 1 and 2 fold up into their heads — "1 sloka ticked", "Recorded 0:21 ·
    open to record again" — so the report is what you see; click a head to open that step
    again (to tick another sloka, say), and "Record again" opens both. The same happens in
-   Teach and in a quiz. From the moment you stop, the results card says **Evaluating…**,
-   with the progress of the listening, the comparison and, in a quiz, the scoring, until
-   the open sloka's report is in — its scores and, when the words are transcribed, its
-   transcript; a report opened with Previous / Next whose words are still on their way
-   shows it again until they come.
-   * With **several slokas**, the results open on a **scoreboard**: the take's overall in a
+   Teach and in a quiz. From the moment you stop, the sloka's card on the scoreboard
+   carries a **spinner** ("Evaluating…" in its tooltip) with the progress of the listening,
+   the comparison and, in a quiz, the scoring, under the cards; the report below shows the
+   moment the sound is compared, its word tiles waiting for the transcript, and fills in
+   when the words come.
+   * The results open on a **scoreboard**, for one sloka or many: the take's overall in a
      ring (the mean over the slokas recited) with its grade and a few words, a line saying
      how many were recited and scored, less than half recited, not recited or still
      comparing, and **one card per sloka** — its name, score, grade and what went wrong
      ("restarted pāda 3", "less than half recited · not scored", "not recited") — the open
-     one marked. A card opens that sloka's report below; Previous / Next step through them.
+     one marked. A card still being evaluated (its sound compared, or its words on their
+     way) carries a **spinner**, "Evaluating…" in its tooltip; the comparison's or the
+     words' progress bar, with its Stop, sits under the cards. A card opens that sloka's
+     report below, which shows the moment its sound is compared, the word tiles waiting
+     for the transcript.
    * The **overall score**, in the middle: a ring with the weighted mean of the seven
      categories (see "What is scored" below — phonemes 30, vowel length 25, syllables 15,
      emphasis 10, pitch contour 10, phrasing 5, timing 5 by default; the **Settings** page
@@ -255,13 +259,10 @@ slokas you had ticked there.
      - the **list of deviations**, each with a "Sloka" and a "Yours" button that plays just
        that moment (with a little padding).
 
-**Several slokas at once.** With more than one sloka ticked, the results show **one report
-at a time**: Previous / Next step through them ("1 / 3"), and "All the reports", folded
-under the buttons, lists them — each row with the sloka's name, a bar that stands for your
-recording from start to end with the stretch where that sloka was found shaded, coloured
-marks for the conflicts inside it, the overall score and the number of conflicts; click a
-row to open that report. The sloka panel above switches with the open report, so its play
-button and text always belong to it. Once the take is compared, the **words of every
+**Several slokas at once.** With more than one sloka ticked, the scoreboard has a card per
+sloka — its score, grade and what went wrong, a spinner while it is being evaluated — and
+the report below is the open card's; click a card to open its report. The sloka panel
+above switches with the open report, so its play button and text always belong to it. Once the take is compared, the **words of every
 report are transcribed in the background**, in turn, the open one first (each sloka's own
 stretch of the recording), and their word scores filled in as they arrive — so Next opens a
 report with its words ready, and the session's scores cover every sloka. Better still, turn
@@ -312,16 +313,7 @@ The speech model is loaded the moment slokas are chosen, so it sits ready, idle,
 first sloka ends; the live analysis of what follows a pause runs in the analysis worker, so
 the page stays smooth. A **Stop listening** button under the timer, shown while a stretch
 is being heard, halts the background listening for the rest of the take: the sound is still
-compared, and the open report can still ask for its words afterwards. Whisper's encoder
-prices every hearing as a 30-second window whatever is in it, so **two consecutive short
-slokas are heard together in one window** — half the cost each: a closed stretch waits for
-the next one when the next is likely to fit (the teacher's time for it at your tempo),
-the two go to the worker as one job with the silences squeezed out, and the transcript is
-split at their boundary by its timestamps ("Listening to ch12-10 and ch12-11 in the
-background, in one window…"). A stretch is held only when your pace is known — in a quiz,
-where the sloka is known and recited at an easy pace, or in Self Evaluation once this take
-or your profile has measured you; a learner still learning a sloka recites slowly, and two
-will not fit. A held stretch whose partner turns out too long is heard alone. The sloka in view when the take
+compared, and the open report can still ask for its words afterwards. The sloka in view when the take
 stops has its stretch closed at once, so its words start at the stop rather than after. The queued stretches are transcribed one
 after another in the background until none is left, so the words of every sloka but the
 last are ready when the take stops. The count is a guide, not a judge: the comparison

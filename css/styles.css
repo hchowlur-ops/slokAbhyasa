@@ -618,7 +618,6 @@ textarea.locked { background: var(--surface-2); color: var(--muted); cursor: not
 .stt-corrections b { color: var(--danger); }
 .stt-corrections .cw { font-weight: 650; }
 /* what went wrong in the recitation itself (a restart, a stall…), in a report row */
-.rr-slip { font-weight: 600; color: var(--danger); }
 /* the line of the sloka the ear hears the learner in; a tap on a line resyncs the count */
 .sloka-line { border-radius: 6px; padding: 0 4px; margin: 0 -4px; transition: background .2s; }
 .sloka-line.current { background: color-mix(in srgb, var(--gold) 24%, transparent); }
@@ -909,51 +908,28 @@ textarea.locked { background: var(--surface-2); color: var(--muted); cursor: not
 .tc-grade.practice { color: var(--danger); }
 .tc-note { font-size: 0.76rem; color: var(--muted); line-height: 1.3; }
 .tc-note.bad { color: var(--danger); font-weight: 600; }
-.reports-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
-.reports-head h3 { margin: 0; }
-.report-map { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
-.reports-head { margin-bottom: 8px; }
-.report-row {
+.take-card { position: relative; }
+.take-card .tc-busy { position: absolute; top: 8px; right: 8px; width: 14px; height: 14px; }
+.take-card .tc-busy[hidden] { display: none; }
+.take-card.busy .tc-score { opacity: .6; }
+.take-progress { margin-top: 10px; }
+.take-progress[hidden] { display: none; }
   display: grid; grid-template-columns: minmax(110px, 190px) minmax(120px, 1fr) minmax(56px, auto) minmax(130px, 230px); gap: 12px; align-items: center;
   width: 100%; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface);
   cursor: pointer; font: inherit; color: inherit; text-align: left;
 }
-.report-row:hover { border-color: var(--accent); }
-.report-row.active { box-shadow: inset 0 0 0 2px var(--accent); }
-.report-row.flag-bad { border-color: var(--danger); }
-.report-row.flag-warn { border-color: var(--timing); }
-.rr-name { font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rr-track { position: relative; height: 16px; border-radius: 8px; background: var(--wave-bg); overflow: hidden; }
-.rr-span { position: absolute; top: 0; bottom: 0; min-width: 3px; border-radius: 4px; background: color-mix(in srgb, var(--accent) 38%, transparent); }
-.rr-span.warn { background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--timing) 60%, transparent) 0 5px, color-mix(in srgb, var(--accent) 30%, transparent) 5px 10px); }
-.rr-span.bad { background: color-mix(in srgb, var(--danger) 22%, transparent); }
-.rr-mark { position: absolute; top: 2px; bottom: 2px; min-width: 2px; border-radius: 1px; }
-.rr-mark.type-pitch { background: var(--pitch); }
-.rr-mark.type-timing { background: var(--timing); }
-.rr-mark.type-content { background: var(--content); }
-.rr-mark.type-missing, .rr-mark.type-extra { background: var(--missing); }
-.rr-mark.type-dynamics { background: var(--dynamics); }
-.rr-score { font-weight: 700; text-align: right; display: flex; flex-direction: column; align-items: flex-end; line-height: 1.15; }
 .rr-grade { font-size: 0.72rem; font-weight: 700; letter-spacing: .02em; }
 .rr-grade.excellent { color: var(--gold-deep); }
 :root[data-theme="dark"] .rr-grade.excellent { color: var(--gold); }
 .rr-grade.good { color: color-mix(in srgb, var(--pitch) 70%, var(--text)); }
 .rr-grade.fair { color: color-mix(in srgb, var(--timing) 70%, var(--text)); }
 .rr-grade.practice { color: var(--danger); }
-.rr-info { font-size: 0.82rem; color: var(--muted); display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.rr-flag { font-weight: 600; }
-.rr-flag.bad { color: var(--danger); }
-.rr-flag.warn { color: var(--timing); }
 .report-title-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
 .report-title-row h3 { margin: 0; font-size: 1.15rem; }
 /* Evaluating…: in place of the report from the stop of a recording until the open sloka's results are in */
-.evaluating { display: flex; flex-direction: column; gap: 10px; margin: 2px 0 18px; padding: 18px 20px; border-radius: 14px; background: var(--surface-2); border: 1px solid var(--border); border-left: 4px solid var(--accent); }
-.evaluating-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.evaluating-head strong { font-family: var(--display); font-size: 1.25rem; color: var(--indigo); }
-.evaluating .spinner { flex: none; width: 22px; height: 22px; border-radius: 50%; border: 3px solid var(--border); border-top-color: var(--accent); animation: spin .9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-.evaluating .progress { margin-top: 0; }
-@media (prefers-reduced-motion: reduce) { .evaluating .spinner { animation: none; border-top-color: var(--border); } }
+.spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .spinner { animation: none; border-top-color: var(--border); } }
 .report-error { padding: 12px 14px; border-radius: 10px; background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); margin: 0 0 12px; }
 .w-dim { opacity: .38; }
 .lib-pick { width: 18px; height: 18px; accent-color: var(--accent); margin: 0; flex: none; cursor: pointer; }
@@ -1030,9 +1006,6 @@ textarea.locked { background: var(--surface-2); color: var(--muted); cursor: not
 .quiz-table tr.openable:hover td { background: var(--surface); }
 .quiz-table tr.active td { background: var(--accent-soft); }
 .quiz-trend-fold, .reports-fold { margin-top: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
-.reports-fold { margin-top: 0; }
-.reports-fold .report-map { padding: 10px 14px 0; }
-.reports-fold > p { padding: 0 14px 12px; margin: 6px 0 0; }
 .quiz-trend-fold > summary, .reports-fold > summary { display: flex; align-items: center; gap: 10px; padding: 10px 14px; cursor: pointer; list-style: none; user-select: none; border-radius: 12px; }
 .quiz-trend-fold > summary::-webkit-details-marker, .reports-fold > summary::-webkit-details-marker { display: none; }
 .quiz-trend-fold > summary:hover, .reports-fold > summary:hover { background: var(--surface-2); }

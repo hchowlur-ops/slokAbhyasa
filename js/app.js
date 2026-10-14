@@ -15,7 +15,6 @@ import { comparePhonology, ERROR_LABEL, syllabify } from './phon.js';
 import { SyllableCounter } from './dsp/syllables.js';
 import { mixToMono, resample } from './dsp/resample.js';
 import { trimSilence } from './dsp/trim.js';
-import { soundRuns, packClips, unpackTranscript, PACK_DEFAULTS } from './dsp/pack.js';
 import { Transcriber, STT_LANGUAGES, STT_LANGUAGE_CODES, STT_TIERS, sttLanguageLabel, sttLanguageTag, sttTierLabel, isStopped } from './stt.js';
 import { segments as scriptSegments, wordSegments, toDeva, weightMark, inScript } from './lipi.js';
 import { scriptToLatin, latinToScript } from './translit.js';
@@ -1485,15 +1484,14 @@ practiceUI.elapsed = () => (practiceRecorder ? practiceRecorder.elapsed : 0);
 // comparison's (step 2's bar, folded away by then) or the speech worker's (in the Transcript
 // block, under the folded Analysis) — so the Stop of a quiz's listening is at hand there too.
 let evaluating = false;
-const evalProgress = progressUI('evaluating-progress');
+const evalProgress = progressUI('take-progress'); // the comparison's and the words' progress, in the scoreboard
 const evalSources = { compare: null, words: null };
 let evalShown = null;
 function renderEvalProgress() {
   const src = evalSources.compare || evalSources.words;
-  if (!src) { evalProgress.hide(); evalShown = null; $('#evaluating-sub').textContent = 'the results of this sloka are on their way'; return; }
+  if (!src) { evalProgress.hide(); evalShown = null; return; }
   if (evalShown !== src) { evalProgress.show(src.text || ' ', src.stop); evalShown = src; }
   evalProgress.set(src.p, src.text);
-  $('#evaluating-sub').textContent = '';
 }
 // a progress bar whose state the Evaluating block mirrors
 function mirrored(ui, key) {
@@ -1504,13 +1502,16 @@ function mirrored(ui, key) {
   };
 }
 const practiceProgress = mirrored(progressUI('practice-progress'), 'compare');
+// "Evaluating…" is the spinner on the sloka's card (renderTakeBoard), with the comparison's
+// or the words' progress under the take's overall; the report shows as soon as there is one,
+// its word tiles waiting for the transcript.
 function setEvaluating(on) {
   evaluating = !!on;
-  setHidden($('#evaluating'), !evaluating);
-  if (evaluating) renderEvalProgress();
+  renderEvalProgress();
   const r = practice.results.get(practice.activeId);
-  setHidden($('#report-body'), evaluating || !practice.result || !isReport(r));
-  setHidden($('#quiz-score'), evaluating || !(practice.quiz && practice.quizAttempt));
+  setHidden($('#report-body'), !practice.result || !isReport(r));
+  setHidden($('#quiz-score'), !(practice.quiz && practice.quizAttempt));
+  if (!$('#practice-results').hidden) renderTakeBoard(reportIds());
 }
 // the open report's words are in the take's cache: on screen in a moment
 const wordsCached = (r) => practice.heardTranscripts.has(partKey(heardPartOf(r)));
@@ -2166,9 +2167,8 @@ $('#practice-rec').addEventListener('click', async () => {
       const item = items[currentTextIndex(items)];
       const partial = !!(liveEar && liveEar.item && liveEar.expected && liveEar.pos < liveEar.expected * 0.5 && liveEar.counter.state_().elapsedMs >= 2000);
       if (partial && !partialOf(liveEar.item.id)) addSlip(liveEar.item.id, { kind: 'partial', count: Math.round(liveEar.pos), expected: liveEar.expected, by: 'ear' });
-      if (!liveEar || !liveEar.done) markSegment(item, null, { last: true, transcribe: !partial });
+      if (!liveEar || !liveEar.done) markSegment(item, null, { transcribe: !partial });
     }
-    flushHold();
     const segments = recSegments;
     recSegments = null;
     stopEar();
@@ -2199,7 +2199,6 @@ $('#practice-rec').addEventListener('click', async () => {
       practiceUI.setRecording(true);
       setListBusy(true);
       recSegments = { from: 0, parts: [], stopped: false };
-      if (packHold) { clearTimeout(packHold.timer); packHold = null; }
       practice.slips = new Map();
       practice.listenStopped = false;
       setHidden($('#practice-rec-stop-listen'), true);
@@ -2430,7 +2429,7 @@ function reportFlag(id) {
 // what went wrong — the open one marked; a card opens its report.
 function renderTakeBoard(ids) {
   const board = $('#take-board');
-  if (ids.length < 2 || practice.quiz) { setHidden(board, true); return; }
+  if (!ids.length || practice.quiz) { setHidden(board, true); return; }
   setHidden(board, false);
   const items = sessionItems();
   const sum = sessionSummary(items);
@@ -2443,7 +2442,7 @@ function renderTakeBoard(ids) {
   const grade = gradeById(sum.grade);
   const takeSlips = recited.flatMap((it) => it.slips || []);
   setGrade($('#take-grade'), grade, $('#take-words'), { seed: practice.session && practice.session.id ? `session:${practice.session.id}` : 'take', slips: takeSlips, score: sum.overall });
-  const bits = [`${ids.length} slokas`, `${recited.length} recited and scored`];
+  const bits = [`${ids.length} sloka${ids.length === 1 ? '' : 's'}`, `${recited.length} recited and scored`];
   if (partial.length) bits.push(`${partial.length} less than half recited (not scored)`);
   if (notFound.length) bits.push(`${notFound.length} not recited`);
   if (pending.length) bits.push(`${pending.length} still comparing`);
@@ -2464,10 +2463,15 @@ function renderTakeBoard(ids) {
     const sc = reportScores(id);
     const bad = !!(r && (r.error || partialOf(id) || (isReport(r) && !sc.matched)));
     card.className = `take-card${id === practice.activeId ? ' active' : ''}${bad ? ' bad' : ''}${!r ? ' pending' : ''}`;
-    card.innerHTML = '<span class="tc-name"></span><span class="tc-score"></span><span class="tc-grade"></span><span class="tc-note"></span>';
+    card.innerHTML = '<span class="tc-name"></span><span class="tc-score"></span><span class="tc-grade"></span><span class="tc-note"></span><span class="tc-busy spinner" aria-hidden="true" hidden></span>';
     $('.tc-name', card).textContent = nameOf(id);
     $('.tc-name', card).title = nameOf(id);
     const noteEl = $('.tc-note', card);
+    // being evaluated: compared still, or its words on their way — a spinner, and a tooltip
+    const wordsComing = isReport(r) && sc && sc.matched && !practice.wordSims.has(id) && sttSettings.auto && !practice.listenStopped && !partialOf(id);
+    const busy = !!(!r || wordsComing || (practice.quiz && quizScoring)); // a boolean: classList.toggle flips on a null
+    card.classList.toggle('busy', busy);
+    setHidden($('.tc-busy', card), !busy);
     if (!r) { $('.tc-score', card).textContent = '…'; noteEl.textContent = 'comparing'; }
     else if (r.error) { $('.tc-score', card).textContent = '–'; noteEl.textContent = 'could not be compared'; noteEl.classList.add('bad'); }
     else if (partialOf(id)) { $('.tc-score', card).textContent = '–'; $('.tc-grade', card).textContent = gradeText(gradeById('practice')); $('.tc-grade', card).classList.add('practice'); noteEl.textContent = slipsLabel(slipsOf(id)) + ' · not scored'; noteEl.classList.add('bad'); }
@@ -2476,10 +2480,11 @@ function renderTakeBoard(ids) {
       $('.tc-score', card).textContent = overall == null ? '–' : String(overall);
       if (g) { $('.tc-grade', card).textContent = gradeText(g); $('.tc-grade', card).classList.add(g.id); }
       const sl = slipsOf(id);
-      noteEl.textContent = sl.length ? slipsLabel(sl) : practice.wordSims.has(id) ? '' : practice.listenStopped || !sttSettings.auto ? 'sound only' : 'words on their way';
-      if (sl.length) noteEl.classList.add('bad');
+      const flag = reportFlag(id);
+      noteEl.textContent = sl.length ? slipsLabel(sl) : flag && flag.level !== 'info' ? flag.text : practice.wordSims.has(id) ? '' : practice.listenStopped || !sttSettings.auto ? 'sound only' : 'words on their way';
+      if (sl.length || (flag && flag.level === 'bad')) noteEl.classList.add('bad');
     }
-    card.title = id === practice.activeId ? 'This report is open below' : 'Open this sloka\'s report';
+    card.title = busy ? 'Evaluating…' : id === practice.activeId ? 'This report is open below' : 'Open this sloka\'s report';
     card.addEventListener('click', () => openReport(id));
     cards.appendChild(card);
   }
@@ -2487,77 +2492,8 @@ function renderTakeBoard(ids) {
 function renderReportBrowser() {
   const ids = reportIds();
   renderTakeBoard(ids);
-  setHidden($('#reports'), ids.length < 2);
   setHidden($('#report-title-row'), !ids.length);
-  const map = $('#report-map');
-  map.innerHTML = '';
-  const T = Math.max(0.1, practice.take ? practice.take.duration : 1);
-  const pct = (t) => `${Math.max(0, Math.min(1, t / T)) * 100}%`;
-  for (const id of ids) {
-    const r = practice.results.get(id);
-    const flag = reportFlag(id);
-    const row = document.createElement('button');
-    row.type = 'button';
-    row.className = `report-row${id === practice.activeId ? ' active' : ''}${flag && flag.level !== 'info' ? ` flag-${flag.level}` : ''}`;
-    row.setAttribute('role', 'tab');
-    row.setAttribute('aria-selected', id === practice.activeId ? 'true' : 'false');
-    row.innerHTML = '<span class="rr-name"></span><span class="rr-track"></span><span class="rr-score mono"></span><span class="rr-info"><span class="rr-count"></span><span class="rr-flag"></span></span>';
-    $('.rr-name', row).textContent = nameOf(id);
-    $('.rr-name', row).title = nameOf(id);
-    if (isReport(r)) {
-      const track = $('.rr-track', row);
-      const [s0, s1] = r.matched.heard;
-      const span = document.createElement('span');
-      span.className = `rr-span${flag && flag.level !== 'info' ? ` ${flag.level}` : ''}`;
-      span.style.left = pct(s0);
-      span.style.width = pct(s1 - s0);
-      span.title = `Found at ${fmtTime(s0)} – ${fmtTime(s1)} of your recording`;
-      track.appendChild(span);
-      const shown = r.deviations.filter(devMatchesFilter);
-      for (const d of shown) {
-        if (!d.tHeard) continue;
-        const m = document.createElement('i');
-        m.className = `rr-mark type-${d.type}`;
-        m.style.left = pct(d.tHeard[0]);
-        m.style.width = pct(d.tHeard[1] - d.tHeard[0]);
-        track.appendChild(m);
-      }
-      const { overall, grade } = reportOverall(id);
-      const sEl = $('.rr-score', row);
-      sEl.innerHTML = '<span></span><span class="rr-grade"></span>';
-      sEl.firstChild.textContent = overall == null ? '–' : String(overall);
-      if (grade) { sEl.lastChild.textContent = gradeText(grade); sEl.lastChild.classList.add(grade.id); }
-      sEl.title = 'Overall score, weighted over the categories judged so far';
-      $('.rr-count', row).textContent = shown.length ? `${shown.length} conflict${shown.length === 1 ? '' : 's'}` : 'No conflicts';
-      const v = reportVerdict(id);
-      if (v.ok !== null) {
-        const ve = document.createElement('span');
-        ve.className = `rr-verdict ${v.ok ? 'ok' : 'bad'}`;
-        ve.textContent = verdictText(v);
-        $('.rr-info', row).insertBefore(ve, $('.rr-flag', row));
-      }
-      // what went wrong in the recitation itself: "restarted pāda 3", "stuck in pāda 2"…
-      const sl = slipsOf(id);
-      if (sl.length) {
-        const se = document.createElement('span');
-        se.className = 'rr-slip';
-        se.textContent = slipsLabel(sl);
-        se.title = 'The recitation is scored in full; a slip like this makes its grade Needs practice';
-        $('.rr-info', row).insertBefore(se, $('.rr-flag', row));
-      }
-    } else {
-      $('.rr-score', row).textContent = '–';
-    }
-    const fl = $('.rr-flag', row);
-    if (flag) { fl.textContent = flag.text; fl.className = `rr-flag ${flag.level}`; } else fl.remove();
-    row.addEventListener('click', () => openReport(id));
-    map.appendChild(row);
-  }
-  const idx = ids.indexOf(practice.activeId);
-  $('#reports-title').textContent = `Report · ${idx >= 0 ? nameOf(practice.activeId) : ''}`;
-  $('#reports-fold-sub').textContent = `${ids.length} rows · where each sloka was found in your recording, and its conflicts`;
-  $('#report-pos').textContent = idx >= 0 ? `${idx + 1} / ${ids.length}` : '';
-  $('#report-name').textContent = practice.activeId ? nameOf(practice.activeId) : ''; // the name alone: the verdict is the ring's and the rows' to tell
+  $('#report-name').textContent = practice.activeId ? nameOf(practice.activeId) : ''; // the name alone: the verdict is the ring's and the cards' to tell
 }
 // The preview above the results changes height with the sloka, so keep the reports in view.
 async function openReport(id) {
@@ -2565,14 +2501,6 @@ async function openReport(id) {
   await setActiveBase(id);
   $('#practice-results').scrollIntoView({ block: 'start' });
 }
-function stepReport(delta) {
-  const ids = reportIds();
-  if (ids.length < 2) return;
-  const idx = Math.max(0, ids.indexOf(practice.activeId));
-  openReport(ids[(idx + delta + ids.length) % ids.length]);
-}
-$('#report-prev').addEventListener('click', () => stepReport(-1));
-$('#report-next').addEventListener('click', () => stepReport(1));
 
 // Shows the report of the active sloka (or why there is none).
 function showActiveReport() {
@@ -2864,21 +2792,7 @@ function stepText(delta) {
 // the words of the recorded stretch that overlaps it well enough (transcribeTakePart), and is
 // transcribed afresh otherwise.
 let recSegments = null; // { from, parts: [{ from, to, name, promise, transcript }] } in recording time
-// Whisper's encoder prices every hearing as a 30-second window, whatever is in it; so two
-// consecutive short slokas (most anuṣṭubh slokas at a normal pace) are heard together in
-// one window — half the cost each — and the one transcript is split at their boundary by
-// its timestamps. A closed stretch waits for the next only when the next is likely to fit
-// (the teacher's time for it at the learner's tempo), and no longer than the window
-// allows; a held stretch whose partner did not come is heard alone.
-const PACK_WINDOW_SEC = 30;
-const packLog = []; // what was decided for each stretch, for the probes (window.__slokabhyasa)
-const packNote = (what, o) => { packLog.push({ what, at: Math.round(performance.now() / 100) / 10, ...o }); if (packLog.length > 50) packLog.shift(); };
-window.__slokabhyasa = { packLog, segments: () => (recSegments ? recSegments.parts.map((p) => ({ id: p.id, name: p.name, from: Math.round(p.from * 10) / 10, to: Math.round(p.to * 10) / 10, skipped: !!p.skipped, packedWith: p.packedWith || null, done: p.done, words: p.transcript ? p.transcript.text.length : null })) : null) };
-const PACK_GAP_SEC = PACK_DEFAULTS.gapSec; // between runs of sound in the packed clip
-// How much sound a stretch holds once its silences are squeezed to the gap (dsp/pack.js).
-const soundSec = (samples, sr) => { const runs = soundRuns(samples, sr); return runs.reduce((n, r) => n + (r.end - r.start) + 2 * PACK_DEFAULTS.edgeSec, 0) + Math.max(0, runs.length - 1) * PACK_GAP_SEC; };
-let packHold = null; // { seg, samples, sr, timer }
-function markSegment(item, toSec = null, { transcribe = true, last = false } = {}) {
+function markSegment(item, toSec = null, { transcribe = true } = {}) {
   const rec = practiceRecorder;
   if (!rec || !rec.active || !recSegments) return;
   const snap = rec.snapshot();
@@ -2889,59 +2803,17 @@ function markSegment(item, toSec = null, { transcribe = true, last = false } = {
   const seg = { from, to, id: item ? item.id : null, name: item ? item.name : '', promise: null, transcript: null, done: true, ctrl: null };
   recSegments.parts.push(seg);
   // less than half recited, the listening stopped, or the words not wanted: the stretch is kept apart, its words never asked for
-  if (!transcribe || recSegments.stopped || !sttSettings.auto) { seg.skipped = true; seg.promise = Promise.resolve(null); flushHold(); return; }
+  if (!transcribe || recSegments.stopped || !sttSettings.auto) { seg.skipped = true; seg.promise = Promise.resolve(null); return; }
   const sr = snap.sampleRate;
   const samples = snap.samples.slice(Math.round(from * sr), Math.round(to * sr));
   seg.done = false;
-  const sound = soundSec(samples, sr); // the window holds sound; the silence is squeezed out
-  if (packHold) {
-    const h = packHold;
-    packHold = null;
-    clearTimeout(h.timer);
-    const packed = packClips([h.samples, samples], sr);
-    if (packed.seconds <= PACK_WINDOW_SEC) { packNote('packed', { first: h.seg.name, second: seg.name, sound1: h.sound, sound2: sound, clip: packed.seconds }); sendPacked(h.seg, seg, packed, sr); return; } // the two in one window
-    packNote('partner too long', { first: h.seg.name, second: seg.name, sound1: h.sound, sound2: sound, clip: packed.seconds });
-    sendStretch(h.seg, h.samples, h.sr); // the partner turned out too long: the held one alone after all
-  }
-  // Holding is worth it when the learner's pace is known — a quiz, where the sloka is known
-  // and recited at an easy pace, or Self Evaluation once this take or the profile has
-  // measured them; a learner still learning recites slowly, and two will not fit
-  const paceKnown = !!(practice.quiz || (liveEar && (liveEar.speedN || liveEar.tempoN || liveEar.aksPerSec)));
-  const nextSec = last || !paceKnown ? null : nextSlokaSec(item);
-  if (nextSec != null && sound + PACK_GAP_SEC + nextSec <= PACK_WINDOW_SEC - 1 && sound <= PACK_WINDOW_SEC * 0.6) {
-    packNote('held', { name: seg.name, sound, next: nextSec, from, to });
-    packHold = { seg, samples, sr, sound, timer: setTimeout(flushHold, Math.round((PACK_WINDOW_SEC - sound) * 1000) + 3000) };
-    recNote(`${seg.name || 'That stretch'} will be heard with the next sloka, in one window…`);
-    setHidden($('#practice-rec-stop-listen'), false);
-    return;
-  }
-  packNote('alone', { name: seg.name, sound, next: nextSec, last, from, to });
   sendStretch(seg, samples, sr);
-}
-// How long the sloka after `item` is likely to take this learner: the teacher's time for
-// it at the learner's tempo; null when unknown (then nothing is held for it).
-function nextSlokaSec(item) {
-  if (!item) return null;
-  const items = slokaTextItems();
-  const k = items.findIndex((x) => x.id === item.id);
-  const next = k >= 0 ? items[k + 1] : null;
-  const sec = next ? expectedSecOf(next) : null;
-  return sec ? sec * (liveEar ? liveEar.tempo : 1) : null;
-}
-function flushHold() {
-  if (!packHold) return;
-  const h = packHold;
-  packHold = null;
-  clearTimeout(h.timer);
-  packNote('hold flushed', { name: h.seg.name });
-  if (recSegments && !recSegments.stopped && sttSettings.auto) sendStretch(h.seg, h.samples, h.sr);
-  else { h.seg.skipped = true; h.seg.done = true; h.seg.promise = Promise.resolve(null); }
 }
 const noteBusy = () => {
   const parts = recSegments ? recSegments.parts : [];
   const busy = parts.find((p) => !p.done);
   if (!busy) { if (!recSegments || !recSegments.stopped) recNote(''); setHidden($('#practice-rec-stop-listen'), true); }
-  else recNote(`Listening to ${busy.packedWith ? `${busy.name} and ${busy.packedWith}` : busy.name || 'that stretch'} in the background…`);
+  else recNote(`Listening to ${busy.name || 'that stretch'} in the background…`);
 };
 function sendStretch(seg, samples, sr) {
   seg.ctrl = new AbortController();
@@ -2952,31 +2824,11 @@ function sendStretch(seg, samples, sr) {
     .catch(() => null)
     .finally(() => { seg.done = true; noteBusy(); });
 }
-function sendPacked(seg1, seg2, packed, sr) {
-  const samples = packed.samples; // the two slokas' sound, the silences squeezed to short gaps: one window
-  const ctrl = new AbortController();
-  seg1.ctrl = ctrl; seg2.ctrl = ctrl;
-  seg1.packedWith = seg2.name; seg2.packedWith = seg1.name;
-  recNote(`Listening to ${seg1.name} and ${seg2.name} in the background, in one window…`);
-  setHidden($('#practice-rec-stop-listen'), false);
-  const job = runTranscription(samples, sr, null, `${seg1.name} and ${seg2.name}`, ctrl.signal, { background: true })
-    .then((t) => {
-      const [a, b] = unpackTranscript(t, packed.map, 2); // each phrase to its stretch, its times put back
-      seg1.transcript = a; seg2.transcript = b;
-      for (const sg of [seg1, seg2]) { try { checkSegmentWords(sg); } catch { /* a guess only */ } }
-      return t;
-    })
-    .catch(() => null)
-    .finally(() => { seg1.done = true; seg2.done = true; noteBusy(); });
-  seg1.promise = job.then(() => seg1.transcript);
-  seg2.promise = job.then(() => seg2.transcript);
-}
 // Stop listening: the background jobs of this take are stopped and no more are queued; the
 // sound is still compared, and the open report can still ask for its words afterwards.
 $('#practice-rec-stop-listen').addEventListener('click', () => {
   if (!recSegments) return;
   recSegments.stopped = true;
-  if (packHold) { clearTimeout(packHold.timer); packHold.seg.skipped = true; packHold.seg.done = true; packHold.seg.promise = Promise.resolve(null); packHold = null; }
   for (const p of recSegments.parts) if (p.ctrl && !p.done) p.ctrl.abort();
   practice.listenStopped = true;
   recNote('Listening stopped for this take: the sound is still compared; the words of the open report come when it is opened.');
