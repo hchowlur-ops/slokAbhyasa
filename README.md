@@ -38,6 +38,10 @@ slokas at once, a quiz with its score and trend, the Reports page and Settings.
 node serve.js
 ```
 
+On Windows, `restart-server.cmd` in the project folder stops any running server and starts
+one again in its own window (`restart-server.cmd open` also opens the app; `restart-server.cmd
+stop` stops only).
+
 Then open <http://127.0.0.1:8787> in Chrome, Edge, Firefox or Safari. No install step;
 Node 18 or newer is the only requirement. (`npm start` does the same thing.)
 
