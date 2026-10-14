@@ -275,7 +275,12 @@ for a verse that does not scan), and once the count is at the sloka's end and a 
 follows, of the length this learner leaves between slokas, that sloka's stretch goes to the
 speech worker and the panel turns to the next sloka ("24 of 33 akṣaras · pāda 3 of 4"
 under the timer shows where the learner is and lights the line of the text they are in;
-"every sloka heard · tap to stop" when the last is in). Where they are is read from **their
+"every sloka heard · tap to stop" when the last is in). The page turns the moment the
+position reaches the sloka's end — the last akṣara registers within a tenth of a second of
+its sound, sooner than any breath; a position a little short waits for a short pause, one
+well short for a long one — and the sloka's stretch is closed a moment later, off the
+page-turn path, so the turn waits for nothing. A quiz loads its slokas' recordings as it
+opens, so the ear has their plans and times from the first sloka. Where they are is read from **their
 own speed**, never the teacher's: the syllable count calibrated to their voice (how many
 nuclei the counter hears per akṣara of it, learnt from each sloka they recite whole) and,
 once their speed is known — this take's earlier slokas, or their profile — blended half and
@@ -307,9 +312,12 @@ compared, and the open report can still ask for its words afterwards. Whisper's 
 prices every hearing as a 30-second window whatever is in it, so **two consecutive short
 slokas are heard together in one window** — half the cost each: a closed stretch waits for
 the next one when the next is likely to fit (the teacher's time for it at your tempo),
-the two go to the worker as one job, and the transcript is split at their boundary by its
-timestamps ("Listening to ch12-10 and ch12-11 in the background, in one window…"). A held
-stretch whose partner turns out too long is heard alone. The sloka in view when the take
+the two go to the worker as one job with the silences squeezed out, and the transcript is
+split at their boundary by its timestamps ("Listening to ch12-10 and ch12-11 in the
+background, in one window…"). A stretch is held only when your pace is known — in a quiz,
+where the sloka is known and recited at an easy pace, or in Self Evaluation once this take
+or your profile has measured you; a learner still learning a sloka recites slowly, and two
+will not fit. A held stretch whose partner turns out too long is heard alone. The sloka in view when the take
 stops has its stretch closed at once, so its words start at the stop rather than after. The queued stretches are transcribed one
 after another in the background until none is left, so the words of every sloka but the
 last are ready when the take stops. The count is a guide, not a judge: the comparison

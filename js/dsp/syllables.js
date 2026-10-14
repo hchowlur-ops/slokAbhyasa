@@ -32,7 +32,7 @@ export class SyllableCounter {
     this.count = 0;
     this.frames = 0;
     this.lastNucleus = -1e9;
-    this.sinceSound = 1e9; // frames since the last frame above the threshold
+    if (all) this.sinceSound = 1e9; // frames since the last frame above the threshold: kept across slokas, so a page turn is no silence
     this.state = 'down';
     this.valley = 0;
     this.peak = -200;
