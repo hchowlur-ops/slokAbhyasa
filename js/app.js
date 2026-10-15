@@ -18,7 +18,7 @@ import { trimSilence } from './dsp/trim.js';
 import { Transcriber, STT_LANGUAGES, STT_LANGUAGE_CODES, STT_TIERS, sttLanguageLabel, sttLanguageTag, sttTierLabel, isStopped } from './stt.js';
 import { segments as scriptSegments, wordSegments, toDeva, weightMark, inScript } from './lipi.js';
 import { scriptToLatin, latinToScript } from './translit.js';
-import { mapNameToVerse, parseVerseId, verseBody, versePlan } from './verses.js';
+import { mapNameToVerse, parseVerseId, verseBody, versePlan, suggestName, defaultFolderFor } from './verses.js';
 import { badgeEmoji, DEVICE as BADGE_DEVICE } from './badges.js';
 import { normalizeStore, putInStore, pickTranscript, availableLanguages } from './transcripts.js';
 import { transliterateTranscript } from './translit.js';
@@ -286,7 +286,7 @@ function showView(name) {
   if (name === 'quiz' && !running) refreshQuizView();
   if (running) renderModeChrome();
   if (name === 'reports') refreshReports();
-  if (name === 'learn') refreshLearnFolders();
+  if (name === 'learn') refreshLearn();
   if (name === 'home') renderHomeBadges();
   redrawAll();
 }
@@ -1077,15 +1077,36 @@ function buildMetaFields(host, { compact = false } = {}) {
 }
 
 // ======================================================================
-// LEARN
+// LEARN — the Gītā one sloka at a time: a chapter, a verse, a recording, a save
 // ======================================================================
+// The verse's text is the recording's words: the server links the recording to the verse
+// it was chosen for (text origin 'reference'), and nothing recorded here is transcribed.
+// A text of your own, outside the dataset, takes the words typed under the details; saved
+// without them, it is heard once in the background so the Library can show and correct
+// its transcript.
 
-function activateTab(id) {
-  $$('.tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === id));
-  $$('.tab-panel').forEach((p) => p.classList.toggle('active', p.id === id));
-  redrawAll();
-}
-$$('.tab').forEach((t) => t.addEventListener('click', () => activateTab(t.dataset.tab)));
+const LEARN_CHAPTER_KEY = 'tutor-learn-chapter';
+const LEARN_FOLDER_KEY = 'tutor-learn-folder'; // the folder of a text outside the Gītā
+const LEARN_SPEAKER_LINE_KEY = 'tutor-learn-speaker-line';
+const learn = {
+  dataset: null, // the reference dataset here ('gita'), or null when there is none
+  info: null, // GET /api/reference/gita: manifest, chapters, coverage
+  chapter: null, // the open chapter
+  entries: [], // its entries, each with the recordings[] linked to it
+  verse: null, // the chosen entry
+  free: false, // a text of your own, outside the dataset
+  take: null, // { samples, sampleRate, duration, blob, source, edit, verse } awaiting its save
+  nameEdited: false, // the teacher changed the suggested name
+  players: [], // the players of the recordings already made, on the verse card
+  loading: 0, // the latest chapter load; an older one that lands late is ignored
+};
+(() => { try { const n = Number(localStorage.getItem(LEARN_CHAPTER_KEY)); if (n >= 1) learn.chapter = n; } catch { /* ignore */ } })();
+
+// Text in the chosen script without marks: chapter names, the first words of a verse.
+const scriptText = (text) => scriptSegments(String(text || ''), displayLanguage(), { marks: false }).map((sg) => (sg.sep != null ? sg.sep : sg.text)).join('');
+const chapterName = (c) => { const nm = (c && c.name) || {}; return displayLanguage() === 'english' ? (nm.en || nm.iast || '') : scriptText(nm.deva || nm.en || ''); };
+const fmtDay = (iso) => { try { return new Date(iso).toLocaleDateString(undefined, { dateStyle: 'medium' }); } catch { return iso; } };
+const verseShort = (e) => (e.kind === 'verse' || e.kind === 'combined' ? e.id : e.kind);
 
 let learnRecorder = null;
 function getLearnRecorder() {
@@ -1097,33 +1118,260 @@ function getLearnRecorder() {
 }
 const learnUI = bindRecorderUI({
   button: $('#learn-rec'), label: $('#learn-rec-label'), timer: $('#learn-timer'), meter: $('#learn-meter'), clip: $('#learn-clip'), live: $('#learn-live'),
-  idleText: 'Tap to start listening', recordingText: 'Listening… tap to stop',
+  idleText: 'Tap, recite the sloka, tap again', recordingText: 'Listening… tap to stop',
 });
 learnUI.elapsed = () => (learnRecorder ? learnRecorder.elapsed : 0);
 const learnProgress = progressUI('learn-progress');
 const learnPreview = new Player();
-let learnTake = null; // { samples, sampleRate, duration, blob }
-const drawLearnPreview = bindWave($('#learn-prev-wave'), learnPreview, () => learnTake && learnTake.samples, $('#learn-prev-cur'), $('#learn-prev-dur'));
+const drawLearnPreview = bindWave($('#learn-prev-wave'), learnPreview, () => learn.take && learn.take.samples, $('#learn-prev-cur'), $('#learn-prev-dur'));
 bindPlayButton($('#learn-prev-play'), learnPreview);
-const learnPanel = createTranscriptPanel($('#learn-transcript'), { title: 'Sloka text', editable: false, emptyText: 'Name the sloka as a verse of the Gītā (CH12-03 for 12.3, in a chapter folder) and its words appear here; otherwise type its text under Details below. The recording itself is not transcribed.' });
-// The words a Learn recording will have: the Gītā's, when the name (with the folder) names
-// a verse of the dataset here. Shown as it is typed; linked by the server when saved.
-let learnVerseToken = 0;
-async function showLearnVerse(panel, name, folder) {
-  const token = ++learnVerseToken;
-  const ids = await referenceDatasets().catch(() => []);
-  if (token !== learnVerseToken) return;
-  const guess = ids.length ? mapNameToVerse(String(name || '').trim(), folder || '') : null;
-  if (!guess) { panel.set(null); return; }
-  let entry = null;
-  try { entry = await api.getVerse(ids[0], guess.id); } catch { entry = null; }
-  if (token !== learnVerseToken) return;
-  if (!entry) { panel.set(null); return; }
-  const lines = verseBody(entry, { speakerLine: true }).split('\n').filter(Boolean);
-  panel.set({ text: lines.join(' '), chunks: lines.map((l) => ({ text: l })), language: 'sanskrit', from: 'reference', verse: entry.id, edited: true, editedIn: 'reference' });
-}
-const learnVerseDebounce = (panel, nameEl) => { let t = null; return () => { clearTimeout(t); t = setTimeout(() => showLearnVerse(panel, nameEl.value, learnFolder()), 250); }; };
 const learnMeta = buildMetaFields($('#learn-meta'));
+
+// ---------- the page: the chapters, the verses of one ----------
+// Each visit reads the dataset's coverage again (recordings come and go) and the open
+// chapter's entries with their recordings.
+async function refreshLearn() {
+  const ids = await referenceDatasets();
+  learn.dataset = ids[0] || null;
+  if (learn.dataset) { try { learn.info = await api.getReference(learn.dataset); } catch { learn.info = null; } }
+  if (!learn.info) learn.dataset = null;
+  setHidden($('#learn-no-dataset'), !!learn.dataset);
+  if (learn.dataset && learn.chapter != null && !learn.info.chapters.some((c) => c.chapter === learn.chapter)) learn.chapter = null;
+  renderLearnChapters();
+  if (learn.dataset && learn.chapter != null && !learn.free) await openLearnChapter(learn.chapter, { keep: true });
+  else renderLearnVerses();
+  if (!learn.dataset && !learn.free) await startFreeLearn();
+}
+
+function renderLearnChapters() {
+  const host = $('#learn-chapters');
+  host.innerHTML = '';
+  const info = learn.info;
+  const cov = info && info.coverage;
+  $('#learn-dataset-line').textContent = info ? `${info.work || info.name || 'Reference dataset'}${cov ? ` · ${cov.recorded} of ${cov.total} verses recorded` : ''}` : '';
+  if (info) {
+    for (const c of info.chapters) {
+      const bc = cov && cov.byChapter ? cov.byChapter[c.chapter] : null;
+      const done = !!(bc && bc.total && bc.recorded >= bc.total);
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `ch-card${learn.chapter === c.chapter && !learn.free ? ' active' : ''}${done ? ' done' : ''}`;
+      btn.innerHTML = '<span class="cc-num"></span><span class="cc-name"></span><span class="cc-bar"><i></i></span><span class="cc-count"></span>';
+      $('.cc-num', btn).textContent = String(c.chapter);
+      const nm = $('.cc-name', btn);
+      nm.textContent = chapterName(c);
+      nm.lang = sttLanguageTag(displayLanguage());
+      btn.title = [c.name && c.name.deva, c.name && c.name.en].filter(Boolean).join(' · ');
+      $('.cc-bar i', btn).style.width = bc && bc.total ? `${Math.round((bc.recorded / bc.total) * 100)}%` : '0%';
+      $('.cc-count', btn).textContent = bc ? `${bc.recorded} of ${bc.total} recorded${bc.extras ? ` · +${bc.extras}` : ''}` : `${c.verses} verses`;
+      btn.addEventListener('click', () => openLearnChapter(c.chapter, { keep: learn.chapter === c.chapter && !learn.free })); // the open chapter again: the verse in view stays
+      host.appendChild(btn);
+    }
+  }
+  const other = document.createElement('button');
+  other.type = 'button';
+  other.className = `ch-card other${learn.free ? ' active' : ''}`;
+  other.innerHTML = '<span class="cc-num">✎</span><span class="cc-name">A text of your own</span><span class="cc-count">not in the Gītā</span>';
+  other.title = 'A sloka, a stotra or any text outside the dataset: name it, and type its words';
+  other.addEventListener('click', () => startFreeLearn());
+  host.appendChild(other);
+}
+
+async function openLearnChapter(n, { keep = false, select = null } = {}) {
+  if (!learn.dataset) return;
+  if (!keep && learn.take && !(await discardLearnTake(`Open chapter ${n}`))) return;
+  learn.free = false;
+  learn.chapter = n;
+  try { localStorage.setItem(LEARN_CHAPTER_KEY, String(n)); } catch { /* ignore */ }
+  const token = ++learn.loading;
+  let ch = null;
+  try { ch = await api.getChapter(learn.dataset, n); } catch (err) { toast(err.message, 'error'); return; }
+  if (token !== learn.loading) return; // a later load took over
+  learn.entries = ch.entries || [];
+  const wantId = select || (keep && learn.verse && learn.verse.chapter === n ? learn.verse.id : null);
+  learn.verse = wantId ? learn.entries.find((e) => e.id === wantId) || null : null;
+  renderLearnChapters();
+  renderLearnVerses();
+  if (learn.verse) renderLearnVerseCard(); else setHidden($('#learn-record'), true);
+}
+
+function renderLearnVerses() {
+  const box = $('#learn-verses');
+  const on = !!(learn.dataset && learn.chapter != null && !learn.free);
+  setHidden(box, !on);
+  if (!on) return;
+  const ch = learn.info.chapters.find((c) => c.chapter === learn.chapter);
+  const has = (e) => !!(e.recordings && e.recordings.length);
+  const verses = learn.entries.filter((e) => e.kind === 'verse' || e.kind === 'combined');
+  const extras = learn.entries.filter((e) => !verses.includes(e) && has(e)).length;
+  $('#learn-verses-title').textContent = `Chapter ${learn.chapter}${ch ? ` · ${chapterName(ch)}` : ''} · ${verses.filter(has).length} of ${verses.length} verses recorded${extras ? ` · +${extras}` : ''}`;
+  const grid = $('#learn-verse-grid');
+  grid.innerHTML = '';
+  for (const e of learn.entries) {
+    const recs = e.recordings || [];
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.setAttribute('role', 'listitem');
+    btn.className = `verse-card${recs.length ? ' recorded' : ''}${learn.verse && learn.verse.id === e.id ? ' active' : ''}`;
+    btn.innerHTML = '<span class="vc-id"></span><span class="vc-text"></span><span class="vc-status"></span>';
+    $('.vc-id', btn).textContent = verseShort(e);
+    const txt = $('.vc-text', btn);
+    txt.textContent = scriptText((e.deva && e.deva[0]) || (e.speaker && e.speaker.deva) || '');
+    txt.lang = sttLanguageTag(displayLanguage());
+    btn.title = verseBody(e, { speakerLine: true });
+    $('.vc-status', btn).textContent = recs.length ? (recs.length > 1 ? `✓ ${recs.length} recordings` : `✓ ${fmtDay(recs[0].createdAt)}`) : 'not yet';
+    btn.setAttribute('aria-label', `${e.id}, ${recs.length ? 'recorded' : 'not recorded'}`);
+    btn.addEventListener('click', () => chooseLearnVerse(e));
+    grid.appendChild(btn);
+  }
+  $('#learn-next-unrecorded').disabled = !learn.entries.some((e) => !(e.recordings && e.recordings.length));
+}
+
+async function chooseLearnVerse(e) {
+  if (learn.take && (!learn.take.verse || learn.take.verse.id !== e.id) && !(await discardLearnTake(`Choose ${e.id}`))) return;
+  learn.free = false;
+  learn.verse = e;
+  renderLearnVerses();
+  renderLearnVerseCard();
+  $('#learn-record').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function stepLearnVerse(d) {
+  const i = learn.entries.indexOf(learn.verse);
+  const j = i + d;
+  if (i < 0 || j < 0 || j >= learn.entries.length) return;
+  chooseLearnVerse(learn.entries[j]);
+}
+
+// ---------- the verse in view ----------
+function renderLearnVerseCard() {
+  const e = learn.verse;
+  if (!e) return;
+  setHidden($('#learn-record'), false);
+  setHidden($('#learn-free'), true);
+  setHidden($('#learn-verse-card'), false);
+  for (const sel of ['#learn-verse-prev', '#learn-verse-next']) setHidden($(sel), false);
+  const ch = learn.info.chapters.find((c) => c.chapter === e.chapter);
+  const i = learn.entries.indexOf(e);
+  $('#learn-record-title').textContent = `Record ${e.kind === 'verse' ? `verse ${e.id}` : e.kind === 'combined' ? `verses ${e.id}` : `the ${e.kind} of chapter ${e.chapter}`}`;
+  $('#learn-verse-name').textContent = `Gītā ${e.id}`;
+  $('#learn-verse-sub').textContent = [ch ? chapterName(ch) : '', e.kind === 'verse' && ch ? `verse ${e.verse} of ${ch.verses}` : ''].filter(Boolean).join(' · ');
+  $('#learn-verse-prev').disabled = i <= 0;
+  $('#learn-verse-next').disabled = i < 0 || i >= learn.entries.length - 1;
+  // the speaker line, dimmed on its own line, and whether the recording will include it
+  const sp = e.speaker && e.speaker.deva;
+  const spEl = $('#learn-verse-speaker');
+  setHidden(spEl, !sp);
+  if (sp) { spEl.innerHTML = scriptHtml(sp); spEl.lang = sttLanguageTag(displayLanguage()); }
+  setHidden($('#learn-speaker-line-opt'), !sp);
+  // the verse in the chosen script, in its lines, with its metre and its meaning
+  const text = verseBody(e, { speakerLine: false });
+  const ch2 = text ? identifyChandas(text, { expected: e.metre && e.metre.family ? e.metre.family : null }) : null;
+  const hint = chandasHintOn && ch2 && ch2.family ? chandasLabel(ch2) : '';
+  const hintEl = $('#learn-verse-chandas');
+  hintEl.textContent = hint;
+  hintEl.title = hint ? chandasPattern(ch2) : '';
+  setHidden(hintEl, !hint);
+  const body = $('#learn-verse-body');
+  body.innerHTML = text ? scriptHtml(withDandas(layoutSloka(text, { perPada: ch2 ? ch2.perPada : null, lines: slokaLines }))) : '';
+  body.lang = sttLanguageTag(displayLanguage());
+  setHidden($('#learn-verse-legend'), !(text && marksShown()));
+  const lang = { sanskrit: 'sa', kannada: 'kn', telugu: 'te', english: 'en' }[displayLanguage()] || 'en';
+  const tr = e.translations || {};
+  const meaning = tr[lang] || tr.en || '';
+  $('#learn-verse-meaning').textContent = meaning;
+  setHidden($('#learn-verse-meaning'), !meaning);
+  renderLearnExisting();
+  learnMeta.lockText(true, `The words are the Gītā's — verse ${e.id} of the reference dataset — and are linked to the recording when you save.`);
+  learnDetailsLine();
+}
+
+// The recordings this verse already has, each with a play button (loaded on the first click).
+function renderLearnExisting() {
+  const box = $('#learn-existing');
+  for (const p of learn.players) p.unload();
+  learn.players = [];
+  const recs = (learn.verse && learn.verse.recordings) || [];
+  box.innerHTML = '';
+  setHidden(box, !recs.length);
+  if (!recs.length) return;
+  const lead = document.createElement('span');
+  lead.className = 'muted';
+  lead.textContent = recs.length === 1 ? 'Recorded already:' : `Recorded already, ${recs.length} times:`;
+  box.appendChild(lead);
+  for (const r of recs) {
+    const item = document.createElement('span');
+    item.className = 'learn-existing-item';
+    item.innerHTML = '<button class="btn-play small" type="button" aria-label="Play"><svg class="ico-play" viewBox="0 0 24 24"><path fill="currentColor" d="M8 5v14l11-7z"/></svg><svg class="ico-pause" viewBox="0 0 24 24"><path fill="currentColor" d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg></button><b class="name"></b><span class="muted small when"></span>';
+    $('.name', item).textContent = r.name;
+    $('.when', item).textContent = ` · ${r.folder ? `${r.folder} · ` : ''}${fmtDate(r.createdAt)} · ${fmtTime(r.duration)}`;
+    const btn = $('button', item);
+    let player = null;
+    btn.addEventListener('click', async () => {
+      if (!player) {
+        btn.disabled = true;
+        const p = new Player();
+        const sync = () => { btn.classList.toggle('playing', p.playing); btn.setAttribute('aria-label', p.playing ? 'Pause' : 'Play'); };
+        for (const ev of ['play', 'pause', 'ended']) p.addEventListener(ev, sync);
+        try { await p.load(await api.fetchAudioBlob(r.id)); } catch { toast('This recording could not be loaded.', 'error'); btn.disabled = false; return; }
+        player = p;
+        learn.players.push(p);
+        btn.disabled = false;
+      }
+      for (const p of learn.players) if (p !== player && p.playing) p.pause();
+      if (learnPreview.playing) learnPreview.pause();
+      getCtx();
+      player.toggle();
+    });
+    box.appendChild(item);
+  }
+}
+
+// "Recording details · Hari (adult) · recited" on the fold, so the fold can stay closed
+function learnDetailsLine() {
+  const m = learnMeta.read();
+  const sp = m.speaker ? profileById(m.speaker.profileId) : null;
+  const st = STYLE_MODES.find((x) => x.id === (m.style && m.style.mode));
+  $('#learn-details-sub').textContent = `· ${sp ? sp.name : 'recorded by no one in particular'}${st ? ` · ${st.label.toLowerCase()}` : ''}${m.style && m.style.tradition ? ` · ${m.style.tradition}` : ''}`;
+}
+$('#learn-meta').addEventListener('change', learnDetailsLine);
+$('#learn-meta').addEventListener('input', learnDetailsLine);
+
+// A text outside the dataset: the record card without a verse, the details open for the words.
+async function startFreeLearn() {
+  if (learn.take && learn.take.verse && !(await discardLearnTake('Record a text of your own'))) return;
+  learn.free = true;
+  learn.verse = null;
+  renderLearnChapters();
+  renderLearnVerses();
+  setHidden($('#learn-record'), false);
+  setHidden($('#learn-verse-card'), true);
+  setHidden($('#learn-free'), false);
+  setHidden($('#learn-speaker-line-opt'), true);
+  for (const sel of ['#learn-verse-prev', '#learn-verse-next']) setHidden($(sel), true);
+  $('#learn-record-title').textContent = 'Record a text of your own';
+  learnMeta.lockText(false);
+  $('#learn-details').open = true;
+  learnDetailsLine();
+  $('#learn-record').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ---------- the take: discard, record, a file ----------
+async function discardLearnTake(action) {
+  const what = learn.take.verse ? `Gītā ${learn.take.verse.id}` : 'your text';
+  const ok = await askDialog({ title: `${action}?`, message: `The recording of ${what} has not been saved; it will be discarded.`, input: false, okText: 'Discard it', danger: true });
+  if (ok) discardLearn();
+  return !!ok;
+}
+function discardLearn() {
+  learnPreview.unload();
+  learn.take = null;
+  learn.nameEdited = false;
+  setHidden($('#learn-preview'), true);
+  learnUI.reset();
+  $('#learn-name').value = '';
+  $('#learn-overwrite').innerHTML = '';
+}
+$('#learn-discard').addEventListener('click', () => { discardLearn(); if (learn.free) learnMeta.reset(); });
 
 $('#learn-rec').addEventListener('click', async () => {
   const rec = getLearnRecorder();
@@ -1135,20 +1383,11 @@ $('#learn-rec').addEventListener('click', async () => {
     if (take.duration < 0.5) { toast('Hardly any sound was heard. Try again.', 'error'); return; }
     take.blob = encodeWav(take.samples, take.sampleRate);
     take.edit = { trimStartSec: removedStart, trimEndSec: removedEnd };
-    learnTake = take;
-    $('#learn-trim-info').textContent = info;
-    $('#learn-prev-wave')._peaks = null;
-    await learnPreview.load(take.blob);
-    $('#learn-name').value = await defaultName();
-    setHidden($('#learn-preview'), false);
-    drawLearnPreview();
-    $('#learn-name').focus();
-    learnPanel.reset();
-    showLearnVerse(learnPanel, $('#learn-name').value, learnFolder()); // the Gītā's words for this name, not a transcription
+    await openLearnReview(take, 'mic', info);
   } else {
+    if (learn.take && !(await discardLearnTake('Record again'))) return;
     try {
-      learnPreview.pause();
-      setHidden($('#learn-preview'), true);
+      for (const p of learn.players) if (p.playing) p.pause();
       learnUI.reset();
       await rec.start();
       learnUI.setRecording(true);
@@ -1158,50 +1397,151 @@ $('#learn-rec').addEventListener('click', async () => {
   }
 });
 
-$('#learn-discard').addEventListener('click', () => {
-  learnPreview.unload();
-  learnTake = null;
-  setHidden($('#learn-preview'), true);
-  learnUI.reset();
-  learnPanel.cancel();
-  learnPanel.reset();
-  learnMeta.reset();
+// A file is kept whole — converted to a mono 16-bit WAV, trimmed only when the tick says so.
+$('#learn-file-browse').addEventListener('click', () => $('#learn-file-input').click());
+$('#learn-file-input').addEventListener('change', async (e) => {
+  const f = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (!f) return;
+  if (learn.take && !(await discardLearnTake(`Use ${f.name}`))) return;
+  try {
+    getCtx();
+    toast(`Loading ${f.name}…`, 'info', 1500);
+    const dec = await decodeBlob(f);
+    if (!dec || dec.duration < 0.5) { toast('That file is too short.', 'error'); return; }
+    const take = { samples: dec.samples, sampleRate: dec.sampleRate, duration: dec.duration, blob: encodeWav(dec.samples, dec.sampleRate), edit: null, fileName: f.name };
+    await openLearnReview(take, 'file', `${f.name} · ${fmtTime(dec.duration)} · ${dec.sampleRate} Hz`);
+  } catch (err) {
+    toast(err.message || 'Could not load this file.', 'error', 5000);
+  }
 });
 
-// Saving never waits for a transcript that is still being written: the sloka is stored now
-// and the transcript joins it when the worker is done. `adjust` maps the transcript to the
-// saved audio (timings shift when the start was trimmed).
-function saveTranscriptLater(late, rec, adjust = (t) => t) {
-  late.then((t) => {
-    if (!t) return;
-    const tr = adjust(t);
-    return api.putTranscript(rec.id, tr).then((store) => {
-      const b = practice.bases.get(rec.id);
-      if (b) {
-        b.transcripts = store;
-        if (!b.transcript) { b.transcript = transcriptIn(store); if (practice.activeId === rec.id && b.transcript) practicePanel.set(b.transcript, store); }
-      }
-      notifyTranscripts(rec.id, store);
-      toast(`Transcript added to "${rec.name}".`, 'success');
-    }, () => toast(`The transcript of "${rec.name}" could not be saved.`, 'error'));
-  });
+// ---------- the review: hear it, name it, where it goes, what it replaces ----------
+async function openLearnReview(take, source, info) {
+  take.source = source;
+  take.verse = learn.free ? null : learn.verse;
+  learn.take = take;
+  learn.nameEdited = false;
+  $('#learn-preview-title').textContent = source === 'file' ? 'The file' : 'What SlokAbhyasa heard';
+  $('#learn-trim-info').textContent = info || '';
+  setHidden($('#learn-file-trim-row'), source !== 'file');
+  $('#learn-file-trim').checked = false;
+  $('#learn-prev-wave')._peaks = null;
+  await learnPreview.load(take.blob);
+  setHidden($('#learn-preview'), false);
+  drawLearnPreview();
+  await fillLearnFolderChoice();
+  renderLearnOverwrite();
+  await suggestLearnName();
+  if (!take.verse && !$('#learn-name').value && take.fileName) $('#learn-name').value = take.fileName.replace(/\.[^.]+$/, '');
+  $('#learn-preview').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  $('#learn-name').focus();
 }
 
-$('#learn-name').addEventListener('input', learnVerseDebounce(learnPanel, $('#learn-name')));
-$('#learn-folder').addEventListener('change', () => { if (learnTake) showLearnVerse(learnPanel, $('#learn-name').value, learnFolder()); });
+const learnFolder = () => { const v = $('#learn-folder').value; return v === '__new__' ? '' : v; };
+// The folder: the verse's chapter folder (CH-12, or ch12 if that is what the library has;
+// made when saved if it does not exist yet); for a text of your own, the folder used last.
+async function fillLearnFolderChoice(prefer = null) {
+  const sel = $('#learn-folder');
+  const folders = targetFolders(await getFolders(true)).map((f) => f.path);
+  let want = prefer || '';
+  if (!want) {
+    if (learn.take && learn.take.verse) want = defaultFolderFor(learn.take.verse, folders);
+    else { try { want = localStorage.getItem(LEARN_FOLDER_KEY) || ''; } catch { want = ''; } if (!folders.includes(want)) want = folders[0] || ''; }
+  }
+  const list = folders.slice();
+  if (want && !list.includes(want)) list.unshift(want);
+  sel.innerHTML = '';
+  for (const f of list) { const o = document.createElement('option'); o.value = f; o.textContent = folders.includes(f) ? f : `${f} (new)`; sel.appendChild(o); }
+  const nw = document.createElement('option');
+  nw.value = '__new__';
+  nw.textContent = 'New folder…';
+  sel.appendChild(nw);
+  sel.value = want || list[0] || '__new__';
+}
+$('#learn-folder').addEventListener('change', async (e) => {
+  const sel = e.target;
+  if (sel.value === '__new__') {
+    const name = await askDialog({ title: 'New folder', label: 'Folder name', value: '', okText: 'Create' });
+    let made = '';
+    if (name) { try { made = (await api.createFolder(name)).path; foldersCache = null; } catch (err) { toast(err.message, 'error'); } }
+    await fillLearnFolderChoice(made || null);
+  }
+  await suggestLearnName();
+});
+$('#learn-name').addEventListener('input', () => { learn.nameEdited = true; });
+
+// The name follows the folder's own pattern (ch12-03 beside ch12-15); a name taken gets " (2)".
+async function suggestLearnName() {
+  if (learn.nameEdited || !learn.take || !learn.take.verse) return;
+  const folder = learnFolder();
+  const lib = await getLibrary();
+  const old = replacedId();
+  const siblings = lib.filter((r) => (r.folder || '') === folder && r.id !== old).map((r) => r.name);
+  $('#learn-name').value = suggestName(learn.take.verse.id, siblings);
+}
+
+// A verse recorded already: replace that recording (its files move to library/backup) or
+// keep it beside the new one. One recording: replacing is offered first; several: keeping.
+function renderLearnOverwrite() {
+  const box = $('#learn-overwrite');
+  const recs = (learn.take && learn.take.verse && learn.take.verse.recordings) || [];
+  box.innerHTML = '';
+  setHidden(box, !recs.length);
+  if (!recs.length) return;
+  const lead = document.createElement('b');
+  lead.textContent = `Gītā ${learn.take.verse.id} is recorded already${recs.length > 1 ? `, ${recs.length} times` : ''}. Replace it, or keep it beside this one?`;
+  box.appendChild(lead);
+  const add = (value, text, checked) => {
+    const l = document.createElement('label');
+    l.className = 'toggle';
+    l.innerHTML = '<input type="radio" name="learn-ow" /><span></span>';
+    const i = $('input', l);
+    i.value = value;
+    i.checked = checked;
+    $('span', l).textContent = text;
+    i.addEventListener('change', () => suggestLearnName());
+    box.appendChild(l);
+  };
+  recs.forEach((r, i) => add(r.id, `Replace ${r.name} (${r.folder ? `${r.folder} · ` : ''}${fmtDate(r.createdAt)} · ${fmtTime(r.duration)}) — its files move to library/backup`, recs.length === 1 && i === 0));
+  add('', recs.length === 1 ? 'Keep it, and add this one' : 'Keep them, and add this one', recs.length > 1);
+}
+const replacedId = () => { const r = $('input[name="learn-ow"]:checked'); return r && r.value ? r.value : null; };
+
 $('#learn-save-form').addEventListener('submit', async (e) => {
   e.preventDefault();
-  if (!learnTake) return;
+  if (!learn.take) return;
   const name = $('#learn-name').value.trim();
   if (!name) return;
   const btn = $('#learn-save');
   btn.disabled = true;
   try {
     learnPreview.pause();
-    const rec = await saveBaseline({ name, ...learnTake, source: 'mic', meta: learnMeta.read() }, learnProgress);
+    const take = learn.take;
+    let t = take;
+    let edit = take.edit || null;
+    if (take.source === 'file' && $('#learn-file-trim').checked) {
+      const r = trimTake(take, true);
+      if (r.changed) { t = { ...take, samples: r.take.samples, duration: r.take.duration, blob: encodeWav(r.take.samples, take.sampleRate) }; edit = { trimStartSec: r.removedStart, trimEndSec: r.removedEnd }; }
+    }
+    const v = take.verse;
+    const speakerLine = v && v.speaker && v.speaker.deva ? $('#learn-speaker-line').checked : true;
+    const verse = v ? { dataset: learn.dataset, id: v.id, speakerLine, body: verseBody(v, { speakerLine }) } : null;
+    const meta = learnMeta.read();
+    const folder = learnFolder();
+    const rec = await saveBaseline({ name, samples: t.samples, sampleRate: t.sampleRate, duration: t.duration, blob: t.blob, source: take.source, meta, edit, verse, folder: folder || null }, learnProgress);
+    if (!v) { try { localStorage.setItem(LEARN_FOLDER_KEY, rec.folder || folder); } catch { /* ignore */ } }
+    const old = replacedId();
+    if (old) { try { await api.deleteBaseline(old, { backup: true }); } catch (err) { toast(`Saved, but the earlier recording could not be replaced: ${err.message}`, 'error', 6000); } }
+    libraryCache = null;
     const link = rec.meta && rec.meta.verse;
-    toast(`Saved "${rec.name}" to the library${link ? `, linked to Gītā ${link.id}: its words are the verse's` : ''}.`, 'success', 4000);
-    $('#learn-discard').click();
+    const typed = !!(meta.text && meta.text.body);
+    const hear = !link && !typed;
+    toast(`Saved "${rec.name}"${link ? ` as Gītā ${link.id}` : ''}${old ? '; the earlier recording is in library/backup' : ''}.${hear ? ' Its words are being heard in the background.' : ''}`, 'success', 4500);
+    if (hear) transcribeSavedInAllLanguages(rec, t.samples, t.sampleRate);
+    discardLearn();
+    if (!v) learnMeta.reset();
+    await afterLearnSave(v);
   } catch (err) {
     toast(err.message, 'error', 6000);
   } finally {
@@ -1210,70 +1550,51 @@ $('#learn-save-form').addEventListener('submit', async (e) => {
   }
 });
 
-async function defaultName() {
-  const list = await getLibrary();
-  return `Sloka ${list.length + 1}`;
+// After a save the chapter is read again (its ticks changed) and the next verse is in view,
+// so a chapter can be recorded verse after verse without going back to the grid.
+async function afterLearnSave(verse) {
+  foldersCache = null;
+  if (!verse) { await refreshLearn(); return; }
+  const i = learn.entries.findIndex((x) => x.id === verse.id);
+  try { learn.info = await api.getReference(learn.dataset); } catch { /* the counts can wait */ }
+  const next = i >= 0 && i < learn.entries.length - 1 ? learn.entries[i + 1] : learn.entries[i] || null;
+  await openLearnChapter(verse.chapter, { keep: true, select: next ? next.id : null });
 }
 
-const LEARN_FOLDER_KEY = 'tutor-learn-folder';
-async function refreshLearnFolders(select) {
-  const sel = $('#learn-folder');
-  const folders = await getFolders(true);
-  let want = select !== undefined ? select : sel.value;
-  if (select === undefined && !sel.dataset.ready) { try { want = localStorage.getItem(LEARN_FOLDER_KEY) || ''; } catch { want = ''; } }
-  sel.innerHTML = '';
-  const targets = targetFolders(folders);
-  if (!targets.length) { const o = document.createElement('option'); o.value = ''; o.textContent = 'Choose a folder…'; sel.appendChild(o); }
-  for (const f of targets) { const o = document.createElement('option'); o.value = f.path; o.textContent = f.path; sel.appendChild(o); }
-  const nw = document.createElement('option');
-  nw.value = '__new__';
-  nw.textContent = 'New folder…';
-  sel.appendChild(nw);
-  sel.value = targets.some((f) => f.path === want) ? want : targets.length ? targets[0].path : '';
-  sel.dataset.ready = '1';
-}
-$('#learn-folder').addEventListener('change', async (e) => {
-  const sel = e.target;
-  if (sel.value !== '__new__') { try { localStorage.setItem(LEARN_FOLDER_KEY, sel.value); } catch { /* ignore */ } return; }
-  const name = await askDialog({ title: 'New folder', label: 'Folder name', value: '', okText: 'Create' });
-  let made = '';
-  if (name) { try { made = (await api.createFolder(name)).path; } catch (err) { toast(err.message, 'error'); } }
-  await refreshLearnFolders(made);
-  try { localStorage.setItem(LEARN_FOLDER_KEY, made); } catch { /* ignore */ }
-});
-const learnFolder = () => { const v = $('#learn-folder').value; return v === '__new__' ? '' : v; };
-// Slokas are always saved in a folder. Asks for one when none is chosen; throws when refused.
+// Slokas are always saved in a folder: the chosen one, else one asked for; throws when refused.
 async function requireLearnFolder() {
   let folder = learnFolder();
   if (folder) return folder;
   folder = await chooseFolder({ title: 'Which folder should this sloka go in?', okText: 'Save here', message: 'Slokas are kept in folders of the library, for example one per chapter.' });
   if (!folder) throw new Error('Choose a folder to save the sloka in.');
-  await refreshLearnFolders(folder);
-  try { localStorage.setItem(LEARN_FOLDER_KEY, folder); } catch { /* ignore */ }
+  await fillLearnFolderChoice(folder);
   return folder;
 }
 
 // Saves a take as a sloka: the WAV, its analysis features and its metadata sidecar (who
-// recorded it, style, text, what was measured in the voice, how it was captured).
-async function saveBaseline({ name, samples, sampleRate, duration, blob, source, meta = null, capture = null, edit = null }, progress) {
-  const folder = await requireLearnFolder();
+// recorded it, style, text, what was measured in the voice, how it was captured). `verse`
+// ({ dataset, id, speakerLine, body }) links it to the verse it was recorded for; without
+// one, a name such as CH12-03 links by itself.
+async function saveBaseline({ name, samples, sampleRate, duration, blob, source, meta = null, capture = null, edit = null, verse = null, folder = null }, progress) {
+  const target = folder || await requireLearnFolder();
   progress.show('Listening closely and remembering…');
   const features = await analyzer.features(samples, sampleRate, (p) => progress.set(p * 0.9));
   if (features.activeFrac < 0.05 || features.peakDb < -40) {
     throw new Error('Hardly any sound was detected. Check the microphone level and try again.');
   }
   progress.set(0.92, 'Saving to the library…');
-  const rec = await api.createBaseline({ name, blob, duration, sampleRate, source, folder, autolink: true }); // CH12-03 → Gītā 12.3, when the dataset is here
+  const rec = await api.createBaseline({ name, blob, duration, sampleRate, source, folder: target, autolink: !verse, verse: verse ? verse.id : null, dataset: verse ? verse.dataset : 'gita', speakerLine: verse ? verse.speakerLine !== false : true });
   try { await api.putFeatures(rec.id, serializeFeatures(features)); } catch { /* cache is optional */ }
   try {
     const m = meta || {};
-    const text = m.text && m.text.body ? deriveText(m.text.body) : null;
+    const text = verse && verse.body ? deriveText(verse.body) : m.text && m.text.body ? deriveText(m.text.body) : null;
     let stats = null;
     try { stats = voiceStats(features, samples, { aksharaCount: text ? text.aksharaCount : null }); } catch { stats = null; }
-    rec.meta = await api.putMeta(rec.id, {
+    // a PATCH changes only these keys, so a linked recording keeps the verse's text
+    rec.meta = await api.patchMeta(rec.id, {
       speaker: m.speaker || null,
       style: m.style || null,
-      text: m.text || null,
+      ...(m.text && m.text.body ? { text: m.text } : {}),
       voice: stats ? stats.voice : null,
       measured: stats ? stats.measured : null,
       capture: capture ? { ...capture, environment: null } : null,
@@ -1284,69 +1605,20 @@ async function saveBaseline({ name, samples, sampleRate, duration, blob, source,
   }
   progress.set(1, 'Done');
   libraryCache = null;
+  foldersCache = null;
   return rec;
 }
 
-// Learn › file tab
-let learnFile = null;
-const drawLearnFile = () => { if (learnFile) drawWaveform($('#learn-file-wave'), learnFile.samples, { progress: 0 }); };
-redraws.add(drawLearnFile);
-const learnFilePanel = createTranscriptPanel($('#learn-file-transcript'), { title: 'Sloka text', editable: false, emptyText: 'Name the sloka as a verse of the Gītā (CH12-03 for 12.3, in a chapter folder) and its words appear here; otherwise type its text under Details below. The file itself is not transcribed.' });
-$('#learn-file-name-input').addEventListener('input', learnVerseDebounce(learnFilePanel, $('#learn-file-name-input')));
-const learnFileMeta = buildMetaFields($('#learn-file-meta-fields'), { compact: true });
-function setLearnFile(l) {
-  if (learnFile !== l) { learnFilePanel.cancel(); learnFilePanel.reset(); learnFileMeta.reset(); }
-  learnFile = l;
-  setHidden($('#learn-file-none'), !!l);
-  setHidden($('#learn-file-loaded'), !l);
-  if (!l) return;
-  $('#learn-file-name').textContent = l.name;
-  $('#learn-file-meta').textContent = `${fmtTime(l.duration)} · ${l.sampleRate} Hz`;
-  $('#learn-file-name-input').value = l.name.replace(/\.[^.]+$/, '');
-  $('#learn-file-wave')._peaks = null;
-  drawLearnFile();
-  showLearnVerse(learnFilePanel, $('#learn-file-name-input').value, learnFolder());
+{
+  const cb = $('#learn-speaker-line');
+  try { cb.checked = localStorage.getItem(LEARN_SPEAKER_LINE_KEY) !== '0'; } catch { cb.checked = true; }
+  cb.addEventListener('change', () => { try { if (cb.checked) localStorage.removeItem(LEARN_SPEAKER_LINE_KEY); else localStorage.setItem(LEARN_SPEAKER_LINE_KEY, '0'); } catch { /* ignore */ } });
 }
-$('#learn-file-browse').addEventListener('click', () => $('#learn-file-input').click());
-$('#learn-file-change').addEventListener('click', () => $('#learn-file-input').click());
-async function loadFile(file) {
-  try {
-    getCtx();
-    toast(`Loading ${file.name}…`, 'info', 1500);
-    const dec = await decodeBlob(file);
-    setLearnFile({ name: file.name, blob: file, samples: dec.samples, sampleRate: dec.sampleRate, duration: dec.duration });
-  } catch (err) {
-    toast(err.message || 'Could not load this file.', 'error', 5000);
-  }
-}
-$('#learn-file-input').addEventListener('change', async (e) => {
-  const f = e.target.files && e.target.files[0];
-  e.target.value = '';
-  if (!f) return;
-  await loadFile(f);
-  activateTab('learn-file');
-});
-$('#learn-file-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  if (!learnFile) return;
-  const name = $('#learn-file-name-input').value.trim();
-  if (!name) return;
-  const btn = $('#learn-file-save');
-  btn.disabled = true;
-  try {
-    // Re-encode as mono 16-bit WAV so every sloka in the library is uniform.
-    const { take, info, changed, removedStart = 0, removedEnd = 0 } = trimTake(learnFile, $('#learn-file-trim').checked);
-    const blob = encodeWav(take.samples, take.sampleRate);
-    const rec = await saveBaseline({ name, samples: take.samples, sampleRate: take.sampleRate, duration: take.duration, blob, source: 'file', meta: learnFileMeta.read(), edit: { trimStartSec: removedStart, trimEndSec: removedEnd } }, learnProgress);
-    const link = rec.meta && rec.meta.verse;
-    toast(`Saved "${rec.name}" to the library${link ? `, linked to Gītā ${link.id}: its words are the verse's` : ''}.${changed ? ` ${info}` : ''}`, 'success', changed ? 5000 : 4000);
-  } catch (err) {
-    toast(err.message, 'error', 6000);
-  } finally {
-    btn.disabled = false;
-    learnProgress.hide();
-  }
-});
+$('#learn-verse-prev').addEventListener('click', () => stepLearnVerse(-1));
+$('#learn-verse-next').addEventListener('click', () => stepLearnVerse(1));
+$('#learn-next-unrecorded').addEventListener('click', () => { const e = learn.entries.find((x) => !(x.recordings && x.recordings.length)); if (e) chooseLearnVerse(e); });
+// the script or the marks changed: everything written on the page is drawn again
+sttLanguageListeners.add(() => { if (!$('#view-learn').classList.contains('active')) return; renderLearnChapters(); renderLearnVerses(); if (learn.verse && !learn.free) renderLearnVerseCard(); });
 
 // ======================================================================
 // SELF EVALUATION (element ids and identifiers still say "practice")
@@ -1461,7 +1733,29 @@ function earPosition(ear, st) {
 // stays in memory whole, and every sloka's stretch is transcribed from it, so the number is
 // a matter of the machine's memory and patience; a heuristic from navigator.deviceMemory /
 // hardwareConcurrency may replace the constant.
-const MAX_SLOKAS_PER_TAKE = 22;
+// How many slokas one take may hold in Self Evaluation and a quiz: the Settings number (2 to
+// 20, 10 unless changed). Memory and the time to hear the words grow with it.
+const SLOKAS_PER_TAKE_KEY = 'tutor-slokas-per-take';
+const SLOKAS_PER_TAKE_CAP = 20;
+const clampPerTake = (n) => Math.max(2, Math.min(SLOKAS_PER_TAKE_CAP, Math.round(Number(n) || 10)));
+let slokasPerTake = (() => { try { return clampPerTake(localStorage.getItem(SLOKAS_PER_TAKE_KEY) || 10); } catch { return 10; } })();
+{
+  const inp = $('#settings-slokas-per-take');
+  inp.value = String(slokasPerTake);
+  $('#quiz-max').max = String(slokasPerTake);
+  inp.addEventListener('change', () => {
+    slokasPerTake = clampPerTake(inp.value);
+    inp.value = String(slokasPerTake);
+    try { if (slokasPerTake === 10) localStorage.removeItem(SLOKAS_PER_TAKE_KEY); else localStorage.setItem(SLOKAS_PER_TAKE_KEY, String(slokasPerTake)); } catch { /* ignore */ }
+    const qm = $('#quiz-max');
+    qm.max = String(slokasPerTake);
+    if (Number(qm.value) > slokasPerTake) { qm.value = String(slokasPerTake); saveQuizSetup(); }
+    if (!practice.teach) practicePicker.setMode('multi', slokasPerTake);
+    const setup = quizSetup();
+    quizPicker.setMode(setup.mode === 'single' ? 'single' : 'multi', setup.mode === 'single' ? null : setup.max);
+    if (practice.selection.length > slokasPerTake) toast(`A take holds ${slokasPerTake} slokas at most now; untick some before recording.`, 'info', 5000);
+  });
+}
 let practiceRecorder = null;
 function getPracticeRecorder() {
   if (!practiceRecorder) {
@@ -1957,7 +2251,7 @@ function createSlokaPicker(host, { mode = 'multi', max = null, onChange, onActiv
 
 const practicePicker = createSlokaPicker($('#practice-picker'), {
   mode: 'multi',
-  max: MAX_SLOKAS_PER_TAKE,
+  max: slokasPerTake,
   openKey: 'tutor-picker-open',
   onChange: (ids, activated) => setSelection(ids, activated),
   onActivate: (id) => setSelection(practice.selection.includes(id) ? practice.selection : [...practice.selection, id], id),
@@ -1979,7 +2273,7 @@ async function refreshPracticeSelect(selectIds) {
   else if (picked) want = practice.teach ? picked.slice(0, 1) : picked;
   else if (practice.teach) want = practice.selection.includes(practice.activeId) ? [practice.activeId] : practice.selection.slice(0, 1);
   else want = practice.selection.length ? practice.selection : savedSelection();
-  practicePicker.setMode(practice.teach ? 'single' : 'multi');
+  practicePicker.setMode(practice.teach ? 'single' : 'multi', practice.teach ? null : slokasPerTake);
   practicePicker.setRecords(list);
   setHidden($('#practice-base-empty'), list.length > 0);
   renderQuizBox();
@@ -2037,9 +2331,9 @@ function updateRecLabel() {
 // kept, and a take that is already there is compared with any sloka that was added.
 async function setSelection(ids, activate) {
   if (Array.isArray(ids) && ids.length) warmStt(); // the speech model loads now, idle until the first sloka ends
-  if (!practice.quiz && !practice.teach && ids.length > MAX_SLOKAS_PER_TAKE) {
-    toast(`One take holds ${MAX_SLOKAS_PER_TAKE} slokas at most; the first ${MAX_SLOKAS_PER_TAKE} are kept.`, 'info', 6000);
-    ids = ids.slice(0, MAX_SLOKAS_PER_TAKE);
+  if (!practice.quiz && !practice.teach && ids.length > slokasPerTake) {
+    toast(`One take holds ${slokasPerTake} slokas at most (Settings); the first ${slokasPerTake} are kept.`, 'info', 6000);
+    ids = ids.slice(0, slokasPerTake);
   }
   const order = (await getLibrary()).map((r) => r.id);
   practice.selection = order.filter((id) => ids.includes(id));
@@ -3807,7 +4101,7 @@ let quizPicks = []; // ids of the slokas chosen for the next quiz, in the order 
 
 function quizSetup() {
   const mode = ($('input[name="quiz-mode"]:checked') || {}).value === 'single' ? 'single' : 'multiple';
-  const max = Math.max(2, Math.min(MAX_SLOKAS_PER_TAKE, Math.round(Number($('#quiz-max').value) || 10)));
+  const max = Math.max(2, Math.min(slokasPerTake, Math.round(Number($('#quiz-max').value) || 10)));
   return { mode, max };
 }
 function saveQuizSetup() { try { localStorage.setItem(QUIZ_SETUP_KEY, JSON.stringify(quizSetup())); } catch { /* ignore */ } }
@@ -3819,7 +4113,7 @@ function quizCandidates() {
 }
 const quizPicker = createSlokaPicker($('#quiz-picker'), {
   mode: 'multi',
-  max: MAX_SLOKAS_PER_TAKE,
+  max: slokasPerTake,
   openKey: 'tutor-quiz-picker-open',
   pickLabel: 'Include',
   onChange: (ids) => { quizPicks = ids; renderQuizSlokas(); },

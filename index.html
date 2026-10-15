@@ -98,93 +98,109 @@
     <section class="view" id="view-learn" aria-labelledby="learn-title">
       <header class="view-header">
         <h1 id="learn-title">Learn</h1>
-        <p class="subtitle">Let SlokAbhyasa listen and remember a recording. It becomes a sloka you can evaluate yourself against.</p>
+        <p class="subtitle">Record the Gītā one sloka at a time: pick a chapter, pick a verse, recite it, save. The verse's own text becomes the recording's words; nothing you record here is transcribed.</p>
       </header>
 
-      <div class="tabs" role="tablist">
-        <button class="tab active" role="tab" data-tab="learn-mic" type="button">Listen with the microphone</button>
-        <button class="tab" role="tab" data-tab="learn-file" type="button">Use an audio file</button>
+      <!-- 1 · which sloka: the chapters, then the verses of one -->
+      <div class="card learn-card" id="learn-choose">
+        <div class="learn-head">
+          <h2>Which sloka?</h2>
+          <span class="muted small" id="learn-dataset-line"></span>
+        </div>
+        <div class="chapter-strip" id="learn-chapters" aria-label="Chapters"></div>
+        <p class="muted small" id="learn-no-dataset" hidden>No reference dataset was found, so there are no verses to pick from: put the Gītā dataset in <code>reference/gita/</code> (in the project folder or beside your data) and open Learn again. Until then, record a text of your own.</p>
+        <div class="learn-verses" id="learn-verses" hidden>
+          <div class="learn-verses-head">
+            <span class="learn-verses-title" id="learn-verses-title"></span>
+            <div class="grow"></div>
+            <button class="btn btn-ghost btn-sm" id="learn-next-unrecorded" type="button" title="Choose the first verse of this chapter that has no recording yet">Next unrecorded</button>
+          </div>
+          <div class="verse-grid" id="learn-verse-grid" role="list" aria-label="Verses"></div>
+        </div>
       </div>
 
-      <div class="card tab-panel active" id="learn-mic">
+      <!-- 2 · the verse in view, and the record button -->
+      <div class="card learn-card" id="learn-record" hidden>
+        <div class="learn-head">
+          <h2 id="learn-record-title">Record</h2>
+          <div class="grow"></div>
+          <button class="btn btn-ghost btn-sm" id="learn-verse-prev" type="button" aria-label="Previous verse">‹ Previous verse</button>
+          <button class="btn btn-ghost btn-sm" id="learn-verse-next" type="button" aria-label="Next verse">Next verse ›</button>
+        </div>
+        <div class="quiz-texts learn-verse" id="learn-verse-card" hidden>
+          <div class="quiz-text-top">
+            <span class="quiz-text-name" id="learn-verse-name"></span>
+            <span class="muted small" id="learn-verse-sub"></span>
+          </div>
+          <div class="chandas-hint" id="learn-verse-chandas" hidden></div>
+          <div class="muted learn-speaker-line" id="learn-verse-speaker" hidden></div>
+          <div class="stt-text quiz-text-body" id="learn-verse-body"></div>
+          <div class="muted small text-meaning" id="learn-verse-meaning" hidden></div>
+          <div class="muted small mark-legend" id="learn-verse-legend" hidden>Above each akṣara: ◡ laghu (light) · — guru (heavy)</div>
+          <div class="learn-existing" id="learn-existing" hidden></div>
+        </div>
+        <div class="learn-free" id="learn-free" hidden>
+          <p class="muted small">A sloka, stotra or any text that is not in the Gītā. Name it when you save, and type its words under the details below if you have them: they become the words it is judged by. Saved without its words, the recording is heard once in the background, and the transcript can be checked and corrected in the Library.</p>
+        </div>
+
         <div class="rec-stage" id="learn-stage">
           <div class="rec-controls">
             <button class="btn-record" id="learn-rec" type="button" aria-label="Start listening">
               <span class="rec-dot"></span>
             </button>
             <div class="rec-status">
-              <div class="rec-label" id="learn-rec-label">Tap to start listening</div>
+              <div class="rec-label" id="learn-rec-label">Tap, recite the sloka, tap again</div>
               <div class="mono rec-timer" id="learn-timer">0:00.0</div>
             </div>
             <div class="clip" id="learn-clip" title="Too loud – the sound is clipping">CLIP</div>
           </div>
           <div class="meter" aria-hidden="true"><div class="meter-fill" id="learn-meter"></div></div>
           <canvas class="wave wave-live" id="learn-live" height="110"></canvas>
-          <p class="muted small">Play the teacher's recording, or sing or recite near the microphone. Tap the button again to stop.</p>
-          <div class="options">
+          <div class="options learn-options">
             <label class="toggle"><input type="checkbox" id="learn-trim" checked /><span>Trim silence at the start and end</span></label>
+            <label class="toggle" id="learn-speaker-line-opt" hidden title="The verse opens with a speaker line (śrībhagavān uvāca, arjuna uvāca…). Tick it when you recite that line too; the recording's words then include it."><input type="checkbox" id="learn-speaker-line" checked /><span>The recording includes the speaker line</span></label>
+            <div class="grow"></div>
+            <input type="file" id="learn-file-input" accept="audio/*" hidden />
+            <button class="btn btn-ghost btn-sm" id="learn-file-browse" type="button" title="A recording you already have becomes this sloka. The file is kept whole: converted to a mono 16-bit WAV, not trimmed unless you ask.">Use an audio file instead…</button>
           </div>
         </div>
 
-        <div class="preview" id="learn-preview" hidden>
-          <h3>What SlokAbhyasa heard</h3>
-          <canvas class="wave wave-clickable" id="learn-prev-wave" height="110"></canvas>
-          <div class="transport compact">
-            <button class="btn-play small" id="learn-prev-play" type="button" aria-label="Play">
-              <svg class="ico-play" viewBox="0 0 24 24"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
-              <svg class="ico-pause" viewBox="0 0 24 24"><path fill="currentColor" d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>
-            </button>
-            <div class="time mono"><span id="learn-prev-cur">0:00.0</span><span class="muted"> / </span><span id="learn-prev-dur">0:00.0</span></div>
-            <span class="muted small" id="learn-trim-info"></span>
-          </div>
-          <div class="transcript-panel" id="learn-transcript"></div>
-          <p class="muted small">The sloka's words are the Gītā's: name it as a verse (CH12-03 for 12.3, in a chapter folder such as CH-12) and the verse's text is shown here and linked when you save. A sloka outside the Gītā gets its words from the text typed under Details. The recording itself is never transcribed — only what a learner sings is.</p>
-          <form class="save-row" id="learn-save-form">
-            <label class="field grow">
-              <span>Name this sloka</span>
-              <input type="text" id="learn-name" placeholder="e.g. Gayatri mantra – verse 1" maxlength="80" required autocomplete="off" />
-            </label>
-            <label class="field">
-              <span>Folder</span>
-              <select id="learn-folder"></select>
-            </label>
-            <div class="meta-fields" id="learn-meta"></div>
-            <div class="row-actions">
-              <button class="btn btn-ghost" id="learn-discard" type="button">Discard</button>
-              <button class="btn btn-primary" id="learn-save" type="submit">Save to library</button>
-            </div>
-          </form>
-        </div>
+        <details class="learn-details" id="learn-details">
+          <summary>Recording details <span class="muted small" id="learn-details-sub"></span></summary>
+          <div class="meta-fields" id="learn-meta"></div>
+        </details>
       </div>
 
-      <div class="card tab-panel" id="learn-file">
-        <div id="learn-file-none">
-          <p>Use an audio file as the sloka. Ideal when you already have a clean recording from your teacher.</p>
-          <input type="file" id="learn-file-input" accept="audio/*" hidden />
-          <button class="btn btn-primary" id="learn-file-browse" type="button">Choose an audio file</button>
+      <!-- 3 · the take: hear it, name it, save it -->
+      <div class="card learn-card preview" id="learn-preview" hidden>
+        <div class="learn-head"><h2 id="learn-preview-title">What SlokAbhyasa heard</h2></div>
+        <canvas class="wave wave-clickable" id="learn-prev-wave" height="110"></canvas>
+        <div class="transport compact">
+          <button class="btn-play small" id="learn-prev-play" type="button" aria-label="Play">
+            <svg class="ico-play" viewBox="0 0 24 24"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
+            <svg class="ico-pause" viewBox="0 0 24 24"><path fill="currentColor" d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>
+          </button>
+          <div class="time mono"><span id="learn-prev-cur">0:00.0</span><span class="muted"> / </span><span id="learn-prev-dur">0:00.0</span></div>
+          <span class="muted small" id="learn-trim-info"></span>
         </div>
-        <div id="learn-file-loaded" hidden>
-          <div class="track-head">
-            <div class="track-title">
-              <span class="track-name" id="learn-file-name">—</span>
-              <span class="muted small" id="learn-file-meta"></span>
-            </div>
-            <button class="btn btn-ghost btn-sm" id="learn-file-change" type="button">Change file</button>
+        <div class="options" id="learn-file-trim-row" hidden>
+          <label class="toggle"><input type="checkbox" id="learn-file-trim" /><span>Trim silence at the start and end before saving</span></label>
+        </div>
+        <form class="save-row" id="learn-save-form">
+          <label class="field grow">
+            <span>Name this sloka</span>
+            <input type="text" id="learn-name" placeholder="e.g. ch12-03, or Gayatri mantra" maxlength="80" required autocomplete="off" />
+          </label>
+          <label class="field">
+            <span>Folder</span>
+            <select id="learn-folder"></select>
+          </label>
+          <div class="learn-overwrite" id="learn-overwrite" hidden></div>
+          <div class="row-actions">
+            <button class="btn btn-ghost" id="learn-discard" type="button">Discard</button>
+            <button class="btn btn-primary" id="learn-save" type="submit">Save to library</button>
           </div>
-          <canvas class="wave" id="learn-file-wave" height="110"></canvas>
-          <div class="transcript-panel" id="learn-file-transcript"></div>
-          <form class="save-row" id="learn-file-form">
-            <label class="field grow">
-              <span>Name this sloka</span>
-              <input type="text" id="learn-file-name-input" placeholder="Name" maxlength="80" required autocomplete="off" />
-            </label>
-            <label class="toggle"><input type="checkbox" id="learn-file-trim" checked /><span>Trim silence at the start and end</span></label>
-            <div class="meta-fields" id="learn-file-meta-fields"></div>
-            <div class="row-actions">
-              <button class="btn btn-primary" id="learn-file-save" type="submit">Save to library</button>
-            </div>
-          </form>
-        </div>
+        </form>
       </div>
 
       <div class="progress" id="learn-progress" hidden>
@@ -577,7 +593,7 @@
             <div class="field-label">How many slokas</div>
             <label class="toggle"><input type="radio" name="quiz-mode" value="single" /><span>One sloka</span></label>
             <label class="toggle"><input type="radio" name="quiz-mode" value="multiple" checked /><span>Several slokas, at most</span>
-              <input type="number" class="num" id="quiz-max" min="2" max="22" value="10" aria-label="Maximum number of slokas" /></label>
+              <input type="number" class="num" id="quiz-max" min="2" max="20" value="10" aria-label="Maximum number of slokas" /></label>
             <div class="grow"></div>
             <button class="btn btn-sm" id="quiz-random" type="button" title="Picks from the folders that are open below (from the whole library when none is open), spread across them">Pick at random</button>
             <button class="btn btn-sm btn-primary" id="quiz-start" type="button" disabled>Start quiz…</button>
@@ -633,6 +649,16 @@
         <div class="tol-off">
           <label class="toggle"><input type="checkbox" id="tol-ignore" /><span>Ignore tolerances · scores and grades only</span></label>
           <p class="muted small" id="tol-ignore-note">Nothing is judged within or outside a tolerance: the tiles, report rows and quiz slokas show their scores and grades alone, and a quiz has no "correct" percentage. Attempts and sessions made while this is on record that they were judged without a tolerance; older ones keep theirs.</p>
+        </div>
+      </div>
+
+      <div class="card settings-card">
+        <h2>Several slokas in one take</h2>
+        <div class="settings-row">
+          <label class="field inline"><span>Slokas per take, at most</span>
+            <input type="number" class="num" id="settings-slokas-per-take" min="2" max="20" value="10" aria-label="Slokas per take, at most" />
+          </label>
+          <span class="muted small">How many slokas Self Evaluation and a quiz let you tick for one recording: 2 to 20, 10 unless you change it. Memory and the time to hear the words grow with the number, so raise it only for a learner who recites a whole chapter in one breath. Learn records one sloka at a time.</span>
         </div>
       </div>
 

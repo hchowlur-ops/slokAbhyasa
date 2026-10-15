@@ -26,7 +26,7 @@ if errorlevel 1 (
 )
 
 echo Starting the SlokAbhyasa server on http://127.0.0.1:%PORT%/ ...
-start "SlokAbhyasa server (port %PORT%)" cmd /k "cd /d "%~dp0" && set PORT=%PORT% && node serve.js"
+call start "SlokAbhyasa server (port %PORT%)" cmd /k "cd /d "%~dp0" && set PORT=%PORT% && node serve.js"
 rem wait until it answers (up to 20 s), then say so — and open the app when asked
 powershell -NoProfile -ExecutionPolicy Bypass -Command "for ($i = 0; $i -lt 40; $i++) { try { Invoke-WebRequest -UseBasicParsing ('http://127.0.0.1:' + $env:PORT + '/') -TimeoutSec 1 | Out-Null; exit 0 } catch { Start-Sleep -Milliseconds 500 } }; exit 1"
 if errorlevel 1 (

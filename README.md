@@ -96,38 +96,64 @@ localhost is, so do not open `index.html` directly from the file system.
 ## Workflows
 
 ### Learn
-The recording itself is never transcribed. A sloka's **words** are the Gītā's: name it as a
-verse (CH12-03 for 12.3, in a chapter folder such as CH-12) and the verse's text is shown in
-the "Sloka text" panel as you type the name and linked when you save; a sloka outside the
-Gītā gets its words from the text typed under Details. The same holds in Self Evaluation
-and a quiz: only what the learner sang is heard, and the sloka's side of the word
-comparison is the verse's text, or the typed text, or a transcript someone corrected in the
-Library — never Whisper's hearing of the teacher. A sloka with none of these shows a note
-saying so, and its word categories are not judged.
+Learn records the Gītā **one sloka at a time**. The page opens on the **chapters**: one card
+each, with the chapter's name in the chosen script and how many of its verses have a
+recording ("4 of 20 recorded", with a small bar). Open a chapter and its **verses** appear
+as cards in order — the number, the first words, and a tick with the date when a recording
+exists, "not yet" when none does — the colophon last. "Next unrecorded" picks the first
+verse without a recording. One chapter is in view at a time, so a session never crosses a
+chapter boundary. The chapter last opened is remembered.
 
-* **Listen with the microphone** – tap the red button, play or perform the material, tap again.
-  Review what SlokAbhyasa heard, name it, save.
-* **Use an audio file** – pick a file and save it directly as a sloka. Files are converted to
-  mono 16-bit WAV.
+Choose a verse and the **record card** shows it: "Gītā 12.3 · भक्तियोग · verse 3 of 20",
+the text in the chosen script (with ◡ laghu and — guru when the marks are on), the chandas
+hint, the meaning in the chosen language, and the recordings the verse already has, each
+with a play button. A verse that opens with a speaker line (śrībhagavān uvāca…) shows it
+dimmed above the text, with a tick "The recording includes the speaker line" (on unless you
+untick it; remembered) that decides whether the recording's words include that line.
+Previous / Next verse move within the chapter. Tap the red button, recite, tap again.
 
-The save row has a **Folder** choice: any existing folder of the library, or "New folder…"
-to make one. Every sloka lives in a folder; there is no saving at the top level of the
-library, and if no folder exists yet you are asked to name the first one when you save.
-Folders are how the Quiz offers its material (a chapter per folder, say). The last folder used
-is remembered.
+The **take** then shows its waveform with Play and what the trimmer removed, a suggested
+**name** that follows the folder's own pattern (ch12-03 beside ch12-15, CH12-03 beside
+CH12-04, CH12-03 when the folder is new), and the **folder** — the chapter's (CH-12, or
+whatever the library calls it; made when you save if it does not exist yet), or any other,
+or "New folder…". When the verse is **recorded already**, a notice names the recording
+with its date and length and asks: *Replace it* — its WAV and sidecars move to
+`library/backup`, nothing is deleted — or *Keep it, and add this one*, which gets the next
+free name ("ch12-03 (2)"). With one existing recording Replace is offered first; with
+several, Keep. Save, and the chapter is read again, the tick appears, and the **next verse
+is in view**, so a chapter can be recorded verse after verse without going back to the grid.
 
-Silence (and stray clicks) at the start and end of a take are trimmed automatically before
-saving; untick "Trim silence at the start and end" to keep a recording as it was captured.
-The trimmer reads the room from the lead and the tail of the take (before the first and
-after the last loud moment, less the microphone's settling and a breath), so a steady room
-noise is never taken for sound; the cut keeps 120 ms before the first sound and 220 ms after
-the last.
-A short lead-in (about a tenth of a second) and the natural decay at the end are kept.
+The recording is **linked to the verse exactly** — the one you chose, not a guess from the
+name — and the verse's text from the reference dataset becomes its words (the Library's
+Details show the link and the text, read-only). Nothing recorded here is transcribed.
+**Recording details** — who recorded it, how it is judged, a tradition — fold under the
+record button; the fold's summary line shows the current choice, and the choice is
+remembered.
 
-Saving also analyses the recording once and caches the result next to the WAV, so evaluating
-yourself against it later starts instantly.
+**Use an audio file instead…** takes a recording you already have, for the verse in view
+or for a text of your own: it is converted to a mono 16-bit WAV and kept whole — trimmed
+only if you tick "Trim silence" on the review — and goes through the same name, folder and
+replace-or-keep step.
 
-**Details of a sloka.** Under the name and folder, three optional fields are saved with the
+**A text of your own** (the dashed card after the chapters) is for anything not in the
+Gītā: a stotra, a mantra, another text. The details open with the **Text** field unlocked;
+type the words and they become the sloka's reference text. Saved without a text, the
+recording is heard once in the background by Whisper (Sanskrit; the sidebar shows the
+progress, with Stop), and the transcript can be checked and corrected in the Library's
+Transcript panel. The folder used last for such texts is remembered. Without a reference
+dataset at all (no `reference/gita/`), Learn says so and offers the free text alone; see
+"The Bhagavad Gītā reference dataset" below.
+
+Silence (and stray clicks) at the start and end of a microphone take are trimmed
+automatically before saving; untick "Trim silence at the start and end" to keep a recording
+as it was captured. The trimmer reads the room from the lead and the tail of the take
+(before the first and after the last loud moment, less the microphone's settling and a
+breath), so a steady room noise is never taken for sound; the cut keeps 120 ms before the
+first sound and 220 ms after the last. A short lead-in (about a tenth of a second) and the
+natural decay at the end are kept. Saving also analyses the recording once and caches the
+result next to the WAV, so evaluating yourself against it later starts instantly.
+
+**Details of a sloka.** Under the record button, three optional fields are saved with the
 sloka and used when it is evaluated against:
 
 * **Recorded by** – the person whose voice this is, from the People list (see "Who's
@@ -138,10 +164,11 @@ sloka and used when it is evaluated against:
   matter of style, shown but not scored), Vedic with svaras (pitch counts as a melody), a
   stotra or bhajan *sung*, a poem, prose, a song, Indian classical. A tradition or school
   (Śṛṅgeri, Kāñcī…) can be noted beside it.
-* **Text** – the words as they should be recited, one pāda or line per row. SlokAbhyasa
-  derives the script, the number of akṣaras and the pādas (on `।` and `॥`), measures the pace
-  of the recording in akṣaras per second, and uses the text as the reference for the
-  pronunciation score instead of the recording's own transcript, which may itself have errors.
+* **Text** – for a text of your own, the words as they should be recited, one pāda or line
+  per row; for a verse of the Gītā the field shows the verse's text and is not edited.
+  SlokAbhyasa derives the script, the number of akṣaras and the pādas (on `।` and `॥`),
+  measures the pace of the recording in akṣaras per second, and uses the text as the
+  reference for the pronunciation score.
 
 The last person and style used are remembered. Slokas saved before these fields existed get a
 details file on the next start, with nothing guessed: open **Details** in the Library to fill
@@ -318,8 +345,8 @@ stops has its stretch closed at once, so its words start at the stop rather than
 after another in the background until none is left, so the words of every sloka but the
 last are ready when the take stops. The count is a guide, not a judge: the comparison
 afterwards finds each sloka in the take on its own, and a page turned by hand still works.
-One take holds **22 slokas at most** — a chapter's worth; the number stands in for a
-heuristic from the machine's memory and cores that may replace it. The speech
+One take holds as many slokas as **Slokas per take** in Settings allows — 10 unless you
+change it, 20 at most; memory and the time to hear the words grow with the number. The speech
 model is loaded in its worker as soon as a sloka is ready to be recited, so neither the
 recording nor the page feels the loading — the worker is its own thread, and the recording
 runs on the audio thread. Tick another
@@ -732,6 +759,10 @@ recordings, by profile id (names stay in `profiles.json`), and
 it earned, with the slokas it was earned with.
 
 ### Settings
+**Several slokas in one take** — *Slokas per take, at most* (2 to 20; 10 by default) is how
+many slokas Self Evaluation and a quiz let you tick for one recording; the quiz setup's
+"at most" field is capped by it. Learn records one sloka at a time.
+
 Four cards, all remembered in the browser: **Weights** (what the overall score is made of,
 see "What is scored"; "Defaults" restores the recommended 30/25/15/10/10/5/5; the switch
 for grades with an emoji and a word of encouragement, or plain labels; and the badge rule,

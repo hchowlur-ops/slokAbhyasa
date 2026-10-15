@@ -64,6 +64,33 @@ export function defaultFolderFor(v, folders = []) {
   return folders.find((f) => re.test(f)) || `CH-${pad2(p.chapter)}`;
 }
 
+// The name a new recording of a verse gets in Learn, following the names already in its
+// folder: "ch12-03" beside "ch12-15", "CH12-03" beside "CH12-04", "ch12-colophon" beside
+// either; the default (CH12-03) when no sibling names a verse of the chapter. A name a
+// sibling already has gets " (2)", " (3)"… so two recordings of a verse stay apart.
+export function suggestName(v, siblings = []) {
+  const p = parsed(v);
+  if (!p) return '';
+  let name = defaultNameFor(p);
+  if (p.chapter != null) {
+    for (const s of siblings) {
+      const m = String(s || '').match(/^([A-Za-z ]*)(\d{1,2})([-_. ])(\d{1,3})$/);
+      if (!m || Number(m[2]) !== p.chapter) continue;
+      const width = m[4].length === 1 ? 1 : m[4].length;
+      const padN = (n) => String(n).padStart(width, '0');
+      const head = `${m[1]}${m[2]}${m[3]}`;
+      if (p.kind === 'verse') name = `${head}${padN(p.verse)}`;
+      else if (p.kind === 'combined') name = `${head}${padN(p.verse)}${m[3]}${padN(p.verseEnd)}`;
+      else name = `${head}${p.kind}`;
+      break;
+    }
+  }
+  const taken = new Set(siblings.map((s) => String(s || '').toLowerCase()));
+  let out = name;
+  for (let n = 2; taken.has(out.toLowerCase()); n++) out = `${name} (${n})`;
+  return out;
+}
+
 // The text a recording is made against: the speaker line (when it is recited) on a line of
 // its own, then the half-verses.
 export function verseBody(entry, { speakerLine = true } = {}) {

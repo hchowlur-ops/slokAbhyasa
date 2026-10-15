@@ -12,8 +12,10 @@ export async function listBaselines() {
   return res.json();
 }
 
-export async function createBaseline({ name, blob, duration, sampleRate, source, folder = '', autolink = false }) {
-  const q = new URLSearchParams({ name, duration: String(duration), sampleRate: String(sampleRate), source, folder, ...(autolink ? { autolink: '1' } : {}) });
+// verse: the dataset verse the recording is of (Learn), linked exactly by the server; autolink: a
+// name such as CH12-03 links by itself.
+export async function createBaseline({ name, blob, duration, sampleRate, source, folder = '', autolink = false, verse = null, dataset = 'gita', speakerLine = true }) {
+  const q = new URLSearchParams({ name, duration: String(duration), sampleRate: String(sampleRate), source, folder, ...(autolink && !verse ? { autolink: '1' } : {}), ...(verse ? { verse, dataset, speakerLine: speakerLine ? '1' : '0' } : {}) });
   const res = await check(await fetch(`/api/baselines?${q}`, { method: 'POST', headers: { 'Content-Type': 'audio/wav' }, body: blob }));
   return res.json();
 }
@@ -34,8 +36,9 @@ export async function renameBaseline(id, name) {
   return res.json();
 }
 
-export async function deleteBaseline(id) {
-  await check(await fetch(`/api/baselines/${encodeURIComponent(id)}`, { method: 'DELETE' }));
+// backup: the WAV and its sidecars are moved to library/backup first (a recording replaced in Learn)
+export async function deleteBaseline(id, { backup = false } = {}) {
+  await check(await fetch(`/api/baselines/${encodeURIComponent(id)}${backup ? '?backup=1' : ''}`, { method: 'DELETE' }));
 }
 
 // Trims silence at both ends of the stored WAV. Returns { changed, removedStart, removedEnd, duration }.

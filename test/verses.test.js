@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { parseVerseId, verseIdFor, defaultNameFor, defaultFolderFor, verseBody, normalizeVerseText, verseHashInput, compareVerseOrder, mapNameToVerse, combinedEntry, validateDataset, coverage, verseLink, linkHashInput, sanitizeCustom, mergeCustom, verseTranscript, heardTranscript, versePlan } from '../js/verses.js';
+import { parseVerseId, verseIdFor, defaultNameFor, defaultFolderFor, suggestName, verseBody, normalizeVerseText, verseHashInput, compareVerseOrder, mapNameToVerse, combinedEntry, validateDataset, coverage, verseLink, linkHashInput, sanitizeCustom, mergeCustom, verseTranscript, heardTranscript, versePlan } from '../js/verses.js';
 
 const mini = JSON.parse(fs.readFileSync(new URL('./fixtures/reference/gita-mini/verses.json', import.meta.url), 'utf8'));
 const miniManifest = JSON.parse(fs.readFileSync(new URL('./fixtures/reference/gita-mini/manifest.json', import.meta.url), 'utf8'));
@@ -189,4 +189,19 @@ test('versePlan: a verse\'s akṣara plan by its metre, without the speaker line
   assert.deepEqual(cp.checkpoints, [8, 16, 26, 36]);
   assert.equal(sanitizeCustom({ aksharaPlan: { padas: [] } }), null, 'an empty plan is no plan');
   assert.equal(sanitizeCustom({ aksharaPlan: { padas: [0, -1, 'x'] } }), null);
+});
+
+test("suggestName follows the folder's pattern and avoids names taken", () => {
+  assert.equal(suggestName('12.3', []), 'CH12-03');
+  assert.equal(suggestName('12.3', ['ch12-15', 'ch12-16']), 'ch12-03');
+  assert.equal(suggestName('12.3', ['CH12-04']), 'CH12-03');
+  assert.equal(suggestName('12.3', ['ch12-7']), 'ch12-3');
+  assert.equal(suggestName('12.3', ['Gita 12_04']), 'Gita 12_03');
+  assert.equal(suggestName('12.colophon', ['ch12-15']), 'ch12-colophon');
+  assert.equal(suggestName('1.21-22', ['ch01-05']), 'ch01-21-22');
+  assert.equal(suggestName('12.3', ['ch12-03', 'ch12-04']), 'ch12-03 (2)');
+  assert.equal(suggestName('12.3', ['ch12-03', 'ch12-03 (2)']), 'ch12-03 (3)');
+  assert.equal(suggestName('12.3', ['ch18-66']), 'CH12-03'); // another chapter's names say nothing
+  assert.equal(suggestName('dhyana.1', ['ch12-03']), 'DHYANA-01');
+  assert.equal(suggestName('nonsense', ['ch12-03']), '');
 });

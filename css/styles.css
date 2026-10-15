@@ -1103,3 +1103,46 @@ rt { font-size: 0.5em; line-height: 1; font-weight: 600; color: var(--gold-deep)
 .quiz-table td .mark { margin-left: 4px; font-weight: 700; }
 .quiz-table td .mark.ok { color: var(--accent-strong); }
 .quiz-table td .mark.bad { color: var(--danger); }
+
+/* ---------- Learn: the chapters, the verses of one, the verse in view, the take ---------- */
+.learn-card .learn-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.learn-head h2 { margin: 0; }
+.chapter-strip { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.ch-card, .verse-card {
+  position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-width: 0;
+  padding: 9px 11px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface);
+  cursor: pointer; font: inherit; color: inherit; text-align: left; transition: border-color .12s, transform .12s, box-shadow .12s;
+}
+.ch-card:hover, .verse-card:hover { border-color: var(--accent); transform: translateY(-1px); box-shadow: var(--shadow); }
+.ch-card.active, .verse-card.active { box-shadow: inset 0 0 0 2px var(--accent); border-color: var(--accent); }
+.ch-card .cc-num { font-family: var(--mono); font-weight: 700; font-size: 1.35rem; line-height: 1.1; }
+.ch-card .cc-name { width: 100%; font-size: 0.86rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ch-card .cc-bar { display: block; width: 100%; height: 4px; border-radius: 2px; background: var(--surface-2); overflow: hidden; }
+.ch-card .cc-bar i { display: block; height: 100%; background: var(--gold); transition: width .2s; }
+.ch-card.done .cc-bar i { background: var(--accent); }
+.ch-card .cc-count { font-size: 0.76rem; color: var(--muted); }
+.ch-card.other { border-style: dashed; }
+.ch-card.other .cc-num { color: var(--muted); }
+.learn-verses { margin-top: 14px; }
+.learn-verses-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.learn-verses-title { font-weight: 650; }
+.verse-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; max-height: 46vh; overflow-y: auto; padding: 2px 2px 2px 0; scrollbar-gutter: stable; }
+.verse-card .vc-id { font-family: var(--mono); font-weight: 700; font-size: 0.95rem; }
+.verse-card .vc-text { width: 100%; font-size: 1rem; line-height: 1.5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.verse-card .vc-status { font-size: 0.76rem; color: var(--muted); }
+.verse-card.recorded .vc-status { color: var(--accent-strong); font-weight: 600; }
+.verse-card.recorded { background: color-mix(in srgb, var(--accent-soft) 55%, var(--surface)); }
+.learn-verse { margin-bottom: 14px; }
+.learn-speaker-line { font-size: 1.05rem; margin: 0 0 4px; }
+.learn-existing { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-top: 10px; font-size: 0.9rem; }
+.learn-existing-item { display: inline-flex; align-items: center; gap: 6px; }
+.learn-existing-item .btn-play { width: 30px; height: 30px; }
+.learn-existing-item .btn-play svg { width: 15px; height: 15px; }
+.learn-options { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.learn-free { margin-bottom: 12px; }
+.learn-details { margin-top: 12px; }
+.learn-details summary { cursor: pointer; font-weight: 600; }
+.learn-details[open] summary { margin-bottom: 10px; }
+.learn-overwrite { width: 100%; display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 10px; background: var(--gold-soft); font-size: 0.92rem; }
+.learn-overwrite[hidden] { display: none; }
+:root[data-theme="dark"] .learn-overwrite { background: color-mix(in srgb, var(--gold) 14%, transparent); }

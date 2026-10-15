@@ -237,6 +237,18 @@ const audioPath = (rec) => path.join(LIB, ...rec.file.split('/'));
 const featuresPath = (rec) => path.join(LIB, ...rec.file.replace(/\.wav$/i, '.features.json').split('/'));
 const transcriptPath = (rec) => path.join(LIB, ...rec.file.replace(/\.wav$/i, '.transcript.json').split('/'));
 const textPath = (rec) => path.join(LIB, ...rec.file.replace(/\.wav$/i, '.txt').split('/'));
+// Copies a record's WAV and sidecars into library/backup (the trim's untouched original, when
+// there is one, is left alone: the copy gets a "-replaced-<stamp>" suffix).
+const stamp = () => new Date().toISOString().replace(/[-:]/g, '').replace(/\..*$/, '').replace('T', '-'); // 20261015-071530
+async function backupRecord(rec) {
+  const backupDir = path.join(LIB, 'backup');
+  let target = path.join(backupDir, ...rec.file.split('/'));
+  if (await fileExists(target)) target = target.replace(/\.wav$/i, `-replaced-${stamp()}.wav`);
+  await fsp.mkdir(path.dirname(target), { recursive: true });
+  const side = (p, ext) => p.replace(/\.wav$/i, ext);
+  const pairs = [[audioPath(rec), target], [featuresPath(rec), side(target, '.features.json')], [transcriptPath(rec), side(target, '.transcript.json')], [textPath(rec), side(target, '.txt')], [side(audioPath(rec), '.json'), side(target, '.json')]];
+  for (const [from, to] of pairs) { if (await fileExists(from)) await fsp.copyFile(from, to); }
+}
 
 // Reads the stored transcripts (one per language; see js/transcripts.js). If <name>.txt
 // was edited by hand more recently than the JSON, its text wins for the current language
@@ -975,6 +987,14 @@ async function handleApi(req, res, url) {
     const folder = cleanFolder(url.searchParams.get('folder') || '');
     if (folder === null) return sendJson(res, 400, { error: 'That is not a usable folder name' });
     if (!folder) return sendJson(res, 400, { error: 'Slokas are saved in folders: choose or create one' });
+    // ?verse=12.3&dataset=gita&speakerLine=0|1 (Learn): the verse the teacher chose, linked exactly
+    let chosen = null;
+    if (url.searchParams.get('verse')) {
+      const ds = referenceDataset(String(url.searchParams.get('dataset') || 'gita'));
+      const entry = ds && !ds.errors.length ? referenceVerse(ds, String(url.searchParams.get('verse'))) : null;
+      if (!entry) return sendJson(res, 404, { error: `No verse "${url.searchParams.get('verse')}" in the reference dataset` });
+      chosen = { ds, entry, speakerLineRecited: url.searchParams.get('speakerLine') !== '0' };
+    }
     const rec = {
       id: newId(),
       name,
@@ -990,8 +1010,9 @@ async function handleApi(req, res, url) {
     await writeWavWithBext(rec, body, meta);
     await writeMeta(audioPath(rec), meta);
     await withIndex((list) => { list.push(rec); });
-    // ?autolink=1 (Learn): a name that names a verse of a dataset here links the recording to it
-    if (url.searchParams.get('autolink') === '1') {
+    if (chosen) meta = await linkToVerse(rec, meta, chosen.ds, chosen.entry, { speakerLineRecited: chosen.speakerLineRecited, mappedBy: 'learn' });
+    // ?autolink=1: a name that names a verse of a dataset here links the recording to it
+    else if (url.searchParams.get('autolink') === '1') {
       for (const d of referenceList()) {
         const ds = referenceDataset(d.id);
         if (!ds || ds.errors.length) continue;
@@ -1222,11 +1243,15 @@ async function handleApi(req, res, url) {
   }
 
   // DELETE /api/baselines/:id
+  // DELETE /api/baselines/:id[?backup=1]  — with backup=1 the WAV and its sidecars are moved to
+  // library/backup first (a recording replaced from Learn), beside the originals the trim keeps
   if (req.method === 'DELETE') {
+    const backup = url.searchParams.get('backup') === '1';
     await withIndex(async (l) => {
       const idx = l.findIndex((x) => x.id === id);
       if (idx >= 0) {
         const r = l[idx];
+        if (backup) await backupRecord(r);
         await fsp.rm(audioPath(r), { force: true });
         await fsp.rm(featuresPath(r), { force: true });
         await fsp.rm(transcriptPath(r), { force: true });
