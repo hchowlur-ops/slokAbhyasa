@@ -1146,3 +1146,5 @@ rt { font-size: 0.5em; line-height: 1; font-weight: 600; color: var(--gold-deep)
 .learn-overwrite { width: 100%; display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 10px; background: var(--gold-soft); font-size: 0.92rem; }
 .learn-overwrite[hidden] { display: none; }
 :root[data-theme="dark"] .learn-overwrite { background: color-mix(in srgb, var(--gold) 14%, transparent); }
+.learn-pace { margin: 6px 0 4px; }
+.learn-pace[hidden] { display: none; }

@@ -1370,6 +1370,7 @@ function discardLearn() {
   learnUI.reset();
   $('#learn-name').value = '';
   $('#learn-overwrite').innerHTML = '';
+  setHidden($('#learn-pace'), true);
 }
 $('#learn-discard').addEventListener('click', () => { discardLearn(); if (learn.free) learnMeta.reset(); });
 
@@ -1430,6 +1431,7 @@ async function openLearnReview(take, source, info) {
   await learnPreview.load(take.blob);
   setHidden($('#learn-preview'), false);
   drawLearnPreview();
+  showLearnPace(take);
   await fillLearnFolderChoice();
   renderLearnOverwrite();
   await suggestLearnName();
@@ -1438,6 +1440,44 @@ async function openLearnReview(take, source, info) {
   $('#learn-name').focus();
 }
 
+// The akṣaras the take should hold: the verse's (with its speaker line when the tick says
+// it was recited), or the typed text's; null when neither says.
+function learnAksharaCount() {
+  const v = learn.take && learn.take.verse;
+  if (v) {
+    const sp = !!(v.speaker && v.speaker.deva) && $('#learn-speaker-line').checked;
+    try { const plan = versePlan(v, { speakerLine: sp }); return plan && plan.total ? plan.total : null; } catch { return null; }
+  }
+  const m = learnMeta.read();
+  const t = m.text && m.text.body ? deriveText(m.text.body) : null;
+  return t && t.aksharaCount ? t.aksharaCount : null;
+}
+// The pace of the take on the review card — akṣaras per second of sound, beside the pace
+// the chosen learner has shown — so a recording made at a very different pace from the
+// learner's is noticed before it is saved. The analysis is kept on the take for the save.
+function showLearnPace(take) {
+  const el = $('#learn-pace');
+  el.textContent = 'Measuring the pace…';
+  setHidden(el, false);
+  if (!take.features) take.features = analyzer.features(take.samples, take.sampleRate).catch(() => null);
+  take.features.then((f) => {
+    if (learn.take !== take) return;
+    if (!f) { setHidden(el, true); return; }
+    const aks = learnAksharaCount();
+    let stats = null;
+    try { stats = voiceStats(f, take.samples, { aksharaCount: aks }); } catch { stats = null; }
+    const voice = stats && stats.voice;
+    if (!voice || !(voice.activeSec > 0)) { setHidden(el, true); return; }
+    const bits = [];
+    if (aks && voice.tempoSylPerSec) bits.push(`Pace: ${voice.tempoSylPerSec.toFixed(1)} akṣaras per second — ${aks} akṣaras in ${voice.activeSec.toFixed(1)} s of sound`);
+    else bits.push(`${voice.activeSec.toFixed(1)} s of sound${aks ? ` for ${aks} akṣaras` : ''}`);
+    const lp = learnerPace();
+    if (aks && voice.tempoSylPerSec && lp.aksPerSec) bits.push(`${learnerName() || 'the chosen learner'} recites at about ${lp.aksPerSec.toFixed(1)}`);
+    el.textContent = bits.join(' · ');
+  });
+}
+$('#learn-speaker-line').addEventListener('change', () => { if (learn.take) showLearnPace(learn.take); });
+$('#learn-meta').addEventListener('input', () => { if (learn.take && learn.free) showLearnPace(learn.take); });
 const learnFolder = () => { const v = $('#learn-folder').value; return v === '__new__' ? '' : v; };
 // The folder: the verse's chapter folder (CH-12, or ch12 if that is what the library has;
 // made when saved if it does not exist yet); for a text of your own, the folder used last.
@@ -1529,7 +1569,8 @@ $('#learn-save-form').addEventListener('submit', async (e) => {
     const verse = v ? { dataset: learn.dataset, id: v.id, speakerLine, body: verseBody(v, { speakerLine }) } : null;
     const meta = learnMeta.read();
     const folder = learnFolder();
-    const rec = await saveBaseline({ name, samples: t.samples, sampleRate: t.sampleRate, duration: t.duration, blob: t.blob, source: take.source, meta, edit, verse, folder: folder || null }, learnProgress);
+    const features = t === take && take.features ? await take.features : null; // a trimmed file is analysed afresh
+    const rec = await saveBaseline({ name, samples: t.samples, sampleRate: t.sampleRate, duration: t.duration, blob: t.blob, source: take.source, meta, edit, verse, folder: folder || null, features }, learnProgress);
     if (!v) { try { localStorage.setItem(LEARN_FOLDER_KEY, rec.folder || folder); } catch { /* ignore */ } }
     const old = replacedId();
     if (old) { try { await api.deleteBaseline(old, { backup: true }); } catch (err) { toast(`Saved, but the earlier recording could not be replaced: ${err.message}`, 'error', 6000); } }
@@ -1575,10 +1616,10 @@ async function requireLearnFolder() {
 // recorded it, style, text, what was measured in the voice, how it was captured). `verse`
 // ({ dataset, id, speakerLine, body }) links it to the verse it was recorded for; without
 // one, a name such as CH12-03 links by itself.
-async function saveBaseline({ name, samples, sampleRate, duration, blob, source, meta = null, capture = null, edit = null, verse = null, folder = null }, progress) {
+async function saveBaseline({ name, samples, sampleRate, duration, blob, source, meta = null, capture = null, edit = null, verse = null, folder = null, features: ready = null }, progress) {
   const target = folder || await requireLearnFolder();
   progress.show('Listening closely and remembering…');
-  const features = await analyzer.features(samples, sampleRate, (p) => progress.set(p * 0.9));
+  const features = ready || await analyzer.features(samples, sampleRate, (p) => progress.set(p * 0.9)); // the review's analysis, when it has one
   if (features.activeFrac < 0.05 || features.peakDb < -40) {
     throw new Error('Hardly any sound was detected. Check the microphone level and try again.');
   }

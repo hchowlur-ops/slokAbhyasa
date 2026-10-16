@@ -112,7 +112,10 @@ dimmed above the text, with a tick "The recording includes the speaker line" (on
 untick it; remembered) that decides whether the recording's words include that line.
 Previous / Next verse move within the chapter. Tap the red button, recite, tap again.
 
-The **take** then shows its waveform with Play and what the trimmer removed, a suggested
+The **take** then shows its waveform with Play and what the trimmer removed, its **pace**
+("4.9 akṣaras per second — 39 akṣaras in 7.9 s of sound", with the pace the chosen learner
+has shown beside it, so a recording made much faster or slower than the learner recites is
+noticed before it is saved; the teacher's pace is theirs to choose), a suggested
 **name** that follows the folder's own pattern (ch12-03 beside ch12-15, CH12-03 beside
 CH12-04, CH12-03 when the folder is new), and the **folder** — the chapter's (CH-12, or
 whatever the library calls it; made when you save if it does not exist yet), or any other,
