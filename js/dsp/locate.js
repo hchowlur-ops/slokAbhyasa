@@ -61,6 +61,31 @@ export function sliceFeatures(F, i0, i1, core = null) {
 // (same hysteresis and clean-up as detectActivity). Two recordings made in different rooms
 // get very different automatic thresholds; judging both by one yardstick keeps the pauses
 // of a quiet recording from being reported as extra sound.
+// F as if performed k times slower (k > 1) or faster (k < 1): frame j of the result is
+// frame floor(j / k) of F; the trim marks move with it. Used to read a sloka's recording at
+// the take's pace before the two are aligned (compare's tempoPrior).
+export function stretchFeatures(F, k) {
+  if (!(k > 0) || Math.abs(k - 1) < 1e-3) return F;
+  const n = Math.max(1, Math.round(F.n * k));
+  const src = new Int32Array(n);
+  for (let j = 0; j < n; j++) src[j] = Math.min(F.n - 1, Math.floor(j / k));
+  const out = { ...F, n, duration: n * HOP_SEC, trimStart: Math.min(n - 1, Math.round(F.trimStart * k)), trimEnd: Math.min(n - 1, Math.round(F.trimEnd * k)) };
+  for (const key of Object.keys(F)) {
+    const v = F[key];
+    if (!ArrayBuffer.isView(v)) continue;
+    if (v.length === F.n) {
+      const o = new v.constructor(n);
+      for (let j = 0; j < n; j++) o[j] = v[src[j]];
+      out[key] = o;
+    } else if (v.length === F.n * N_MFCC) {
+      const o = new v.constructor(n * N_MFCC);
+      for (let j = 0; j < n; j++) { const a = src[j] * N_MFCC; for (let c = 0; c < N_MFCC; c++) o[j * N_MFCC + c] = v[a + c]; }
+      out[key] = o;
+    }
+  }
+  return out;
+}
+
 export function rethreshold(F, relThr) {
   const thr = F.peakDb + relThr;
   const n = F.n;

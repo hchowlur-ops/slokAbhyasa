@@ -5,7 +5,7 @@ import { alignLarge, pathMaps } from './dtw.js';
 import { N_MFCC, HOP_SEC, isValidFeatures, WARP_ALPHAS, WARP_UNITY } from './features.js';
 import { detectDeviations, foldOctave } from './deviations.js';
 import { medianOf, slopeOf, clamp } from './util.js';
-import { locate, sliceFeatures, rethreshold } from './locate.js';
+import { locate, sliceFeatures, rethreshold, stretchFeatures } from './locate.js';
 import { presetsFor, ADULT_PRESET, ageGroupLabel } from '../meta.js';
 
 export const RESULT_VERSION = 2;
@@ -70,12 +70,21 @@ const mmss = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart
 // compare(), preceded by a search when one recording is much longer than the other: one
 // verse against a recording of eight, or a long take against a single-verse sloka.
 // All times in the result stay absolute (seconds into the full sloka / full take).
-// Adds: match { contrast, ok, located: 'heard' | 'base' | null }, baseOffset, baseFullDuration.
+// Adds: match { contrast, ok, located: 'heard' | 'base' | 'ear' | null }, baseOffset, baseFullDuration.
+// options.window = [fromSec, toSec]: the stretch of the take the ear closed for this sloka
+// (several slokas in one take) — the sloka is compared with that stretch, whole to whole,
+// and no search runs (located 'ear'). options.locate = false: whole to whole whatever the
+// lengths — one sloka recited slowly is longer than its recording without holding more
+// (the ear counted the sloka's akṣaras in it); length alone cannot tell the two apart.
 export function compareAuto(B, H, options = {}) {
   if (!isValidFeatures(B) || !isValidFeatures(H)) return compare(B, H, options); // throws the right message
   // One yardstick for "sound" in both recordings: the stricter of the two thresholds, each
   // relative to its recording's own peak. Two recordings made in different rooms judge
   // silence very differently, and the pauses of a quiet one must not come out as extra sound.
+  // the take's pace against the sloka's, from how long each sounds — only meaningful when the
+  // two hold the same sloka (the ear's window, or one sloka the ear counted whole)
+  const sounding = (F) => { let a = 0; for (let i = F.trimStart; i <= F.trimEnd; i++) if (F.active[i]) a++; return a; };
+  const paceRatio = (X, Y) => Math.max(0.4, Math.min(2.5, sounding(Y) / Math.max(1, sounding(X))));
   const relB = B.thrDb - B.peakDb;
   const relH = H.thrDb - H.peakDb;
   const relBoth = Number.isFinite(relB) && Number.isFinite(relH) ? Math.max(relB, relH) : NaN;
@@ -93,7 +102,28 @@ export function compareAuto(B, H, options = {}) {
   let res = null;
   let located = null;
   let contrast = null;
-  if (options.locate !== false && (ratio >= LOCATE_RATIO || ratio <= 1 / LOCATE_RATIO)) {
+  const win = Array.isArray(options.window) && options.window.length === 2 && options.window[1] > options.window[0] ? options.window : null;
+  if (win) {
+    // the ear's stretch, with a little room at both ends: what crept in from the slokas
+    // around it is dropped as edge material below, as a located window's is
+    const w0 = Math.max(0, Math.round(win[0] / HOP_SEC));
+    const w1 = Math.min(H.n - 1, Math.round(win[1] / HOP_SEC));
+    const i0 = Math.max(0, w0 - LOCATE_PAD);
+    const i1 = Math.min(H.n - 1, w1 + LOCATE_PAD);
+    if (i1 - i0 >= 2 * LOCATE_PAD + 10) {
+      const Hc = sliceFeatures(H, i0, i1, [w0, w1]);
+      const [Bw, Hw] = harmonise(B, Hc);
+      const prior = paceRatio(Bw, Hw);
+      res = compare(Bw, Hw, { ...options, tempoPrior: prior, spanBoth: true }); // the stretch is the sloka: aligned end to end, so its first words are never left over
+      shiftHeard(res, i0, H);
+      res.deviations = res.deviations.filter((d) => !(d.edge && d.type === 'extra' && d.types.length === 1));
+      const Bk = stretchFeatures(Bw, prior);
+      const loc = Bk.n <= Hw.n ? locate(Bk, Hw) : locate(Hw, Bk);
+      contrast = loc ? loc.contrast : null;
+      located = 'ear';
+    }
+  }
+  if (!res && options.locate !== false && (ratio >= LOCATE_RATIO || ratio <= 1 / LOCATE_RATIO)) {
     // The search runs on each recording as it judged itself; the yardstick is applied to the
     // window it finds, against the window's own peak. The whole recording's peak may belong
     // to another, louder sloka, and judged against that one the quieter syllables of this
@@ -117,8 +147,11 @@ export function compareAuto(B, H, options = {}) {
   }
   if (!res) {
     const [Bh, Hh] = harmonise(B, H);
-    res = compare(Bh, Hh, options);
-    const loc = spanB <= spanH ? locate(Bh, Hh) : locate(Hh, Bh);
+    // one sloka at whatever pace (locate false): the pace read off steadies the alignment
+    const prior = options.locate === false ? paceRatio(Bh, Hh) : 1;
+    res = compare(Bh, Hh, options.locate === false ? { ...options, tempoPrior: prior, spanBoth: true } : options);
+    const Bk = stretchFeatures(Bh, prior);
+    const loc = Bk.trimEnd - Bk.trimStart <= Hh.trimEnd - Hh.trimStart ? locate(Bk, Hh) : locate(Hh, Bk);
     contrast = loc ? loc.contrast : null;
   }
   if (res.baseOffset === undefined) { res.baseOffset = 0; res.baseFullDuration = B.duration; }
@@ -130,6 +163,7 @@ export function compareAuto(B, H, options = {}) {
   if (headroom < NOISY_BELOW_DB) notes.push(`The sloka's recording is noisy (its voice is only ${Math.round(headroom)} dB above the room), which blurs the comparison; recording it again in a quiet moment would make every evaluation against it more reliable.`);
   if (located === 'heard') notes.push(`Your recording is longer than this sloka. Its best-matching part (${mmss(res.matched.heard[0])}–${mmss(res.matched.heard[1])}) was compared.`);
   if (located === 'base') notes.push(`This sloka is longer than your recording. You were compared with its best-matching part (${mmss(res.matched.base[0])}–${mmss(res.matched.base[1])}).`);
+  if (located === 'ear') notes.push(`The stretch of your recording the ear closed for this sloka (${mmss(win[0])}–${mmss(win[1])}) was compared.`);
   res.notes = [...notes, ...res.notes];
   return res;
 }
@@ -162,15 +196,22 @@ export function resolvePreset(options = {}) {
   return { ...presetsFor(options.learner, options.reference), ...(options.preset || {}) };
 }
 
-export function compare(B, H, options = {}) {
+// options.tempoPrior: the take's pace against the sloka's, known before the alignment (the
+// two hold the same sloka, so how long each sounds says it). The sloka's recording is
+// stretched to the take's pace first, so the alignment has no tempo to fight — a weak match
+// otherwise prefers an unstretched path with the ends left over, and a slow recitation of
+// a brisk recording comes out as barely recited. Every result is in the sloka's own frames.
+export function compare(B0, H, options = {}) {
   const opts = { ...DEFAULT_OPTIONS, ...options };
   if (options.judgeSpeed === undefined && options.penalizeTempo !== undefined) opts.judgeSpeed = !!options.penalizeTempo;
   opts.preset = resolvePreset(options);
-  if (!isValidFeatures(B)) throw new Error('The sloka analysis is missing or outdated. Re-save the sloka.');
+  if (!isValidFeatures(B0)) throw new Error('The sloka analysis is missing or outdated. Re-save the sloka.');
   if (!isValidFeatures(H)) throw new Error('The recording could not be analysed.');
   if (H.activeFrac < 0.05 || H.peakDb < -40) throw new Error('No audio was detected in your recording. Check the microphone and try again.');
-  if (B.activeFrac < 0.05 || B.peakDb < -40) throw new Error('The sloka seems to be silent.');
-  H = normalizeVoice(B, H, opts.preset.warpRange); // no-op when compareAuto already did it, or the take has no warps
+  if (B0.activeFrac < 0.05 || B0.peakDb < -40) throw new Error('The sloka seems to be silent.');
+  H = normalizeVoice(B0, H, opts.preset.warpRange); // no-op when compareAuto already did it, or the take has no warps
+  const k = opts.tempoPrior > 0 && Math.abs(opts.tempoPrior - 1) >= 0.15 ? clamp(opts.tempoPrior, 0.4, 2.5) : 1;
+  const B = k !== 1 ? stretchFeatures(B0, k) : B0;
 
   const bs = B.trimStart;
   const be = B.trimEnd;
@@ -214,7 +255,9 @@ export function compare(B, H, options = {}) {
   const N1 = Math.ceil(N / D1);
   const M1 = Math.ceil(M / D1);
   const cost1 = makeCost(0, 0);
-  const align1 = alignLarge(N1, M1, (ii, jj) => cost1(Math.min(N - 1, ii * D1), Math.min(M - 1, jj * D1)));
+  // spanBoth: the two hold the same sloka whole (the ear said so), so frames left over at either end cost more than a poor match
+  const ends = opts.spanBoth ? { endPenalty: 1.5 } : {};
+  const align1 = alignLarge(N1, M1, (ii, jj) => cost1(Math.min(N - 1, ii * D1), Math.min(M - 1, jj * D1)), ends);
   const maps1 = pathMaps(align1.pathI, align1.pathJ, N1, M1);
   const key = estimateKeyOffset(B, H, maps1.jOf, bs, hs, N1, D1);
   // Pass 2: full resolution with the pitch term. The alignment itself is always
@@ -222,24 +265,35 @@ export function compare(B, H, options = {}) {
   // whether the offset is forgiven in the report depends on the option.
   const alignOffset = Math.abs(key.offset) > 0.5 ? key.offset : 0;
   const offsetApplied = opts.ignoreKey ? alignOffset : 0;
-  const align = alignLarge(N, M, makeCost(0.6, alignOffset));
+  const align = alignLarge(N, M, makeCost(0.6, alignOffset), ends);
   const maps = pathMaps(align.pathI, align.pathJ, N, M);
 
-  const jOf = new Int32Array(B.n).fill(-1);
-  const iOf = new Int32Array(H.n).fill(-1);
+  let jOf = new Int32Array(B.n).fill(-1);
+  let iOf = new Int32Array(H.n).fill(-1);
   for (let i = 0; i < N; i++) if (maps.jOf[i] >= 0) jOf[i + bs] = maps.jOf[i] + hs;
   for (let j = 0; j < M; j++) if (maps.iOf[j] >= 0) iOf[j + hs] = maps.iOf[j] + bs;
-  const matched = { iStart: align.iStart + bs, iEnd: align.iEnd + bs, jStart: align.jStart + hs, jEnd: align.jEnd + hs };
+  let matched = { iStart: align.iStart + bs, iEnd: align.iEnd + bs, jStart: align.jStart + hs, jEnd: align.jEnd + hs };
+  let pathDist = new Float32Array(B.n).fill(NaN);
+  for (let i = 0; i < B.n; i++) if (jOf[i] >= 0) pathDist[i] = mfccDist(i, jOf[i]);
+  if (k !== 1) {
+    // back to the sloka's own frames: its frame i was frame round(i·k) of the stretched copy
+    const n0 = B0.n;
+    const pick = (i) => Math.min(B.n - 1, Math.round(i * k));
+    const jOf0 = new Int32Array(n0);
+    const pd0 = new Float32Array(n0);
+    for (let i = 0; i < n0; i++) { jOf0[i] = jOf[pick(i)]; pd0[i] = pathDist[pick(i)]; }
+    jOf = jOf0;
+    pathDist = pd0;
+    iOf = Int32Array.from(iOf, (i) => (i >= 0 ? Math.min(n0 - 1, Math.round(i / k)) : -1));
+    matched = { ...matched, iStart: Math.min(n0 - 1, Math.round(matched.iStart / k)), iEnd: Math.min(n0 - 1, Math.round(matched.iEnd / k)) };
+  }
 
   const xs = [];
   const ys = [];
   for (let i = matched.iStart; i <= matched.iEnd; i++) if (jOf[i] >= 0) { xs.push(i); ys.push(jOf[i]); }
   const tempoRatio = clamp(slopeOf(xs, ys), 0.25, 4);
 
-  const pathDist = new Float32Array(B.n).fill(NaN);
-  for (let i = 0; i < B.n; i++) if (jOf[i] >= 0) pathDist[i] = mfccDist(i, jOf[i]);
-
-  const ctx = { B, H, jOf, iOf, matched, tempoRatio, pathDist, offset: offsetApplied, opts };
+  const ctx = { B: B0, H, jOf, iOf, matched, tempoRatio, pathDist, offset: offsetApplied, opts };
   const dev = detectDeviations(ctx);
   const scores = computeScores(ctx, dev);
   const notes = buildNotes(ctx, dev, key, offsetApplied);
@@ -249,7 +303,7 @@ export function compare(B, H, options = {}) {
     mode: opts.mode,
     options: opts,
     hopSec: HOP_SEC,
-    baseDuration: B.duration,
+    baseDuration: B0.duration,
     heardDuration: H.duration,
     keyOffset: key.offset,
     keyOffsetPairs: key.n,

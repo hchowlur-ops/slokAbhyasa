@@ -302,8 +302,8 @@ that was in view — to the speech worker at once, as a background job that touc
 the recording nor the page ("Listening to CH12-03 in the background…" under the timer).
 Afterwards each report's stretch of the take takes those words when the recorded stretch
 overlaps it well enough, so the words are there the moment the results open. You need not
-turn the pages at all: while several slokas are recorded the app **listens for the end of
-each sloka** by itself — it counts the akṣaras it hears (the syllable nuclei of the
+turn the pages at all: while slokas are recorded (one or several) the app **listens for the
+end of each sloka** by itself — it counts the akṣaras it hears (the syllable nuclei of the
 loudness envelope) against the **akṣara plan** of the sloka in view (the speaker line's
 count and each pāda's, from the verse's text by its metre — the custom file can set a plan
 for a verse that does not scan), and once the count is at the sloka's end and a pause
@@ -356,12 +356,32 @@ runs on the audio thread. Tick another
 sloka after a take and it is compared straight away, without recording again.
 You can also tick slokas in the Library and press "Self Evaluation with selected".
 
-*Different lengths.* A sloka does not have to be as long as your recording. When one is
-much longer than the other (more than 1.5 times), SlokAbhyasa first finds the part of the longer
-recording that matches the shorter one and compares only that: recite verses 1 to 8 in one take
-and tick the single-verse slokas, or recite one verse against a sloka that holds the
-whole chapter. The report says which part was used, all times stay those of the full
-recordings, and the word comparison greys out the words outside that part.
+*Different lengths.* A sloka does not have to be as long as your recording, and a teacher
+may record at any pace. Where a sloka lies in your take is decided by what the **ear**
+heard, never by the lengths alone, because a sloka recited slowly is longer than its
+recording without holding more. With several slokas ticked, the stretch the ear closed for
+each sloka is the part compared with it, and no search runs (the report says "the stretch
+of your recording the ear closed for this sloka (0:07–0:19) was compared"). With one
+sloka, when the ear counted the sloka's akṣaras in your take (within 30 %), the take is
+compared whole to whole whatever its length: the pace difference is read off from how
+long each sounds, the sloka's recording is stretched to that pace before the two are
+aligned, and the alignment is made to span both from end to end, so a slow recitation of
+a brisk recording is no longer laid over a stretch of the recording's own length with the
+rest left over. Only when the ear has nothing to say — a sloka it never reached, Teach, a
+file — does the length rule stand: when one recording is more than 1.5 times the other,
+SlokAbhyasa finds the part of the longer one that matches the shorter and compares only
+that (recite one verse against a sloka that holds the whole chapter, or the reverse). The
+report says which part was used, all times stay those of the full recordings, and the
+word comparison greys out the words outside that part. The words have the last say for
+every sloka of a take: when the sound comparison says "does not sound like this sloka"
+but most of the sloka's words were heard, that sloka is scored. *Known limit:* the ear's
+own decision that a sloka has ended still leans on the recording's length (a long pause
+past half the count closes it, sooner when the recording's time is well past), so a slow
+reciter against a brisk recording can have a sloka closed at a half-verse; the next
+change gives the ear its expectations from the learner alone. (Before 16 October 2026 the length
+rule ran first, and a brisk teacher's recording against a slow recitation was searched for
+inside it as if the take held more than the sloka; the search then laid the recording over
+a stretch of its own length and the first part of the sloka went unheard and unscored.)
 
 *Conflicts.* Besides the deviations inside each report, the list highlights:
 
