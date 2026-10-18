@@ -268,12 +268,17 @@ slokas you had ticked there.
      fortnight; or, when a sloka has not moved in five takes, a nudge towards Teach mode
      instead. The ring also carries the verdict for the whole report (**within tolerance**
      or not, see below).
-   * **"Play both together"**, directly under the overall, plays the sloka and your attempt
-     at once, the sloka in the left ear and yours in the right, from the start of the part
-     that was compared and at the same speed, so the difference is heard rather than read
-     (headphones make the two sides distinct). The speed slider beside it applies to every
-     play button of the report.
-   * **Analysis**, folded under that; open it for the detail:
+   * **"Play both together"**, beside the scoreboard's ring (above the sloka cards), plays
+     the sloka and your attempt at once, the sloka in the left ear and yours in the right,
+     from the start of the part that was compared and at the same speed, so the difference
+     is heard rather than read (headphones make the two sides distinct). The speed slider
+     under it applies to every play button of the report. In a quiz, which has its own card
+     instead of the scoreboard, the button sits at the top of the report.
+   * **Analysis**, folded under the scoreboard, titled with the open sloka's name
+     ("Analysis · CH12-03"); the first line inside is that sloka's verdict (within tolerance
+     or not), what its overall was weighted over, and any points lost to self-correction.
+     There is no second ring under the cards: the sloka's score is its card's. Open the fold
+     for the detail:
      - the **transcript** of the sloka and of your attempt, with the words that differ
        highlighted (see "Transcripts" below). Each row has a **play button** by its label —
        "Sloka ▶" plays the sloka, "Yours ▶" plays your recording (the words are heard
@@ -810,7 +815,7 @@ badges on what was scored), and **Sloka text** (whether the slokas' text is
 shown during Self Evaluation and while reciting a quiz, both on by default; whether the
 Transcript block is hidden in the results (off by default: on, the sloka's words and yours
 and the words-heard line, at the top of the Analysis fold, are left out, in Self Evaluation
-and quizzes, "Play both together" staying under the overall, while the words are still heard
+and quizzes, "Play both together" staying beside the ring, while the words are still heard
 and scored); the script the
 sloka's text is shown in — Sanskrit, Kannada, Telugu or romanised (IAST) — which is also
 the language the words are heard in, so what you read and what was heard are written the

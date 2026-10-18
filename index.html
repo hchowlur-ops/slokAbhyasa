@@ -388,10 +388,29 @@
           <div class="take-board" id="take-board" hidden>
             <div class="take-overall">
               <div class="ring take-ring" id="take-ring" style="--pct: 0"><span class="mono ring-val" id="take-overall">–</span></div>
+              <!-- both together, beside the ring (in a quiz it sits at the top of the report instead: placeDuet) -->
+              <div class="take-duet" id="take-duet-slot">
+                <div class="result-duet" id="result-duet">
+                  <div class="playback-row" id="res-playback">
+                    <button class="btn btn-both" id="res-play-both" type="button" title="The sloka in the left ear and your recording in the right, both from the start of the part that was compared, at the same speed">
+                      <svg class="ico-play" viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
+                      <svg class="ico-pause" viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>
+                      <span>Play both together</span>
+                      <span class="muted small">sloka left · yours right</span>
+                    </button>
+                    <div class="speed inline">
+                      <span class="muted small">Speed</span>
+                      <input type="range" class="slider" id="res-speed" min="0.5" max="2" step="0.05" value="1" aria-label="Playback speed" />
+                      <span class="mono speed-val" id="res-speed-val">1.00×</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
               <div class="take-overall-text">
                 <div class="score-grade" id="take-grade"></div>
                 <div class="take-sub muted small" id="take-sub"></div>
                 <div class="score-words" id="take-words" hidden></div>
+                <ul class="score-moments" id="score-moments" hidden></ul>
               </div>
             </div>
             <div class="take-cards" id="take-cards" role="tablist" aria-label="The slokas of this take"></div>
@@ -401,48 +420,33 @@
               <button class="btn btn-sm btn-ghost progress-stop" id="take-progress-stop" type="button" hidden>Stop</button>
             </div>
           </div>
-          <div class="report-title-row" id="report-title-row" hidden>
-            <h3 id="report-name"></h3>
-          </div>
           <p class="report-error" id="report-error" hidden></p>
           <div id="report-body">
-          <!-- the overall, in the middle; both together under it; the words and everything else under Analysis -->
-          <div class="result-overall" id="report-overall">
+          <!-- the per-sloka overall lives in the scoreboard's ring and its cards; these stay, hidden, for the code that fills them -->
+          <div class="result-overall" id="report-overall" hidden>
             <div class="score score-main">
               <div class="ring" id="score-ring" style="--pct: 0"><span class="mono ring-val" id="score-overall">–</span></div>
               <div class="score-grade" id="score-grade"></div>
               <div class="score-words" id="score-words" hidden></div>
-              <div class="score-penalty" id="score-penalty" hidden></div>
-              <ul class="score-moments" id="score-moments" hidden></ul>
-              <div class="score-label">Overall</div>
-              <div class="score-sub muted small" id="score-overall-sub"></div>
-              <div class="score-verdict" id="score-verdict"></div>
             </div>
           </div>
-          <!-- both together, right under the overall -->
-          <div class="result-duet" id="result-duet">
-            <div class="playback-row" id="res-playback">
-              <button class="btn btn-both" id="res-play-both" type="button" title="The sloka in the left ear and your recording in the right, both from the start of the part that was compared, at the same speed">
-                <svg class="ico-play" viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
-                <svg class="ico-pause" viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>
-                <span>Play both together</span>
-                <span class="muted small">sloka left · yours right</span>
-              </button>
-              <div class="speed inline">
-                <span class="muted small">Speed</span>
-                <input type="range" class="slider" id="res-speed" min="0.5" max="2" step="0.05" value="1" aria-label="Playback speed" />
-                <span class="mono speed-val" id="res-speed-val">1.00×</span>
-              </div>
-            </div>
-          </div>
+          <!-- a quiz has no scoreboard: "Play both together" sits here instead (placeDuet) -->
+          <div class="duet-slot" id="duet-slot"></div>
 
           <details class="analysis" id="analysis">
             <summary>
               <svg class="step-caret" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7.4 8.6 12 13.2l4.6-4.6L18 10l-6 6-6-6z"/></svg>
               <span class="analysis-title">Analysis</span>
+              <span class="analysis-name" id="report-name"></span>
               <span class="muted small" id="analysis-sub">the words heard, category scores, the chart, every deviation</span>
             </summary>
             <div class="analysis-body">
+              <!-- the sloka's verdict and what its overall was weighted over, and the points lost to self-correction -->
+              <div class="report-line" id="report-line">
+                <span class="score-verdict" id="score-verdict"></span>
+                <span class="score-sub muted small" id="score-overall-sub"></span>
+                <div class="score-penalty" id="score-penalty" hidden></div>
+              </div>
           <!-- the words first, then the scores, the chart and the deviations -->
           <div class="transcript" id="transcript">
             <div class="dev-head-row">

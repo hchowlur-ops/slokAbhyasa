@@ -924,8 +924,24 @@ textarea.locked { background: var(--surface-2); color: var(--muted); cursor: not
 .rr-grade.good { color: color-mix(in srgb, var(--pitch) 70%, var(--text)); }
 .rr-grade.fair { color: color-mix(in srgb, var(--timing) 70%, var(--text)); }
 .rr-grade.practice { color: var(--danger); }
-.report-title-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
-.report-title-row h3 { margin: 0; font-size: 1.15rem; }
+/* the sloka's name on the Analysis fold (the report's title) */
+.analysis-name { font-weight: 650; font-size: 1rem; color: var(--text); }
+.analysis-name:empty { display: none; }
+/* the sloka's verdict, what its overall was weighted over, the points lost to self-correction: at the top of the fold */
+.report-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; margin: 0 0 14px; }
+.report-line:empty { display: none; }
+.report-line .score-verdict { margin: 0; }
+.report-line .score-sub { margin: 0; min-height: 0; }
+.report-line .score-penalty { flex-basis: 100%; margin: 2px 0 0; max-width: none; }
+/* "Play both together" beside the scoreboard's ring */
+.take-duet { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; flex: 0 0 auto; }
+.take-duet .result-duet { margin: 0; justify-content: flex-start; }
+.take-duet .playback-row { margin: 0; flex-direction: column; align-items: flex-start; gap: 6px; }
+.take-duet .speed.inline { min-width: 0; width: 100%; flex: 0 1 auto; }
+.take-duet .speed.inline .slider { flex: 1; min-width: 120px; }
+.take-overall-text { flex: 1 1 240px; }
+.duet-slot .result-duet { margin: 0 0 18px; }
+.result-overall[hidden] { display: none; }
 /* Evaluating…: in place of the report from the stop of a recording until the open sloka's results are in */
 @keyframes spin { to { transform: rotate(360deg); } }
 .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }

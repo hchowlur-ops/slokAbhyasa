@@ -2852,8 +2852,15 @@ function renderTakeBoard(ids) {
 function renderReportBrowser() {
   const ids = reportIds();
   renderTakeBoard(ids);
-  setHidden($('#report-title-row'), !ids.length);
-  $('#report-name').textContent = practice.activeId ? nameOf(practice.activeId) : ''; // the name alone: the verdict is the ring's and the cards' to tell
+  $('#report-name').textContent = practice.activeId ? nameOf(practice.activeId) : ''; // on the Analysis fold: the name alone, the verdict being the ring's and the cards' to tell
+  placeDuet();
+}
+// "Play both together" sits beside the scoreboard's ring, above the sloka cards; a quiz has
+// no scoreboard, so there it sits at the top of the report instead.
+function placeDuet() {
+  const duet = $('#result-duet');
+  const slot = practice.quiz ? $('#duet-slot') : $('#take-duet-slot');
+  if (duet && slot && duet.parentElement !== slot) slot.appendChild(duet);
 }
 // The preview above the results changes height with the sloka, so keep the reports in view.
 async function openReport(id) {
@@ -4461,7 +4468,7 @@ function renderResult(res) {
   practice.result = res;
   practice.selected = null;
   setHidden($('#practice-results'), false);
-  setHidden($('#report-overall'), !!practice.quiz); // the quiz block carries the overall instead
+  placeDuet(); // "Play both together": beside the scoreboard's ring, or at the top of a quiz's report
   setHidden($('#transcript'), hideTranscript); // the words, when wanted on screen
   renderTiles(res, practice.activeId);
   const notes = $('#result-notes');
