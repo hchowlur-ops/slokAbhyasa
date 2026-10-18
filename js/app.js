@@ -1722,10 +1722,15 @@ const bestBeforeOf = (id) => (practice.progress && practice.progress.slokas && p
 const partialOf = (id) => isPartial(practice.slips.get(id) || []);
 function slipsOf(id) {
   const raw = practice.slips.get(id) || [];
-  if (!raw.length) return raw;
+  const ph = practice.phonology.get(id);
+  // the words alone can say akṣaras were dropped: four or more of the sloka's (a tenth of
+  // it at least, half a pāda) missing from what was heard. The ear's count cannot for a
+  // voice it has not learnt — slow chanting counts more nuclei than akṣaras — and a take
+  // that stops short of the plan leaves it nothing to close (the 17 October simulations).
+  const wordsDropped = !!(ph && ph.counts && ph.counts.ref >= 8 && ph.counts.missing >= 4 && ph.counts.missing >= ph.counts.ref * 0.1);
+  if (!raw.length && !wordsDropped) return raw;
   if (isPartial(raw)) return raw.filter((x) => x.kind === 'partial' || x.kind === 'skipped'); // under half recited: that is the whole story
   const res = practice.results.get(id);
-  const ph = practice.phonology.get(id);
   const out = [];
   for (const slip of raw) {
     if (!slip.unsure) { out.push(slip); continue; }
@@ -1739,6 +1744,7 @@ function slipsOf(id) {
     }
     out.push(slip);
   }
+  if (wordsDropped && !out.some((x) => x.kind === 'dropped')) out.push({ kind: 'dropped', count: ph.counts.ref - ph.counts.missing, expected: ph.counts.ref, by: 'words' });
   return out;
 }
 function addSlip(id, slip) {
@@ -2497,12 +2503,21 @@ $('#practice-rec').addEventListener('click', async () => {
     // barely begun (less than half recited: not scored, not heard); a held stretch is
     // heard with it in one window when the two fit, else alone
     if (liveEar && liveEar.pendingClose) { const c = liveEar.pendingClose; liveEar.pendingClose = null; clearTimeout(c.timer); markSegment(c.item, c.to, { transcribe: !c.partial, count: c.count, expected: c.expected }); }
+    // the ear's word on the sloka in view when the take stops — one sloka or several alike:
+    // under half recited (not transcribed, not scored), or short of the plan by three
+    // akṣaras or more (dropped: unsure until the words confirm it, as at a close)
+    const earOpen = !!(liveEar && liveEar.item && liveEar.expected && !liveEar.done && liveEar.counter.state_().elapsedMs >= 2000);
+    const stopPartial = earOpen && liveEar.pos < liveEar.expected * 0.5;
+    if (earOpen) {
+      const id = liveEar.item.id;
+      const at = Math.round((liveEar.samplesRead / liveEar.rec.ctx.sampleRate) * 100) / 100;
+      if (stopPartial) { if (!partialOf(id)) addSlip(id, { kind: 'partial', at, count: Math.round(liveEar.pos), expected: liveEar.expected, by: 'ear' }); }
+      else if (liveEar.pos < liveEar.expected - 2 && !(practice.slips.get(id) || []).some((x) => x.kind === 'dropped')) addSlip(id, { kind: 'dropped', at, count: Math.round(liveEar.pos), expected: liveEar.expected, unsure: true, by: 'ear' });
+    }
     if (recSegments && recSegments.parts.length) {
       const items = slokaTextItems();
       const item = items[currentTextIndex(items)];
-      const partial = !!(liveEar && liveEar.item && liveEar.expected && liveEar.pos < liveEar.expected * 0.5 && liveEar.counter.state_().elapsedMs >= 2000);
-      if (partial && !partialOf(liveEar.item.id)) addSlip(liveEar.item.id, { kind: 'partial', count: Math.round(liveEar.pos), expected: liveEar.expected, by: 'ear' });
-      if (!liveEar || !liveEar.done) markSegment(item, null, { transcribe: !partial, ...earCountFor(item) });
+      if (!liveEar || !liveEar.done) markSegment(item, null, { transcribe: !stopPartial, ...earCountFor(item) });
     }
     // the ear's count of the sloka in view when the take stopped: for one sloka it says
     // whether the take is the sloka recited slowly or more than the sloka (see earWindowFor)

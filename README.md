@@ -346,6 +346,13 @@ patience fits them. A sloka of which **less than half** was recited — the ear 
 it, the page was turned, or the take stopped, with its position under half the plan — is
 neither transcribed nor scored: it counts as not recited, its card and row say "less than
 half recited (12 of 33 akṣaras) · not scored", and its recommendation is Needs practice.
+A sloka the take stops short of by three akṣaras or more is marked "akṣaras dropped" by
+the ear at the stop (unsure until the words confirm akṣaras missing), as it would be at a
+close — one sloka or several alike; and the words alone raise it when four or more of
+the sloka's akṣaras (a tenth of it at least) are missing from what was heard, since the
+ear's count cannot be trusted for a voice it has not learnt. Its grade is then Needs
+practice at the full score: a dropped pāda is not a self-correction, so nothing is
+deducted.
 The speech model is loaded the moment slokas are chosen, so it sits ready, idle, until the
 first sloka ends; the live analysis of what follows a pause runs in the analysis worker, so
 the page stays smooth. A **Stop listening** button under the timer, shown while a stretch
