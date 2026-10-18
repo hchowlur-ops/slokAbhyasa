@@ -24,6 +24,7 @@ import { badgeEmoji, DEVICE as BADGE_DEVICE } from './badges.js';
 import { normalizeStore, putInStore, pickTranscript, availableLanguages } from './transcripts.js';
 import { transliterateTranscript } from './translit.js';
 import { identifyChandas, layoutSloka, padaBreaks, linesFor, uvacaOffset, chandasLabel, chandasPattern, gitaVerse, gitaFamily, aksharaPlan } from './chandas.js';
+import { canonOf, canonOfText, CANON_VERSION } from './canon.js';
 import { periodRange, shiftPeriod, inRange, isoDate, slokaRows, summarize, KIND_LABEL, progress } from './reports.js';
 import { diffWords, diffSummary, compareWords, tokenizeTranscript, windowedTokens, tokenMoments, refineBoundary, tokenize, dandaMarks, withDandas, uvacaWords, isUvacaLine, findSelfCorrections } from './textdiff.js';
 import { AGE_GROUPS, VOICE_TYPES, STYLE_MODES, DEFAULT_STYLE_MODE, presetsFor, ADULT_PRESET, compareModeFor, speakerLabel, ageGroupLabel, styleMode, voiceStats, deriveText } from './meta.js';
@@ -2421,6 +2422,10 @@ function ensureBase(id) {
     const transcripts = await api.getTranscript(id).catch(() => null);
     // `transcript` is the one in the language chosen for speech to text, if it exists
     const base = { record, ...dec, blob, features, transcripts, transcript: transcriptIn(transcripts) };
+    // a linked recording's verse, so its canonical representation (the ear's plan, the words'
+    // comparison) is the dataset's from the first take; missing, the text's own plan serves
+    const link = record.meta && record.meta.verse;
+    if (link && link.id) { try { base.verseEntry = await api.getVerse(link.dataset, link.id); } catch { /* the text's own plan then */ } }
     if (practice.selection.includes(id)) practice.bases.set(id, base);
     // a sloka from before metadata existed gets its voice measured now that it is loaded
     if (record.meta && !record.meta.voice) {
@@ -2740,6 +2745,7 @@ async function saveSession() {
       kind: practice.teach ? 'teach' : 'evaluation', at: new Date().toISOString(), takeDuration: take.duration,
       items, overall: sum.overall, grade: sum.grade, options: { ignoreKey: practice.options.ignoreKey, judgeSpeed: practice.options.judgeSpeed },
       tolerance: activeTolerance(), noTolerance: tolOff, learner: learnerSpeaker(), weights: activeWeights(),
+      canon: { version: CANON_VERSION }, // the phonetic representation the words were judged by (canon.js)
     });
     if (practice.session !== session) { api.deleteSession(saved.id).catch(() => {}); return; } // the take was discarded meanwhile
     session.id = saved.id;
@@ -3300,15 +3306,28 @@ let liveEar = null;
 // The akṣara plan of a sloka in view (see chandas.aksharaPlan): the dataset's for a linked
 // verse (a custom plan when the verse does not scan), else read from its text.
 function planOf(item) {
-  const base = item && practice.bases.get(item.id);
+  const canon = canonForBase(item && practice.bases.get(item.id));
+  return canon && canon.plan.total ? canon.plan : null;
+}
+// The canonical phonetic representation of a loaded sloka (canon.js): the dataset's verse
+// when the recording is linked and the verse is in, else its text. Cached on the base by
+// the text it was read from, so the ear, the words' comparison and the slips read one
+// structure.
+function canonForBase(base) {
   if (!base) return null;
   const link = base.record && base.record.meta && base.record.meta.verse;
-  if (link && base.verseEntry) { const p = versePlan(base.verseEntry, { speakerLine: link.speakerLineRecited !== false }); if (p && p.total) return p; }
-  const text = slokaTextOf(base);
-  if (!text) return null;
-  const ch = chandasOf(base.record, text);
-  const p = aksharaPlan(text, { perPada: ch ? ch.perPada : null });
-  return p.total ? p : null;
+  const entry = link && base.verseEntry ? base.verseEntry : null;
+  const text = entry ? null : slokaTextOf(base);
+  const key = entry ? `verse:${entry.id}:${link.speakerLineRecited !== false}` : text ? `text:${text}` : null;
+  if (!key) return null;
+  if (base.canon && base.canon.key === key) return base.canon.value;
+  let value = null;
+  try {
+    if (entry) value = canonOf(entry, { speakerLine: link.speakerLineRecited !== false, dataset: { id: link.dataset || 'gita', version: link.version || null } });
+    else { const ch = chandasOf(base.record, text); value = canonOfText(text, { perPada: ch ? ch.perPada : null }); }
+  } catch { value = null; }
+  base.canon = { key, value };
+  return value;
 }
 // How long the sloka takes its teacher: the recording's sounding time, else its length.
 function expectedSecOf(item) {
@@ -3745,8 +3764,8 @@ function renderQuizBox() {
 }
 
 // Share of a sloka's words heard in the take, over the parts that were compared.
-function wordSimilarity(res, baseT, heardT, baseDuration, takeDuration) {
-  const d = windowedDiff(res, baseT, heardT, baseDuration, takeDuration);
+function wordSimilarity(res, baseT, heardT, baseDuration, takeDuration, plan = null) {
+  const d = windowedDiff(res, baseT, heardT, baseDuration, takeDuration, plan);
   return d.ai.length ? { similarity: d.summary.similarity, phonology: d.phonology, corrections: d.corrections } : null;
 }
 
@@ -3822,7 +3841,7 @@ async function scoreQuizAttempt() {
       const ref = referenceWords(base, res);
       if (!ref) continue;
       const words = tokenizeTranscript(ref).length;
-      const heard = await hearAgainIfPoor(res, ref, heardT, base.duration, false);
+      const heard = await hearAgainIfPoor(res, ref, heardT, base.duration, false, planOf({ id }));
       if (!live()) return;
       heardT = heard.heardT;
       const ws = heard.ws;
@@ -5133,14 +5152,14 @@ async function transcribeTakePart(win, force, language = sttSettings.language) {
 // knows Sanskrit chant far better as Sanskrit than as Kannada, Telugu or English, so when
 // that hearing is poor (under 40 % of the sloka's words) the part is heard again as
 // Sanskrit and the better of the two kept — written in the chosen script either way.
-async function hearAgainIfPoor(res, refT, heardT, baseDuration, force = false) {
+async function hearAgainIfPoor(res, refT, heardT, baseDuration, force = false, plan = null) {
   const take = practice.take;
-  const ws = refT && heardT && take ? wordSimilarity(res, refT, heardT, baseDuration, take.duration) : null;
+  const ws = refT && heardT && take ? wordSimilarity(res, refT, heardT, baseDuration, take.duration, plan) : null;
   if (!take || !refT || !heardT || sttSettings.language === 'sanskrit' || (ws && ws.similarity >= 0.4)) return { heardT, ws };
   let again = null;
   try { again = await transcribeTakePart(heardPartOf(res), force, 'sanskrit'); } catch { again = null; }
   if (practice.take !== take || !again) return { heardT, ws };
-  const ws2 = wordSimilarity(res, refT, again, baseDuration, take.duration);
+  const ws2 = wordSimilarity(res, refT, again, baseDuration, take.duration, plan);
   return ws2 && (!ws || ws2.similarity > ws.similarity) ? { heardT: again, ws: ws2 } : { heardT, ws };
 }
 // Every report's words in the background once the take is compared: each sloka's stretch of
@@ -5165,7 +5184,7 @@ async function transcribeAllParts() {
       const base = await ensureBase(id);
       const ref = referenceWords(base, res);
       if (!ref) continue; // the sloka has no words: nothing to compare the words with
-      const { ws } = await hearAgainIfPoor(res, ref, heardT, base.duration, false);
+      const { ws } = await hearAgainIfPoor(res, ref, heardT, base.duration, false, planOf({ id }));
       if (practice.take !== take || !ws) continue;
       if (!practice.wordSims.has(id)) {
         practice.wordSims.set(id, ws.similarity);
@@ -5233,7 +5252,7 @@ function transcribeBoth(force) {
       if (partialOf(id)) { $('#stt-summary').textContent = `${slipsLabel(slipsOf(id))}: not transcribed, not scored. Needs practice.`; settleEvaluating(); return; }
       let heardT = await transcribeTakePart(heardPartOf(practice.result), force);
       if (!current() || !heardT) return; // stopped: the report stays without a word diff
-      heardT = (await hearAgainIfPoor(practice.result, baseT, heardT, practice.base.duration, force)).heardT;
+      heardT = (await hearAgainIfPoor(practice.result, baseT, heardT, practice.base.duration, force, planOf({ id }))).heardT;
       if (!current()) return;
       sttPractice.base = baseT;
       sttPractice.heard = heardT;
@@ -5253,7 +5272,7 @@ function transcribeBoth(force) {
 }
 
 // The word diff of a sloka and the take, over the parts of each that were compared.
-function windowedDiff(res, baseT, heardT, baseDuration, takeDuration) {
+function windowedDiff(res, baseT, heardT, baseDuration, takeDuration, plan = null) {
   const A = windowedTokens(baseT, res.matched.base, baseDuration);
   const B = windowedTokens(heardT, res.matched.heard, takeDuration);
   const ai = A.toks.map((_, i) => i).filter((i) => A.inside[i]);
@@ -5272,17 +5291,27 @@ function windowedDiff(res, baseT, heardT, baseDuration, takeDuration) {
   const dimA = new Set(A.toks.map((_, i) => i).filter((i) => !A.inside[i]));
   const dimB = new Set(B.toks.map((_, i) => i).filter((i) => !B.inside[i]));
   // the same words, as text, for the akṣara-and-phoneme comparison
-  // pāda by pāda when the whole text was compared (the metre is read from the text itself)
-  const perPada = ai.length === A.toks.length ? identifyChandas(baseT.text).perPada : null;
+  // pāda by pāda when the whole text was compared: by the sloka's plan (its canonical
+  // representation: the units of the verse, hypermetric pādas included) when the caller has
+  // it, else by the metre read from the text itself
+  const whole = ai.length === A.toks.length;
+  const usePlan = whole && plan && Array.isArray(plan.padas) && plan.padas.length ? plan : null;
+  const perPada = whole && !usePlan ? identifyChandas(baseT.text).perPada : null;
   const offset = perPada ? uvacaOffset(baseT.text) : 0; // the pādas start after "arjuna uvāca"
-  const phonology = ai.length ? comparePhonology(ai.map((i) => A.toks[i].word).join(' '), bi.map((i) => B.toks[i].word).join(' '), { perPada, offset }) : null;
+  const phonology = ai.length ? comparePhonology(ai.map((i) => A.toks[i].word).join(' '), bi.map((i) => B.toks[i].word).join(' '), { perPada, offset, plan: usePlan }) : null;
   // the learner correcting themself: a word said twice, a pāda or the sloka started again
   let corrections = [];
   if (ai.length) {
     const refToks = ai.map((i) => A.toks[i]);
     const heardToks = bi.map((i) => B.toks[i]);
     let refPada = null;
-    if (perPada) { refPada = []; let acc = 0; for (const t of refToks) { refPada.push(acc < offset ? 0 : 1 + Math.floor((acc - offset) / perPada)); acc += syllabify(t.word).length; } }
+    if (usePlan) {
+      // the unit each word begins in: 0 the speaker line, then the plan's units in order
+      refPada = []; let acc = 0;
+      const sp = usePlan.speakerLine || 0;
+      const ends = []; let e = sp; for (const n of usePlan.padas) { e += n; ends.push(e); }
+      for (const t of refToks) { let u = 0; while (u < ends.length && acc >= ends[u]) u++; refPada.push(acc < sp ? 0 : 1 + u); acc += syllabify(t.word).length; }
+    } else if (perPada) { refPada = []; let acc = 0; for (const t of refToks) { refPada.push(acc < offset ? 0 : 1 + Math.floor((acc - offset) / perPada)); acc += syllabify(t.word).length; } }
     corrections = findSelfCorrections(refToks, heardToks, { refPada }).map((c) => { const tok = heardToks[c.at]; const ch = tok && heardT.chunks && heardT.chunks[tok.chunk]; return { ...c, at: ch && typeof ch.start === 'number' ? ch.start : undefined }; });
   }
   return { A, B, ai, bi, delA, insB, dimA, dimB, summary: cmp.summary, phonology, corrections };
@@ -5359,7 +5388,7 @@ function renderPhonologyReport(host, ph) {
 function renderTranscriptDiff() {
   const res = practice.result;
   if (!res || !practice.base || !practice.take || !sttPractice.base || !sttPractice.heard) return;
-  const { A, B, ai, delA, insB, dimA, dimB, summary: sm, phonology, corrections } = windowedDiff(res, sttPractice.base, sttPractice.heard, practice.base.duration, practice.take.duration);
+  const { A, B, ai, delA, insB, dimA, dimB, summary: sm, phonology, corrections } = windowedDiff(res, sttPractice.base, sttPractice.heard, practice.base.duration, practice.take.duration, planOf({ id: practice.activeId }));
   if (ai.length) {
     practice.wordSims.set(practice.activeId, sm.similarity);
     if (phonology) practice.phonology.set(practice.activeId, phonology);

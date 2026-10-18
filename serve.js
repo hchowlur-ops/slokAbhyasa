@@ -520,6 +520,7 @@ function sessionFields(body, s) {
   // judged with tolerances switched off (scores and grades only)
   if (body.noTolerance !== undefined) s.noTolerance = !!body.noTolerance;
   if (body.weights && typeof body.weights === 'object') s.weights = normalizeWeights(body.weights);
+  if (body.canon && typeof body.canon === 'object') s.canon = { version: Number.isInteger(body.canon.version) ? body.canon.version : null }; // the phonetic representation's version (js/canon.js)
   if (body.learner && typeof body.learner === 'object') s.learner = { profileId: typeof body.learner.profileId === 'string' ? body.learner.profileId.slice(0, 40) : null, voiceType: String(body.learner.voiceType || 'preferNotToSay').slice(0, 20), ageGroup: String(body.learner.ageGroup || 'unspecified').slice(0, 20) };
   else if (body.learner === null) s.learner = null;
   return s;

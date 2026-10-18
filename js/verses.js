@@ -7,7 +7,7 @@
 // Ids: "12.3" (a verse), "1.21-22" (two or three consecutive verses recited as one),
 // "12.opening" / "12.colophon" (a chapter's invocation or closing line), "dhyana.1",
 // "invocation.1", "other.1" (texts outside the chapters).
-import { GITA_VERSES, gitaVerse, gitaFamily, FAMILIES, aksharaPlan as planOfText } from './chandas.js';
+import { GITA_VERSES, GITA_IRREGULAR, gitaVerse, gitaFamily, FAMILIES, aksharaPlan as planOfText } from './chandas.js';
 import { syllabify } from './phon.js';
 
 export const KINDS = ['verse', 'combined', 'opening', 'colophon', 'dhyana', 'invocation', 'other'];
@@ -323,13 +323,17 @@ export function mergeCustom(entry, custom) {
 export function versePlan(entry, { speakerLine = true } = {}) {
   if (!entry) return null;
   const custom = entry.aksharaPlan && Array.isArray(entry.aksharaPlan.padas) && entry.aksharaPlan.padas.length ? entry.aksharaPlan : null;
-  if (custom) {
-    const sp = speakerLine && entry.speaker && entry.speaker.deva ? custom.speakerLine || syllabify(entry.speaker.deva).length : 0;
+  // a Gītā verse the table knows not to scan evenly (a hypermetric pāda, six pādas, an
+  // attribution inside the verse) has its units from the table, unless the custom file says
+  const irregular = !custom && entry.kind === 'verse' && GITA_IRREGULAR[entry.id] ? GITA_IRREGULAR[entry.id] : null;
+  const given = custom || irregular;
+  if (given) {
+    const sp = speakerLine && entry.speaker && entry.speaker.deva ? (custom && custom.speakerLine) || syllabify(entry.speaker.deva).length : 0;
     const checkpoints = [];
     let acc = sp;
     if (sp) checkpoints.push(acc);
-    for (const p of custom.padas) { acc += p; checkpoints.push(acc); }
-    return { speakerLine: sp, padas: custom.padas.slice(), total: acc, checkpoints, custom: true };
+    for (const p of given.padas) { acc += p; checkpoints.push(acc); }
+    return { speakerLine: sp, padas: given.padas.slice(), total: acc, checkpoints, custom: !!custom, irregular: !!irregular, speakerUnits: irregular && irregular.speakerUnits ? irregular.speakerUnits.slice() : [], note: irregular ? irregular.note : null };
   }
   const fam = entry.metre && entry.metre.family && FAMILIES[entry.metre.family] ? FAMILIES[entry.metre.family] : null;
   return planOfText(verseBody(entry, { speakerLine }), { perPada: fam ? fam.perPada : null });

@@ -11,6 +11,20 @@ import { splitUvaca } from './textdiff.js';
 // chapter: ranges of verses. Everything else in the Gītā is anuṣṭubh.
 export const GITA_TRISHTUBH = { 2: [[5, 8], [20, 20], [22, 22], [29, 29], [70, 70]], 8: [[9, 11], [28, 28]], 9: [[20, 21]], 11: [[15, 50]], 15: [[2, 5], [15, 15]] };
 export const GITA_VERSES = { 1: 47, 2: 72, 3: 43, 4: 42, 5: 29, 6: 47, 7: 30, 8: 28, 9: 34, 10: 42, 11: 55, 12: 20, 13: 35, 14: 27, 15: 20, 16: 24, 17: 28, 18: 78 };
+// The Gītā's verses whose pādas do not all have the metre's count, as the reference dataset
+// writes them (found by counting every pāda of the dataset, tools/canon-phonemes.mjs):
+// the akṣaras of each unit in order, and which units are an attribution standing inside the
+// verse rather than a pāda. A verse not listed here scans evenly.
+export const GITA_IRREGULAR = {
+  '1.20': { padas: [8, 8, 8, 8, 8, 8], note: 'six pādas in this edition: the verse runs on into what some editions number 1.21' },
+  '1.21': { padas: [8, 8], note: 'two pādas: the half-verse that completes the sense of 1.20, with its own attribution' },
+  '1.28': { padas: [8, 8, 6, 8, 8], speakerUnits: [2], note: 'the attribution "arjuna uvāca" stands between the half-verses; the unit of six is that line' },
+  '2.6': { padas: [12, 12, 11, 11], note: 'the first and second pādas have twelve akṣaras' },
+  '2.29': { padas: [11, 12, 11, 11], note: 'the second pāda has twelve akṣaras' },
+  '8.10': { padas: [11, 11, 11, 12], note: 'the fourth pāda has twelve akṣaras' },
+  '11.1': { padas: [9, 8, 8, 8], note: 'the first pāda, "madanugrahāya paramaṃ", has nine akṣaras' },
+  '15.3': { padas: [12, 11, 11, 11], note: 'the first pāda has twelve akṣaras' },
+};
 
 export const FAMILIES = {
   anushtubh: { id: 'anushtubh', name: 'Anuṣṭubh', perPada: 8 },

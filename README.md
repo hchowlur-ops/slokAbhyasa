@@ -921,6 +921,28 @@ sets them so) and the app never writes there. The server serves it under `/api/r
 (the datasets found, a dataset with its chapters and coverage, a chapter's entries with
 their recordings, one verse — a combined id such as `1.21-22` composed from its parts).
 
+**The canonical phonetic representation** (`js/canon.js`). What a reciter is expected to
+sound, read from the text: the inventory of Sanskrit phonemes with their articulatory
+features (and their IPA and Common Label Set names, for interchange with other tools), the
+akṣaras with their weights (laghu, guru) and their pāda, the **realisation slots** where
+recitation traditions differ — the visarga at a pause (with its echo vowel, as a breath, or
+dropped) and before k, p and the sibilants (sounded in full, or as the jihvāmūlīya,
+upadhmānīya and doubled sibilant), the anusvāra's nasal by the place of the sound after
+it, ṛ as a syllabic r or as ri / ru, jñ as jña / gya / dnya, a consonant doubled after r —
+each with the realisations it permits (`realise()` resolves them for a tradition, or for
+the teacher's own choices once they are read from the baseline), the token vocabulary a
+phoneme model would be trained on, and the **plan** the ear counts against. One structure
+serves the ear's plan, the comparison of the words heard with the text (pāda by pāda, by
+the verse's own units), the slips, and — later — the targets of a phoneme model and the
+labels of an evaluation set; a session records the representation's version. The Gītā's
+verses that do not scan as four equal pādas are known to it (`GITA_IRREGULAR` in
+`js/chandas.js`: a hypermetric pāda in 2.6, 2.29, 8.10, 11.1 and 15.3, six pādas in 1.20,
+two in 1.21, the attribution standing inside 1.28), so their plans and pāda counts are
+right. `node tools/canon-phonemes.mjs` compiles every entry of the dataset to
+`dist/canon/gita-phonemes.json` (for tools outside the app) and validates it — no letter
+of the text lost, the IAST rebuilt from the Devanagari against the dataset's, every pāda
+counted against its metre — writing a report with `--report <file.md>`.
+
 **Recordings linked to verses.** A recording's details can carry the verse it is a
 recording of (`verse` in its `.json` sidecar: the dataset and version, the id, a copy of the
 verse's text with its hash, the metre, the licence, how the link was made). A linked

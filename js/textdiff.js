@@ -232,11 +232,13 @@ const UVACA = /uvac+h?a$/;
 const uvacaKey = (words) => phoneticKey(words.join(''));
 // How many of the words open with the attribution: the words up to and including the one
 // that completes uvāca, among the first three; 0 when there is none (or nothing follows).
+// A single word is an attribution only when a name is joined to the uvāca
+// ("śrībhagavānuvāca", "arjunauvāca"): "tamuvāca" opening 2.10 is the śloka's own first word.
 export function uvacaWords(words) {
   const n = Math.min(3, words.length - 1);
   for (let e = 0; e < n; e++) {
     const key = uvacaKey(words.slice(0, e + 1));
-    if (key.length >= 5 && UVACA.test(key)) return e + 1;
+    if (key.length >= (e === 0 ? 10 : 5) && UVACA.test(key)) return e + 1;
   }
   return 0;
 }

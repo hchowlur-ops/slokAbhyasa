@@ -276,15 +276,33 @@ export const ERROR_LABEL = {
 //   padas      – with `perPada` (8 for anuṣṭubh, 11 for the triṣṭubh family), per pāda of
 //                the text from `offset` on: its akṣaras and how many were heard, missing,
 //                added, replaced
-export function comparePhonology(refText, heardText, { perPada = null, offset = 0 } = {}) {
+//   plan       – the verse's own units (canon.js / verses.versePlan: the speaker line, the
+//                pādas, an attribution inside the verse), which place the pāda ends and the
+//                per-pāda counts exactly, hypermetric pādas included; `perPada` and `offset`
+//                are the arithmetic used without one
+export function comparePhonology(refText, heardText, { perPada = null, offset = 0, plan = null } = {}) {
   const R = syllabify(refText);
   const H = syllabify(heardText);
   if (!R.length) return null;
   const { pairs, folded } = foldVisargaEchoes(R, H, alignAksharas(R, H));
-  // where a pāda ends: by the metre from `offset`, else at the text's line ends
+  // where a pāda ends and which pāda an akṣara is in: by the plan when there is one, by the
+  // metre from `offset` otherwise, else at the text's line ends
+  let unitOfRef = null; // akṣara index → pāda index (0-based), null in the speaker line or an attribution inside
+  const unitEnds = new Set();
+  let unitCount = 0;
+  if (plan && Array.isArray(plan.padas) && plan.padas.length) {
+    unitOfRef = [];
+    const sp = plan.speakerLine || 0;
+    const speakerUnits = new Set(Array.isArray(plan.speakerUnits) ? plan.speakerUnits : []);
+    for (let r = 0; r < sp; r++) unitOfRef.push(null);
+    if (sp) unitEnds.add(sp - 1);
+    let acc = sp;
+    plan.padas.forEach((n, u) => { const idx = speakerUnits.has(u) ? null : unitCount++; for (let k = 0; k < n; k++) unitOfRef.push(idx); acc += n; unitEnds.add(acc - 1); });
+    for (let r = unitOfRef.length; r < R.length; r++) unitOfRef.push(unitCount ? unitCount - 1 : null); // text beyond the plan: the last pāda
+  }
   const lineEnds = new Set();
-  if (!perPada) { let acc = 0; for (const line of String(refText || '').split(/\r?\n/)) { const n = syllabify(line).length; if (n) { acc += n; lineEnds.add(acc - 1); } } }
-  const isPadaEnd = (r) => (perPada ? r >= offset && (r - offset + 1) % perPada === 0 : lineEnds.has(r));
+  if (!perPada && !unitOfRef) { let acc = 0; for (const line of String(refText || '').split(/\r?\n/)) { const n = syllabify(line).length; if (n) { acc += n; lineEnds.add(acc - 1); } } }
+  const isPadaEnd = (r) => (unitOfRef ? unitEnds.has(r) : perPada ? r >= offset && (r - offset + 1) % perPada === 0 : lineEnds.has(r));
   const sandhi = foldVisargaSandhi(R, H, pairs, isPadaEnd);
   const refCount = R.length - folded.ref;
   const heardCount = H.length - folded.heard;
@@ -296,9 +314,10 @@ export function comparePhonology(refText, heardText, { perPada = null, offset = 
   const aligned = [];
   // four pādas; a text with syllables beyond the metre's count keeps them in the fourth
   // four pādas, counted from `offset` (the akṣaras of an "arjuna uvāca" opening the text)
-  const padas = perPada ? Array.from({ length: Math.max(1, Math.min(4, Math.ceil(Math.max(1, refCount - offset) / perPada))) }, () => ({ ref: 0, heard: 0, missing: 0, added: 0, replaced: 0 })) : null;
+  const padas = unitOfRef ? (unitCount ? Array.from({ length: unitCount }, () => ({ ref: 0, heard: 0, missing: 0, added: 0, replaced: 0 })) : null)
+    : perPada ? Array.from({ length: Math.max(1, Math.min(4, Math.ceil(Math.max(1, refCount - offset) / perPada))) }, () => ({ ref: 0, heard: 0, missing: 0, added: 0, replaced: 0 })) : null;
   let lastRef = 0; // the pāda an added akṣara belongs to: that of the text's akṣara before it
-  const pada = (r) => (padas && r >= offset ? padas[Math.min(padas.length - 1, Math.floor((r - offset) / perPada))] : null);
+  const pada = (r) => (!padas ? null : unitOfRef ? (unitOfRef[r] == null ? null : padas[unitOfRef[r]]) : r >= offset ? padas[Math.min(padas.length - 1, Math.floor((r - offset) / perPada))] : null);
   for (const p of pairs) {
     if (p.r >= 0) lastRef = p.r;
     const pd = pada(lastRef);
