@@ -1064,7 +1064,33 @@ Runs the DSP suite on synthetic signals (tones, chant-like syllables, transposit
 pauses, dropped notes, a verse hidden inside a longer recording, a child's allowances against
 an adult's), the transcript diff, the quiz scoring and picking, the metadata (presets, text
 derivation, voice measurements, sidecars, bext chunks, profiles) and the library helpers, with
-Node's built-in test runner.
+Node's built-in test runner. `test/slips.test.js` holds the learner's slips as the
+simulations of 17 October 2026 exercised them: a pāda said twice and a pāda left out, judged
+from the words as Whisper actually wrote them (the compound split, a nasal changed) and from
+the sound of synthetic verses cut the same way.
+
+### Simulated slips, end to end
+
+```
+node tools/simulate-slips.mjs --take <take.wav> --sloka CH12-03
+```
+
+Cuts flawed versions of a real recitation of the sloka — the first word of pāda 3 said
+twice, pāda 3 started again (after a 0.4 s and a 0.9 s stop), its first syllable stuttered,
+pāda 2 left out, pāda 4 replaced (by the take's own first pāda, or the last pāda of
+`--other <wav>` in the same voice) — reading the pādas from the pauses of the recording
+(`--padas a,b,c` to say where they are), then plays each into the running app as the
+microphone, once in Self Evaluation and once in a one-sloka quiz it creates ("Simulations
+CH12-03"), and checks the outcome: the control must be Excellent or Good with no slip; a
+restarted pāda must be named, cost 15 % and grade Needs practice; a dropped pāda must be
+"akṣaras dropped" and Needs practice; a wrong pāda must be scored without a slip; a single
+word said twice and a stutter are known limits (Whisper smooths them away) and are
+reported, not failed. It writes `report.md` and `report.html` with every case's scores,
+words heard, deviations, screenshots, session and quiz attempt, beside the audio, under
+`<data>/simulations/<date>` (`--out`), keeps the sessions and the attempts in the app for
+a person to open (`--clean` deletes them), and exits 1 when a case that must be caught was
+not. Needs the app running (`--app`), Chrome, and the speech model downloaded once into
+Chrome's "slokabhyasa-sim-profile".
 
 ## Layout
 

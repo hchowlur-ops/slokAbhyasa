@@ -113,6 +113,12 @@ export const isSelfCorrection = (s) => !!s && SELF_CORRECTION.includes(s.kind) &
 export const selfCorrections = (slips) => (Array.isArray(slips) ? slips.filter(isSelfCorrection) : []);
 // The share of a sloka's score lost to self-correction: 15 % when there was any, else none.
 export const slipPenalty = (slips) => (selfCorrections(slips).length ? SLIP_PENALTY : 0);
+// The words alone say akṣaras were dropped: four or more of the sloka's — a tenth of it at
+// least, half a pāda — missing from what was heard (phon.comparePhonology's counts). The
+// ear's count cannot say so for a voice it has not learnt, and a take that stops short of
+// the plan leaves it nothing to close; a word or two Whisper misses never reaches this.
+export const DROPPED_MIN_AKSHARAS = 4;
+export const droppedByWords = (counts) => !!(counts && counts.ref >= 8 && counts.missing >= DROPPED_MIN_AKSHARAS && counts.missing >= counts.ref * 0.1);
 export function applySlipPenalty(overall, slips) {
   if (overall == null || !Number.isFinite(overall)) return overall;
   const p = slipPenalty(slips);
