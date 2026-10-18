@@ -326,7 +326,11 @@ silence whatever the count);
 position reaches the sloka's end — the last akṣara registers within a tenth of a second of
 its sound, sooner than any breath; a position a little short waits for a short pause, one
 well short for a long one — and the sloka's stretch is closed a moment later, off the
-page-turn path, so the turn waits for nothing. A quiz loads its slokas' recordings as it
+page-turn path, so the turn waits for nothing. A take **starts on the first sloka** of the
+list and the panel turns to it as the recording begins, whatever page was in view before
+(the last sloka ticked, or the page the last take ended on); to begin on a later sloka,
+press Next once the recording has started. A quiz attempt starts from its first sloka
+too. A quiz loads its slokas' recordings as it
 opens, so the ear has their plans and times from the first sloka. Where they are is read from **their
 own speed**, never the teacher's: the syllable count calibrated to their voice (how many
 nuclei the counter hears per akṣara of it, learnt from each sloka they recite whole) and,

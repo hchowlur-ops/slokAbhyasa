@@ -2556,7 +2556,12 @@ $('#practice-rec').addEventListener('click', async () => {
       practice.slips = new Map();
       practice.listenStopped = false;
       setHidden($('#practice-rec-stop-listen'), true);
-      recTextIndex = currentTextIndex(slokaTextItems());
+      // the take starts on the first sloka and the page turns to it: the ear begins on the
+      // sloka in view, and the page in view before a take is the active sloka (the last one
+      // ticked) — or, read while recording, the page the ear had turned to in the last take —
+      // neither the one the learner recites first
+      recTextIndex = 0;
+      renderSlokaTexts();
       recNote('');
       startEar(rec); // several slokas: each is heard to its end and sent on by itself
       if ($('#practice-playalong').checked && $('#practice-headphones').checked) {
@@ -3247,11 +3252,12 @@ $('#practice-rec-stop-listen').addEventListener('click', () => {
 function checkSegmentWords(seg) {
   const t = seg.transcript;
   if (!t || !seg.id) return;
+  if (!recSegments || !recSegments.parts.includes(seg)) return; // a stretch of an earlier take, heard late: nothing to tune or turn now
   const heard = tokenizeTranscript(t).map((w) => w.word);
   if (heard.length < 4) return;
   // the first stretch whose words are in tunes the count to this voice: the counter's
   // nuclei against the akṣaras actually heard (a learner the ear knows keeps their ratio)
-  if (liveEar && !liveEar.countRatioN && seg.nuclei) {
+  if (liveEar && !liveEar.countRatioN && !liveEar.ratioKnown && seg.nuclei) {
     const r = calibrateCountRatio({ nuclei: seg.nuclei, aksharasHeard: syllabify(heard.join(' ')).length });
     if (r) { liveEar.countRatio = r; liveEar.countRatioN = 1; recNote(`the count tuned to this voice: ${r} per akṣara`); }
   }
@@ -3486,7 +3492,7 @@ function startEar(rec) {
   if (!items.length) return; // the ear counts whether or not the words are heard — one sloka too: its count says whether a long take is the sloka recited slowly
   const sr = rec.ctx.sampleRate;
   const pace = learnerPace();
-  const ear = { rec, counter: new SyllableCounter(sr), read: 0, samplesRead: 0, item: null, plan: null, fp: null, expected: null, expectedMs: 0, tempo: pace.tempoRatio, tempoN: 0, aksPerSec: pace.aksPerSec, speedN: 0, countRatio: pace.countRatio, countRatioN: 0, restartPauses: [], teacherMs: 0, activeMs: 0, lastElapsed: 0, pos: 0, stalled: new Set(), prevPause: 0, pending: null, pendingClose: null, awaitingSlokaPause: false, padaPauses: [], slokaPauses: [], done: false, listener: null };
+  const ear = { rec, counter: new SyllableCounter(sr), read: 0, samplesRead: 0, item: null, plan: null, fp: null, expected: null, expectedMs: 0, tempo: pace.tempoRatio, tempoN: 0, aksPerSec: pace.aksPerSec, speedN: 0, countRatio: pace.countRatio, countRatioN: 0, ratioKnown: !!pace.countRatio, restartPauses: [], teacherMs: 0, activeMs: 0, lastElapsed: 0, pos: 0, stalled: new Set(), prevPause: 0, pending: null, pendingClose: null, awaitingSlokaPause: false, padaPauses: [], slokaPauses: [], done: false, listener: null };
   // the sloka in view: its plan, its fingerprints; the teacher's time only for the tempo
   // learnt against it, never for what the ear expects (that is the learner's own, or nothing)
   const target = (i) => {
@@ -4514,7 +4520,7 @@ function hideResults() {
   practice.quizAttempt = null;
   practice.session = null;
   setHidden($('#quiz-score'), true);
-  if (practice.quiz) { practice.take = null; setHidden($('#practice-base'), true); renderSlokaTexts(); } // the next attempt is from memory again
+  if (practice.quiz) { practice.take = null; quizTextIndex = 0; setHidden($('#practice-base'), true); renderSlokaTexts(); } // the next attempt is from memory again, from the first sloka
   setHidden($('#practice-results'), true);
   heardPlayer.pause();
   resetTranscriptUI();
