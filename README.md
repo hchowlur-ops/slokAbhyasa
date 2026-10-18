@@ -254,7 +254,9 @@ slokas you had ticked there.
      scores arrive with the transcript. A **slip** in the recitation itself makes the grade
      Needs practice, for that sloka and for the take, and the report row says which. The
      slips that are the learner correcting themself — a word said twice, a pāda or the
-     sloka started again, found in the words heard (and a restart heard by the ear while
+     sloka started again, found in the words heard — read as one stream of sounds, blind
+     to word breaks, since Whisper writes a compound as two or three words and alters a
+     nasal or two (and a restart heard by the ear while
      recording several slokas) — also cost **15 % of the sloka's score**, once, whatever
      their number; the line under the grade says what was lost and why ("Lost 14 points
      (15 %) for self-correction: repeated "पर्युपासते""), and the Analysis names each one

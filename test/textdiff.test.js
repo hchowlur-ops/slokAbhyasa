@@ -161,3 +161,20 @@ test('self-corrections from the words: a word said twice, a pāda started again,
   assert.equal(kn.length, 1);
   assert.equal(kn[0].kind, 'repeat');
 });
+
+test('self-corrections survive the words as Whisper writes them: compounds split, nasals changed', () => {
+  const T = (s) => s.split(' ').map((w) => ({ word: w, norm: w }));
+  const ref = T('ये त्वक्षरमनिर्देश्यमव्यक्तं पर्युपासते सर्वत्रगमचिन्त्यञ्च कूटस्थमचलन्ध्रुवम्');
+  const refPada = [1, 1, 2, 3, 4];
+  // the 16 October simulation: pāda 3 said twice, heard as "सर्वत्रगम चिंत्यम्चा" each time
+  const again = findSelfCorrections(ref, T('येत्वक्षरम निर्देश्यम अव्यक्तं पर्युपासते सर्वत्रगम चिंत्यम्चा सर्वत्रगम चिंत्यम्चा कूटस्थम चलं थुवं'), { refPada });
+  assert.deepEqual(again.map((c) => [c.kind, c.word, c.pada]), [['restart', 'सर्वत्रगमचिन्त्यञ्च', 3]], JSON.stringify(again));
+  // a word said twice inside the compound's pāda: a repeat, named as heard
+  const twice = findSelfCorrections(ref, T('येत्वक्षरम निर्देश्यम अव्यक्तं पर्युपासते सर्वत्रगम सर्वत्रगम चिंत्यम्चा कूटस्थम चलं थुवं'), { refPada });
+  assert.deepEqual(twice.map((c) => [c.kind, c.word]), [['repeat', 'सर्वत्रगम']], JSON.stringify(twice));
+  // the clean recitation as Whisper writes it: nothing
+  assert.deepEqual(findSelfCorrections(ref, T('येत्वक्षरम निर्देश्यम अव्यक्तं पर्युपासते सर्वत्रगम चिंत्यम्चा कूटस्थम चलं थुवं'), { refPada }), []);
+  // the sloka started again from the top, split as Whisper splits it
+  const top = findSelfCorrections(ref, T('येत्वक्षरम निर्देश्यम अव्यक्तं येत्वक्षरम निर्देश्यम अव्यक्तं पर्युपासते सर्वत्रगम चिंत्यम्चा कूटस्थम चलं थुवं'), { refPada });
+  assert.deepEqual(top.map((c) => [c.kind, c.word, c.pada]), [['restart', 'ये', 1]], JSON.stringify(top));
+});

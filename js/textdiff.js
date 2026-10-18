@@ -232,45 +232,79 @@ export function withDandas(text) {
   return lines.map((l, i) => (marks.has(i) ? `${l} ${marks.get(i)}` : l)).join('\n');
 }
 
-// The learner correcting themself, read from the words: a word said twice in a row
-// ("repeat"), and a stretch of words that reads the sloka again from a word already
-// reached — a pāda, or the sloka, started again ("restart"). The word-level LCS marks the
-// second reading (or the broken-off first one) as inserted; a run of inserted words that
-// picks up the sloka at a word already matched — two words of it, or one long word that
-// the words after the run carry on from — is a restart at that word. `refPada[i]` says
-// which pāda the sloka's word i begins in (0 the speaker line), when known. Returns
-// [{ kind, word, at (heard index), pada?, refIndex? }].
+// The learner correcting themself, read from the words as one stream of sounds, blind to
+// word breaks: Whisper writes a compound as two or three words ("sarvatragam cintyañca"
+// for sarvatragamacintyañca) and alters a nasal or two, so a word-by-word match misses
+// what the ear plainly hears. A stretch of the stream said again right after itself (a
+// few sounds' slack between, small differences allowed) is a **repeat** of the heard
+// words it spans; when it starts where a pāda of the sloka starts and covers most of that
+// pāda or more, it is a **restart** of that pāda — of the sloka, when the pāda is the
+// first. `refPada[i]` says which pāda the sloka's word i begins in (0 the speaker line),
+// when known. Returns [{ kind, word, at (heard index of the second saying), pada?,
+// refIndex? }].
+const SELF_CORR_MIN_SOUNDS = 5; // about three akṣaras: shorter echoes are the language itself
+const SELF_CORR_MAX_SOUNDS = 60;
+function editDistance(a, b) {
+  const n = a.length;
+  const m = b.length;
+  let prev = new Int32Array(m + 1);
+  let cur = new Int32Array(m + 1);
+  for (let j = 0; j <= m; j++) prev[j] = j;
+  for (let i = 1; i <= n; i++) {
+    cur[0] = i;
+    for (let j = 1; j <= m; j++) {
+      const c = a.charCodeAt(i - 1) === b.charCodeAt(j - 1) ? 0 : 1;
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + c);
+    }
+    const t = prev; prev = cur; cur = t;
+  }
+  return prev[m];
+}
 export function findSelfCorrections(refToks, heardToks, { refPada = null } = {}) {
-  const rk = (refToks || []).map((t) => phoneticKey(t.norm || t.word || ''));
-  const hk = (heardToks || []).map((t) => phoneticKey(t.norm || t.word || ''));
+  const stream = (toks) => { let s = ''; const tokAt = []; const starts = []; for (let i = 0; i < toks.length; i++) { const k = phoneticKey(toks[i].norm || toks[i].word || ''); starts.push(s.length); for (let c = 0; c < k.length; c++) tokAt.push(i); s += k; } return { s, tokAt, starts }; };
+  const H = stream(heardToks || []);
+  const R = stream(refToks || []);
   const out = [];
-  for (let j = 1; j < hk.length; j++) if (hk[j].length >= 3 && hk[j] === hk[j - 1]) out.push({ kind: 'repeat', word: heardToks[j].word, at: j });
-  if (rk.length < 2 || hk.length < 2) return out;
-  const ops = diffWords(rk, hk);
-  let reached = -1; // the furthest sloka word matched so far
-  let run = []; // heard indices inserted since the last match
-  const flush = (nextRef) => { // nextRef: the sloka word the heard word after the run matched, or -1
-    if (run.length && reached >= 0) {
-      for (let r = 0; r < run.length; r++) {
-        if (run.length - r === 1 && run[r] > 0 && hk[run[r]] === hk[run[r] - 1]) break; // a word said twice: reported above
-        let found = null;
-        for (let p = 0; p <= reached; p++) {
-          if (rk[p].length < 2 || rk[p] !== hk[run[r]]) continue;
-          let n = 0;
-          for (let k = 0; r + k < run.length && p + k < rk.length; k++) { if (rk[p + k] === hk[run[r + k]]) n++; else break; }
-          const continues = nextRef === p + (run.length - r);
-          if (n >= 2 || (n === 1 && rk[p].length >= 4 && continues)) { found = { p, n }; break; }
-        }
-        if (found) { out.push({ kind: 'restart', word: refToks[found.p].word, at: run[r], refIndex: found.p, pada: refPada ? refPada[found.p] : null }); break; }
+  if (H.s.length < 2 * SELF_CORR_MIN_SOUNDS) return out;
+  // where each pāda of the sloka starts in its stream, and how long it runs
+  const padaStart = new Map();
+  if (refPada) for (let i = 0; i < refPada.length && i < R.starts.length; i++) if (refPada[i] != null && !padaStart.has(refPada[i])) padaStart.set(refPada[i], R.starts[i]);
+  const padaOrder = [...padaStart.entries()].sort((x, y) => x[1] - y[1]);
+  const slack = (L) => Math.max(1, Math.round(L * 0.15));
+  let i = 0;
+  while (i + 2 * SELF_CORR_MIN_SOUNDS <= H.s.length) {
+    let hit = null;
+    const maxL = Math.min(SELF_CORR_MAX_SOUNDS, Math.floor((H.s.length - i) / 2));
+    for (let L = maxL; L >= SELF_CORR_MIN_SOUNDS && !hit; L--) {
+      const a = H.s.substr(i, L);
+      for (let gap = 0; gap <= 2 && !hit; gap++) {
+        const b = H.s.substr(i + L + gap, L);
+        if (b.length < L || a.slice(0, 3) !== b.slice(0, 3)) continue; // a saying again begins as the first did
+        if (editDistance(a, b) <= slack(L)) hit = { L, gap };
       }
     }
-    run = [];
-  };
-  for (const o of ops) {
-    if (o.op === 'equal') { flush(o.a); reached = Math.max(reached, o.a); }
-    else if (o.op === 'insert') run.push(o.b);
-    else flush(-1);
+    if (!hit) { i++; continue; }
+    const { L, gap } = hit;
+    const run = H.s.substr(i, L);
+    // the sloka's stretch this is, when it is one: the position in the sloka's stream that reads most like it
+    let bestP = -1;
+    let bestD = Infinity;
+    for (let p = 0; p + Math.min(L, 4) <= R.s.length; p++) { const d = editDistance(run, R.s.substr(p, L)); if (d < bestD) { bestD = d; bestP = p; } }
+    const inSloka = bestP >= 0 && bestD <= Math.max(1, Math.round(L * 0.3));
+    // a pāda started again: the run begins where a pāda begins and holds most of one (six akṣaras or more — one vowel per akṣara in the key); a shorter echo at a pāda's start is a word said twice
+    const aksharas = (run.match(/[aeiou]/g) || []).length;
+    let restart = null;
+    if (inSloka && aksharas >= 6) for (const [pada, ps] of padaOrder) if (Math.abs(ps - bestP) <= 2) { restart = pada; break; }
+    const at = H.tokAt[Math.min(H.tokAt.length - 1, i + L + gap)];
+    if (restart != null) {
+      const refIndex = R.tokAt[padaStart.get(restart)];
+      out.push({ kind: 'restart', word: refToks[refIndex].word, at, refIndex, pada: restart });
+    } else {
+      const first = H.tokAt[i];
+      const last = H.tokAt[i + L - 1];
+      out.push({ kind: 'repeat', word: heardToks.slice(first, last + 1).map((t) => t.word).join(' '), at });
+    }
+    i += 2 * L + gap;
   }
-  flush(-1);
-  return out.sort((a, b) => a.at - b.at);
+  return out;
 }
