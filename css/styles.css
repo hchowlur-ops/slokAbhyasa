@@ -232,6 +232,19 @@ canvas { display: block; }
 .lib-details dd { margin: 0; }
 .lib-tag { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 999px; background: var(--surface-2); font-size: 0.78rem; color: var(--muted); }
 .lib-tag.warn { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
+.lib-tag.verse { background: var(--gold-soft); color: var(--gold-deep); font-weight: 600; }
+:root[data-theme="dark"] .lib-tag.verse { color: var(--gold); }
+/* Library › Details › the verse of the reference dataset */
+.lib-verse { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); border-left: 4px solid var(--gold); }
+.lib-verse-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.lib-verse-head strong { font-size: 1rem; }
+.lib-verse-head .row-actions { margin-left: auto; display: flex; gap: 6px; }
+.lib-verse-text { background: var(--surface); font-size: 1.05rem; line-height: 1.9; }
+.lib-verse-custom { display: flex; flex-direction: column; gap: 6px; }
+.lib-verse-custom textarea { width: 100%; font: inherit; font-size: 0.92rem; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: inherit; }
+.text-meaning { margin-top: 6px; line-height: 1.5; }
+.locked-note { margin-top: 4px; }
+textarea.locked { background: var(--surface-2); color: var(--muted); cursor: not-allowed; }
 
 /* reports dashboard */
 .reports-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; }
@@ -594,6 +607,45 @@ canvas { display: block; }
 .score-grade.good { background: color-mix(in srgb, var(--pitch) 18%, transparent); color: color-mix(in srgb, var(--pitch) 70%, var(--text)); }
 .score-grade.fair { background: color-mix(in srgb, var(--timing) 20%, transparent); color: color-mix(in srgb, var(--timing) 70%, var(--text)); }
 .score-grade.practice { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
+/* a few words of encouragement under the grade */
+.score-words { margin: 6px auto 0; max-width: 300px; font-size: 0.9rem; line-height: 1.35; color: var(--text); font-family: var(--display); font-style: italic; }
+.score-words[hidden] { display: none; }
+/* points lost to self-correction (a word said again, a pāda or the sloka started again) */
+.score-penalty { margin: 6px auto 0; max-width: 320px; font-size: 0.85rem; line-height: 1.35; color: var(--danger); }
+.score-penalty[hidden] { display: none; }
+.stt-corrections { margin: 8px 0 0; padding: 8px 12px; border-radius: 10px; border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent); background: color-mix(in srgb, var(--danger) 6%, transparent); font-size: 0.9rem; }
+.stt-corrections[hidden] { display: none; }
+.stt-corrections b { color: var(--danger); }
+.stt-corrections .cw { font-weight: 650; }
+/* what went wrong in the recitation itself (a restart, a stall…), in a report row */
+/* the line of the sloka the ear hears the learner in; a tap on a line resyncs the count */
+.sloka-line { border-radius: 6px; padding: 0 4px; margin: 0 -4px; transition: background .2s; }
+.sloka-line.current { background: color-mix(in srgb, var(--gold) 24%, transparent); }
+#practice-rec-count { cursor: pointer; }
+/* moments: a first Excellent, a new best, a streak… under the grade, and the Reports strip */
+.score-moments { list-style: none; margin: 8px auto 0; padding: 0; max-width: 320px; font-size: 0.88rem; line-height: 1.35; color: var(--muted); }
+.score-moments[hidden] { display: none; }
+.score-moments li { margin: 2px 0; }
+.reports-progress { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; margin: 0 0 10px; padding: 8px 12px; border-radius: 10px; background: var(--surface-2); font-size: 0.9rem; }
+.reports-progress[hidden] { display: none; }
+.reports-progress .lead { font-family: var(--display); font-weight: 600; color: var(--indigo); }
+:root[data-theme="dark"] .reports-progress .lead { color: #f3e7c8; }
+/* badges: the learner's on Home, a mark in the quiz list, the card when one is earned */
+.home-badges { margin: 18px auto 0; max-width: 640px; }
+.home-badges[hidden] { display: none; }
+.home-badges .hb-lead { font-family: var(--display); font-weight: 600; font-size: 1.05rem; color: var(--indigo); margin-bottom: 8px; }
+:root[data-theme="dark"] .home-badges .hb-lead { color: #f3e7c8; }
+.home-badges .hb-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 6px 14px; }
+.home-badges .hb-list li { display: flex; align-items: baseline; gap: 8px; }
+.home-badges .hb-emoji { font-size: 1.3rem; }
+.home-badges .hb-when { color: var(--muted); font-size: 0.82rem; }
+.quiz-badge { margin-left: 6px; font-size: 1rem; }
+.badge-card { position: fixed; left: 50%; top: 18%; transform: translateX(-50%); z-index: 60; width: min(92vw, 380px); padding: 22px 24px; border-radius: 16px; background: var(--surface); border: 1px solid var(--gold); box-shadow: 0 14px 40px -12px rgba(0, 0, 0, .35); text-align: center; }
+.badge-card[hidden] { display: none; }
+.badge-card .bc-emoji { font-size: 3rem; line-height: 1; margin-bottom: 8px; }
+.badge-card h3 { margin: 0 0 6px; font-family: var(--display); }
+.badge-card p { margin: 0 0 14px; }
+@media print { .sidebar, .nav, .btn, .home-hero { display: none !important; } .home-badges { display: block !important; box-shadow: none; } }
 /* categories that could not be judged: collapsed, at the bottom of the report */
 .unjudged { margin-top: 24px; padding: 10px 14px; border-radius: 12px; border: 1px dashed var(--border); }
 .unjudged summary { cursor: pointer; font-weight: 600; color: var(--muted); font-size: 0.9rem; }
@@ -756,6 +808,8 @@ canvas { display: block; }
 .lib-actions [data-act="delete"]:hover { color: var(--danger); }
 
 .rec-count { margin-top: 2px; min-height: 1.2em; }
+.rec-stop-listen { margin-top: 4px; }
+.rec-stop-listen[hidden] { display: none; }
 .rec-count:empty { display: none; }
 
 /* ---------- the metadata popup (Library, right-click) ---------- */
@@ -827,51 +881,71 @@ canvas { display: block; }
 
 /* ---------- self evaluation: report browser ---------- */
 .reports { margin-bottom: 18px; padding: 14px; border-radius: 14px; background: var(--surface-2); }
-.reports-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
-.reports-head h3 { margin: 0; }
-.report-map { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
-.reports-head { margin-bottom: 8px; }
-.report-row {
+/* the take's scoreboard: its overall, and one card per sloka */
+.take-board { margin: 2px 0 16px; padding: 14px 16px 12px; border-radius: 14px; background: var(--surface-2); border: 1px solid var(--border); }
+.take-board[hidden] { display: none; }
+.take-overall { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; margin-bottom: 12px; }
+.take-ring { width: 96px; height: 96px; flex: 0 0 auto; }
+.take-ring::before { inset: 9px; }
+.take-ring .ring-val { font-size: 1.7rem; }
+.take-overall-text { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; }
+.take-overall-text .score-grade { margin-top: 0; }
+.take-overall-text .score-words { margin: 0; max-width: 420px; text-align: left; }
+.take-sub { line-height: 1.35; }
+.take-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.take-card { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 9px 11px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); cursor: pointer; font: inherit; color: inherit; text-align: left; min-width: 0; transition: border-color .12s, transform .12s, box-shadow .12s; }
+.take-card:hover { border-color: var(--accent); transform: translateY(-1px); box-shadow: var(--shadow); }
+.take-card.active { box-shadow: inset 0 0 0 2px var(--accent); border-color: var(--accent); }
+.take-card.bad { border-left: 4px solid var(--danger); }
+.take-card.pending { opacity: .75; }
+.tc-name { font-weight: 650; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.9rem; }
+.tc-score { font-family: var(--mono); font-weight: 700; font-size: 1.5rem; line-height: 1.1; }
+.tc-grade { font-size: 0.78rem; font-weight: 700; }
+.tc-grade.excellent { color: var(--gold-deep); }
+:root[data-theme="dark"] .tc-grade.excellent { color: var(--gold); }
+.tc-grade.good { color: color-mix(in srgb, var(--pitch) 70%, var(--text)); }
+.tc-grade.fair { color: color-mix(in srgb, var(--timing) 70%, var(--text)); }
+.tc-grade.practice { color: var(--danger); }
+.tc-note { font-size: 0.76rem; color: var(--muted); line-height: 1.3; }
+.tc-note.bad { color: var(--danger); font-weight: 600; }
+.take-card { position: relative; }
+.take-card .tc-busy { position: absolute; top: 8px; right: 8px; width: 14px; height: 14px; }
+.take-card .tc-busy[hidden] { display: none; }
+.take-card.busy .tc-score { opacity: .6; }
+.take-progress { margin-top: 10px; }
+.take-progress[hidden] { display: none; }
   display: grid; grid-template-columns: minmax(110px, 190px) minmax(120px, 1fr) minmax(56px, auto) minmax(130px, 230px); gap: 12px; align-items: center;
   width: 100%; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface);
   cursor: pointer; font: inherit; color: inherit; text-align: left;
 }
-.report-row:hover { border-color: var(--accent); }
-.report-row.active { box-shadow: inset 0 0 0 2px var(--accent); }
-.report-row.flag-bad { border-color: var(--danger); }
-.report-row.flag-warn { border-color: var(--timing); }
-.rr-name { font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rr-track { position: relative; height: 16px; border-radius: 8px; background: var(--wave-bg); overflow: hidden; }
-.rr-span { position: absolute; top: 0; bottom: 0; min-width: 3px; border-radius: 4px; background: color-mix(in srgb, var(--accent) 38%, transparent); }
-.rr-span.warn { background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--timing) 60%, transparent) 0 5px, color-mix(in srgb, var(--accent) 30%, transparent) 5px 10px); }
-.rr-span.bad { background: color-mix(in srgb, var(--danger) 22%, transparent); }
-.rr-mark { position: absolute; top: 2px; bottom: 2px; min-width: 2px; border-radius: 1px; }
-.rr-mark.type-pitch { background: var(--pitch); }
-.rr-mark.type-timing { background: var(--timing); }
-.rr-mark.type-content { background: var(--content); }
-.rr-mark.type-missing, .rr-mark.type-extra { background: var(--missing); }
-.rr-mark.type-dynamics { background: var(--dynamics); }
-.rr-score { font-weight: 700; text-align: right; display: flex; flex-direction: column; align-items: flex-end; line-height: 1.15; }
 .rr-grade { font-size: 0.72rem; font-weight: 700; letter-spacing: .02em; }
 .rr-grade.excellent { color: var(--gold-deep); }
 :root[data-theme="dark"] .rr-grade.excellent { color: var(--gold); }
 .rr-grade.good { color: color-mix(in srgb, var(--pitch) 70%, var(--text)); }
 .rr-grade.fair { color: color-mix(in srgb, var(--timing) 70%, var(--text)); }
 .rr-grade.practice { color: var(--danger); }
-.rr-info { font-size: 0.82rem; color: var(--muted); display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.rr-flag { font-weight: 600; }
-.rr-flag.bad { color: var(--danger); }
-.rr-flag.warn { color: var(--timing); }
-.report-title-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
-.report-title-row h3 { margin: 0; font-size: 1.15rem; }
+/* the sloka's name on the Analysis fold (the report's title) */
+.analysis-name { font-weight: 650; font-size: 1rem; color: var(--text); }
+.analysis-name:empty { display: none; }
+/* the sloka's verdict, what its overall was weighted over, the points lost to self-correction: at the top of the fold */
+.report-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; margin: 0 0 14px; }
+.report-line:empty { display: none; }
+.report-line .score-verdict { margin: 0; }
+.report-line .score-sub { margin: 0; min-height: 0; }
+.report-line .score-penalty { flex-basis: 100%; margin: 2px 0 0; max-width: none; }
+/* "Play both together" beside the scoreboard's ring */
+.take-duet { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; flex: 0 0 auto; }
+.take-duet .result-duet { margin: 0; justify-content: flex-start; }
+.take-duet .playback-row { margin: 0; flex-direction: column; align-items: flex-start; gap: 6px; }
+.take-duet .speed.inline { min-width: 0; width: 100%; flex: 0 1 auto; }
+.take-duet .speed.inline .slider { flex: 1; min-width: 120px; }
+.take-overall-text { flex: 1 1 240px; }
+.duet-slot .result-duet { margin: 0 0 18px; }
+.result-overall[hidden] { display: none; }
 /* Evaluating…: in place of the report from the stop of a recording until the open sloka's results are in */
-.evaluating { display: flex; flex-direction: column; gap: 10px; margin: 2px 0 18px; padding: 18px 20px; border-radius: 14px; background: var(--surface-2); border: 1px solid var(--border); border-left: 4px solid var(--accent); }
-.evaluating-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.evaluating-head strong { font-family: var(--display); font-size: 1.25rem; color: var(--indigo); }
-.evaluating .spinner { flex: none; width: 22px; height: 22px; border-radius: 50%; border: 3px solid var(--border); border-top-color: var(--accent); animation: spin .9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-.evaluating .progress { margin-top: 0; }
-@media (prefers-reduced-motion: reduce) { .evaluating .spinner { animation: none; border-top-color: var(--border); } }
+.spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .spinner { animation: none; border-top-color: var(--border); } }
 .report-error { padding: 12px 14px; border-radius: 10px; background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); margin: 0 0 12px; }
 .w-dim { opacity: .38; }
 .lib-pick { width: 18px; height: 18px; accent-color: var(--accent); margin: 0; flex: none; cursor: pointer; }
@@ -948,9 +1022,6 @@ canvas { display: block; }
 .quiz-table tr.openable:hover td { background: var(--surface); }
 .quiz-table tr.active td { background: var(--accent-soft); }
 .quiz-trend-fold, .reports-fold { margin-top: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
-.reports-fold { margin-top: 0; }
-.reports-fold .report-map { padding: 10px 14px 0; }
-.reports-fold > p { padding: 0 14px 12px; margin: 6px 0 0; }
 .quiz-trend-fold > summary, .reports-fold > summary { display: flex; align-items: center; gap: 10px; padding: 10px 14px; cursor: pointer; list-style: none; user-select: none; border-radius: 12px; }
 .quiz-trend-fold > summary::-webkit-details-marker, .reports-fold > summary::-webkit-details-marker { display: none; }
 .quiz-trend-fold > summary:hover, .reports-fold > summary:hover { background: var(--surface-2); }
@@ -1048,3 +1119,48 @@ rt { font-size: 0.5em; line-height: 1; font-weight: 600; color: var(--gold-deep)
 .quiz-table td .mark { margin-left: 4px; font-weight: 700; }
 .quiz-table td .mark.ok { color: var(--accent-strong); }
 .quiz-table td .mark.bad { color: var(--danger); }
+
+/* ---------- Learn: the chapters, the verses of one, the verse in view, the take ---------- */
+.learn-card .learn-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.learn-head h2 { margin: 0; }
+.chapter-strip { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.ch-card, .verse-card {
+  position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-width: 0;
+  padding: 9px 11px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface);
+  cursor: pointer; font: inherit; color: inherit; text-align: left; transition: border-color .12s, transform .12s, box-shadow .12s;
+}
+.ch-card:hover, .verse-card:hover { border-color: var(--accent); transform: translateY(-1px); box-shadow: var(--shadow); }
+.ch-card.active, .verse-card.active { box-shadow: inset 0 0 0 2px var(--accent); border-color: var(--accent); }
+.ch-card .cc-num { font-family: var(--mono); font-weight: 700; font-size: 1.35rem; line-height: 1.1; }
+.ch-card .cc-name { width: 100%; font-size: 0.86rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ch-card .cc-bar { display: block; width: 100%; height: 4px; border-radius: 2px; background: var(--surface-2); overflow: hidden; }
+.ch-card .cc-bar i { display: block; height: 100%; background: var(--gold); transition: width .2s; }
+.ch-card.done .cc-bar i { background: var(--accent); }
+.ch-card .cc-count { font-size: 0.76rem; color: var(--muted); }
+.ch-card.other { border-style: dashed; }
+.ch-card.other .cc-num { color: var(--muted); }
+.learn-verses { margin-top: 14px; }
+.learn-verses-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.learn-verses-title { font-weight: 650; }
+.verse-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; max-height: 46vh; overflow-y: auto; padding: 2px 2px 2px 0; scrollbar-gutter: stable; }
+.verse-card .vc-id { font-family: var(--mono); font-weight: 700; font-size: 0.95rem; }
+.verse-card .vc-text { width: 100%; font-size: 1rem; line-height: 1.5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.verse-card .vc-status { font-size: 0.76rem; color: var(--muted); }
+.verse-card.recorded .vc-status { color: var(--accent-strong); font-weight: 600; }
+.verse-card.recorded { background: color-mix(in srgb, var(--accent-soft) 55%, var(--surface)); }
+.learn-verse { margin-bottom: 14px; }
+.learn-speaker-line { font-size: 1.05rem; margin: 0 0 4px; }
+.learn-existing { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-top: 10px; font-size: 0.9rem; }
+.learn-existing-item { display: inline-flex; align-items: center; gap: 6px; }
+.learn-existing-item .btn-play { width: 30px; height: 30px; }
+.learn-existing-item .btn-play svg { width: 15px; height: 15px; }
+.learn-options { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.learn-free { margin-bottom: 12px; }
+.learn-details { margin-top: 12px; }
+.learn-details summary { cursor: pointer; font-weight: 600; }
+.learn-details[open] summary { margin-bottom: 10px; }
+.learn-overwrite { width: 100%; display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 10px; background: var(--gold-soft); font-size: 0.92rem; }
+.learn-overwrite[hidden] { display: none; }
+:root[data-theme="dark"] .learn-overwrite { background: color-mix(in srgb, var(--gold) 14%, transparent); }
+.learn-pace { margin: 6px 0 4px; }
+.learn-pace[hidden] { display: none; }

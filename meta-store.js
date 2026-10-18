@@ -162,6 +162,19 @@ export async function ensureMeta(rec, wavPath) {
 
 // Validates the parts of a sidecar a client may set. Server-owned fields (id, audio,
 // software, createdAt) are kept from `current`.
+// The link to a reference dataset's verse, as js/verses.js verseLink makes it.
+export function sanitizeVerse(v) {
+  if (!v || typeof v !== 'object' || !str(v.id, 40) || !str(v.dataset, 40)) return null;
+  const text = v.text && typeof v.text === 'object' ? { speaker: str(v.text.speaker, 120) || null, deva: Array.isArray(v.text.deva) ? v.text.deva.filter((l) => typeof l === 'string').map((l) => l.slice(0, 400)).slice(0, 12) : [] } : { speaker: null, deva: [] };
+  return {
+    dataset: str(v.dataset, 40), datasetVersion: str(v.datasetVersion, 40) || null, id: str(v.id, 40), kind: str(v.kind, 20) || 'verse',
+    chapter: num(v.chapter), verse: num(v.verse), verseEnd: num(v.verseEnd),
+    speakerLineRecited: v.speakerLineRecited !== false, text, textHash: str(v.textHash, 80) || null,
+    metre: v.metre && typeof v.metre === 'object' && str(v.metre.family, 20) ? { family: str(v.metre.family, 20), name: str(v.metre.name, 40) || null } : null,
+    licence: str(v.licence, 80) || null, mappedBy: str(v.mappedBy, 20) || 'manual', pinned: !!v.pinned, at: str(v.at, 40) || null,
+  };
+}
+
 function sanitizeChandas(c) {
   const verse = c.verse && typeof c.verse === 'object' && num(c.verse.chapter) && num(c.verse.verse) ? { chapter: c.verse.chapter, verse: c.verse.verse } : null;
   return {
@@ -189,13 +202,17 @@ export function sanitizeMeta(body, current) {
   if (b.text === null) base.text = null;
   else if (b.text && typeof b.text === 'object' && typeof b.text.body === 'string') {
     const t = deriveText(b.text.body.slice(0, 20000), { language: str(b.text.language, 10) || null, script: str(b.text.script, 8) || null });
-    if (t) { t.origin = b.text.origin === 'transcript' ? 'transcript' : 'typed'; if (b.text.title) t.title = str(b.text.title, 120); }
+    if (t) { t.origin = b.text.origin === 'transcript' ? 'transcript' : b.text.origin === 'reference' ? 'reference' : 'typed'; if (b.text.title) t.title = str(b.text.title, 120); }
     base.text = t;
   } else base.text = cur.text || null;
   // chandas: the metre read from the text or transcript (js/chandas.js); null clears it
   if (b.chandas === null) base.chandas = null;
   else if (b.chandas && typeof b.chandas === 'object') base.chandas = sanitizeChandas(b.chandas);
   else base.chandas = cur.chandas || null;
+  // verse: the link to a reference dataset's verse (js/verses.js verseLink); null unlinks; absent keeps
+  if (b.verse === null) base.verse = null;
+  else if (b.verse && typeof b.verse === 'object') base.verse = sanitizeVerse(b.verse);
+  else base.verse = cur.verse || null;
   base.voice = b.voice && typeof b.voice === 'object' ? pick(b.voice, ['medianF0Hz', 'f0P10Hz', 'f0P90Hz', 'f0RangeSemitones', 'voicedFraction', 'leadSilenceSec', 'trailSilenceSec', 'activeSec', 'tempoSylPerSec']) : cur.voice || null;
   base.measured = b.measured && typeof b.measured === 'object' ? pick(b.measured, ['durationSec', 'sampleCount', 'peakDbfs', 'rmsDbfs', 'noiseFloorDbfs', 'snrDb', 'clippedSampleCount']) : cur.measured || null;
   if (b.capture && typeof b.capture === 'object') {
@@ -261,6 +278,22 @@ export function sanitizeProfile(body, current = null) {
   const voiceType = VOICE_IDS.has(b.voiceType) ? b.voiceType : (current && current.voiceType) || 'preferNotToSay';
   const ageGroup = AGE_IDS.has(b.ageGroup) ? b.ageGroup : (current && current.ageGroup) || 'unspecified';
   const roles = Array.isArray(b.roles) ? b.roles.filter((r) => r === 'learner' || r === 'teacher') : (current && current.roles) || ['learner'];
+  // the learner's pace, as the ear measures it take by take: their tempo against the
+  // teacher's, and their pauses between pādas and between slokas (ms), a running mean
+  const num = (v, lo, hi) => (Number.isFinite(Number(v)) && Number(v) >= lo && Number(v) <= hi ? Number(v) : null);
+  let pace = current && current.pace ? current.pace : null;
+  if (b.pace && typeof b.pace === 'object') {
+    const p = {};
+    const tr = num(b.pace.tempoRatio, 0.3, 3); if (tr != null) p.tempoRatio = Math.round(tr * 100) / 100;
+    const pp = num(b.pace.padaPauseMs, 0, 5000); if (pp != null) p.padaPauseMs = Math.round(pp);
+    const sp = num(b.pace.slokaPauseMs, 0, 10000); if (sp != null) p.slokaPauseMs = Math.round(sp);
+    const ak = num(b.pace.aksPerSec, 0.5, 15); if (ak != null) p.aksPerSec = Math.round(ak * 100) / 100; // akṣaras per second of their singing
+    const cr = num(b.pace.countRatio, 0.5, 2); if (cr != null) p.countRatio = Math.round(cr * 100) / 100; // syllable nuclei heard per akṣara of their voice
+    const rp = num(b.pace.restartPauseMs, 0, 5000); if (rp != null) p.restartPauseMs = Math.round(rp); // the stop they make before starting a pāda again
+    const lm = num(b.pace.leadMs, 0, 20000); if (lm != null) p.leadMs = Math.round(lm); // how long after tapping record they begin
+    p.n = Math.round(Math.max(0, Math.min(20, Number(b.pace.n) || 0)));
+    pace = Object.keys(p).length > 1 ? p : null;
+  } else if (b.pace === null) pace = null;
   const now = new Date().toISOString();
   return {
     profile: {
@@ -269,6 +302,7 @@ export function sanitizeProfile(body, current = null) {
       voiceType,
       ageGroup,
       roles: roles.length ? roles : ['learner'],
+      ...(pace ? { pace } : {}),
       createdAt: (current && current.createdAt) || now,
       updatedAt: now,
     },

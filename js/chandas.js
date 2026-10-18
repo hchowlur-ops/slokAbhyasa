@@ -134,14 +134,64 @@ export function padaBreaks(words, perPada, lines = 2) {
 // way: । after the second pāda, ॥ after the fourth.
 export const linesFor = (perPada, preferred = 2) => (perPada === 11 ? 4 : preferred === 4 ? 4 : 2);
 
-// The text written out in its lines (see linesFor), unless it already has lines.
+// The akṣara plan of a text: how many akṣaras the speaker line has (0 without one) and how
+// many each pāda has, in order, so a count of akṣaras heard can be read as "pāda 3 of 4".
+// A line of the text that holds two pādas (a half-verse) is split at the word boundary
+// nearest the metre's count; a line that holds the whole sloka into four; a line that fits
+// no metre (a colophon, prose) is one unit. `checkpoints` are the cumulative counts at the
+// end of the speaker line and of each pāda.
+//   aksharaPlan('अर्जुन उवाच\nये त्वक्षरम… ।\nसर्वत्रगम… ॥', { perPada: 8 })
+//   → { speakerLine: 5, padas: [8, 8, 8, 8], total: 37, checkpoints: [5, 13, 21, 29, 37] }
+export function aksharaPlan(text, { perPada = null } = {}) {
+  const { prefix, body } = splitUvaca(String(text || ''));
+  const speakerLine = prefix ? syllabify(prefix).length : 0;
+  const pp = perPada || identifyChandas(body).perPada;
+  const padas = [];
+  for (const line of body.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)) {
+    const words = line.split(/[^\p{L}\p{M}]+/u).filter(Boolean);
+    const counts = words.map((w) => syllabify(w).length);
+    const n = counts.reduce((a, b) => a + b, 0);
+    if (!n) continue;
+    const held = pp ? Math.round(n / pp) : 1; // how many pādas the line holds
+    if (!pp || held < 2 || Math.abs(n - held * pp) > 2) { padas.push(n); continue; }
+    // by the metre's count: the pāda boundary often falls inside a word joined by sandhi,
+    // so the words cannot place it; the last pāda takes any surplus or shortfall
+    for (let k = 0; k < held - 1; k++) padas.push(pp);
+    padas.push(n - (held - 1) * pp);
+  }
+  const checkpoints = [];
+  let acc = speakerLine;
+  if (speakerLine) checkpoints.push(acc);
+  for (const p of padas) { acc += p; checkpoints.push(acc); }
+  return { speakerLine, padas, total: acc, checkpoints };
+}
+
+// The text written out in its lines (see linesFor). A text that has its lines already (the
+// dataset's half-verses) is reshaped when the setting asks for the other count: the two
+// half-verses of an anuṣṭubh into its four pādas, or four pādas into two half-verses; any
+// other shape is kept as it is.
 export function layoutSloka(text, { perPada = null, lines = 2 } = {}) {
   const { prefix, body } = splitUvaca(String(text || '')); // the attribution on a line of its own
   const withPrefix = (laid) => (prefix ? `${prefix}\n${laid}` : laid);
-  if (body.split(/\r?\n/).filter((l) => l.trim()).length > 1) return withPrefix(body);
-  const words = body.trim().split(/\s+/).filter(Boolean);
+  const have = body.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   const pp = perPada || identifyChandas(body).perPada;
-  const breaks = padaBreaks(words, pp, linesFor(pp, lines));
+  const wanted = linesFor(pp, lines);
+  if (have.length > 1) {
+    if (pp === 8 && have.length === 2 && wanted === 4) {
+      const out = [];
+      for (const l of have) {
+        const mark = (l.match(/\s*[।॥|]+\s*$/) || [''])[0].trim();
+        const w = l.replace(/\s*[।॥|]+\s*$/, '').split(/\s+/).filter(Boolean);
+        const b = padaBreaks(w, pp, 4); // the first target, one pāda in, is the break wanted
+        if (b.length) { out.push(w.slice(0, b[0] + 1).join(' ')); out.push(`${w.slice(b[0] + 1).join(' ')}${mark ? ` ${mark}` : ''}`); } else out.push(l);
+      }
+      return withPrefix(out.join('\n'));
+    }
+    if (pp === 8 && have.length === 4 && wanted === 2) return withPrefix([have.slice(0, 2).join(' '), have.slice(2).join(' ')].join('\n'));
+    return withPrefix(have.join('\n'));
+  }
+  const words = body.trim().split(/\s+/).filter(Boolean);
+  const breaks = padaBreaks(words, pp, wanted);
   if (!breaks.length) return withPrefix(body.trim());
   const out = [];
   let start = 0;
@@ -179,12 +229,14 @@ export function chandasForRecord({ name, meta, store }) {
   const langs = store && store.languages ? store.languages : {};
   const sa = langs.sanskrit && langs.sanskrit.text ? langs.sanskrit : null;
   const cur = store && store.current && langs[store.current] && langs[store.current].text ? langs[store.current] : null;
-  const t = typed ? { text: typed, source: 'typed', language: (meta.text.language || 'sa') }
+  const t = typed ? { text: typed, source: meta.text.origin === 'reference' ? 'reference' : 'typed', language: (meta.text.language || 'sa') }
     : sa ? { text: sa.text, source: 'transcript', language: 'sanskrit' }
       : cur ? { text: cur.text, source: 'transcript', language: store.current } : null;
   if (!t || !String(t.text).trim()) return null;
-  const verse = gitaVerse(name);
-  const expected = verse ? gitaFamily(verse.chapter, verse.verse) : null;
+  // the verse: the link in the sidecar first (its metre settles the family), else the name
+  const link = meta && meta.verse && meta.verse.id ? meta.verse : null;
+  const verse = link && link.chapter != null && link.verse != null ? { chapter: link.chapter, verse: link.verse } : gitaVerse(name);
+  const expected = link && link.metre && link.metre.family ? link.metre.family : verse ? gitaFamily(verse.chapter, verse.verse) : null;
   const ch = identifyChandas(t.text, { expected });
   return {
     family: ch.family, name: ch.name, perPada: ch.perPada, padas: 4, syllables: ch.syllables, expectedSyllables: ch.expectedSyllables,

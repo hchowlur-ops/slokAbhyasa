@@ -52,21 +52,46 @@ Telugu Wikisource text to be a copyrighted book pasted in); the Kannada and Telu
 
 ## verses.json
 
+The shape `js/verses.js` checks (`validateDataset`) and the server serves; a full
+description is in the Learn redesign plan. Every entry has the same fields; `kind` is
+`verse` for the 700, `colophon` for a chapter's closing line (the dataset's extras), and
+the schema also allows `combined` (two or three verses recited as one), `opening`,
+`dhyana`, `invocation` and `other`.
+
 ```json
 {
-  "dataset": "gita", "schema": 1,
-  "source": { "repo": "vedicscriptures/vedicscriptures.github.io", "commit": "…", "fetchedAt": "…" },
-  "chapters": [{ "number": 2, "name": "साङ्ख्ययोग", "nameIast": "…", "nameEnglish": "…", "verses": 72 }],
+  "schemaVersion": "1.0.0", "dataset": "gita", "version": "2026.10.11",
+  "source": { "name": "vedicscriptures/vedicscriptures.github.io", "url": "…", "retrieved": "…" },
+  "chapters": [{ "chapter": 2, "verses": 72, "name": { "deva": "सांख्ययोग", "iast": "…", "en": "…" } }],
   "verses": [{
-    "id": "2.47", "kind": "verse", "chapter": 2, "verse": 47,
-    "speaker": "श्रीभगवान्", "speakerLine": null,
+    "id": "2.47", "kind": "verse", "chapter": 2, "verse": 47, "verseEnd": null,
+    "speaker": { "who": "krishna", "deva": null, "iast": null },
     "deva": ["कर्मण्येवाधिकारस्ते मा फलेषु कदाचन ।", "मा कर्मफलहेतुर्भूर्मा ते सङ्गोऽस्त्वकर्मणि ॥"],
     "iast": ["karmaṇyevādhikāraste mā phaleṣu kadācana |", "mā karmaphalaheturbhūrmā te saṅgo’astvakarmaṇi ||"],
-    "metre": "anushtubh"
-  }],
-  "colophons": [{ "id": "2.colophon", "chapter": 2, "deva": ["…"], "iast": ["…"] }]
+    "metre": { "family": "anushtubh", "name": "anuṣṭubh" },
+    "translations": { "en": "Thy business is with the action only, never with its fruits; …" },
+    "variants": [], "recitedWith": null
+  }, {
+    "id": "2.colophon", "kind": "colophon", "chapter": 2, "verse": null, "verseEnd": null,
+    "speaker": null, "deva": ["ॐ तत्सदिति … द्वितीयोऽध्यायः ॥"], "iast": ["…"], "metre": null, "translations": {}, "variants": [], "recitedWith": null
+  }]
 }
 ```
+
+`speaker.who` names who speaks the verse (`krishna`, `arjuna`, `sanjaya`,
+`dhritarashtra`), carried forward from the last attribution line as the text itself does;
+`speaker.deva` / `speaker.iast` hold that line only for the verses that open with one
+(59 of them), never inside `deva`. The manifest (`manifest.json`) carries `id`, `work`,
+`name`, `version` (the fetch date), `sourceCommit`, `source`, `licence`, `attribution`,
+`files`, `sha256`, `translations`, `counts`, `checks` and `overrides`.
+
+## Where the app looks for it
+
+`<data>/reference/<id>/` first (the data folder of `datadir.js`, so a dataset dropped
+there wins and survives an app upgrade), then the app's own `reference/<id>/` (this
+snapshot, shipped in the package). `GET /api/reference` lists what was found, with the
+errors of any dataset that fails its checks; `node tools/reference-check.mjs [folder]`
+runs the same checks from the command line, with every verse that does not scan listed.
 
 ## Commands
 
@@ -75,5 +100,6 @@ node tools/gita/fetch.mjs                 # latest commit of the source → refe
 node tools/gita/fetch.mjs --ref <sha>     # a pinned commit
 node tools/gita/fetch.mjs --to <dir>      # another folder
 node tools/gita/fetch.mjs --check         # validate reference/gita/ against its manifest
+node tools/reference-check.mjs            # the same checks on any dataset folder, verse by verse
 npm test                                  # includes test/gita-normalize.test.js
 ```

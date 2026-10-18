@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "gita",
+  "work": "Bhagavad Gītā",
+  "name": "Bhagavad Gītā — deliberately broken sample",
+  "version": "0.0.1",
+  "sourceCommit": null,
+  "source": { "name": "test fixture", "url": null, "retrieved": "2026-10-11T00:00:00.000Z" },
+  "licence": { "id": "MIT", "name": "MIT License", "url": "https://opensource.org/license/mit", "file": null },
+  "attribution": "Test sample with errors.",
+  "updateUrl": null,
+  "files": { "verses": "verses.json" },
+  "sha256": {},
+  "translations": {},
+  "counts": { "chapters": 2, "verses": 4, "extras": 1 }
+}

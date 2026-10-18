@@ -38,6 +38,10 @@ slokas at once, a quiz with its score and trend, the Reports page and Settings.
 node serve.js
 ```
 
+On Windows, `restart-server.cmd` in the project folder stops any running server and starts
+one again in its own window (`restart-server.cmd open` also opens the app; `restart-server.cmd
+stop` stops only).
+
 Then open <http://127.0.0.1:8787> in Chrome, Edge, Firefox or Safari. No install step;
 Node 18 or newer is the only requirement. (`npm start` does the same thing.)
 
@@ -92,29 +96,67 @@ localhost is, so do not open `index.html` directly from the file system.
 ## Workflows
 
 ### Learn
-* **Listen with the microphone** – tap the red button, play or perform the material, tap again.
-  Review what SlokAbhyasa heard, name it, save.
-* **Use an audio file** – pick a file and save it directly as a sloka. Files are converted to
-  mono 16-bit WAV.
+Learn records the Gītā **one sloka at a time**. The page opens on the **chapters**: one card
+each, with the chapter's name in the chosen script and how many of its verses have a
+recording ("4 of 20 recorded", with a small bar). Open a chapter and its **verses** appear
+as cards in order — the number, the first words, and a tick with the date when a recording
+exists, "not yet" when none does — the colophon last. "Next unrecorded" picks the first
+verse without a recording. One chapter is in view at a time, so a session never crosses a
+chapter boundary. The chapter last opened is remembered.
 
-The save row has a **Folder** choice: any existing folder of the library, or "New folder…"
-to make one. Every sloka lives in a folder; there is no saving at the top level of the
-library, and if no folder exists yet you are asked to name the first one when you save.
-Folders are how the Quiz offers its material (a chapter per folder, say). The last folder used
-is remembered.
+Choose a verse and the **record card** shows it: "Gītā 12.3 · भक्तियोग · verse 3 of 20",
+the text in the chosen script (with ◡ laghu and — guru when the marks are on), the chandas
+hint, the meaning in the chosen language, and the recordings the verse already has, each
+with a play button. A verse that opens with a speaker line (śrībhagavān uvāca…) shows it
+dimmed above the text, with a tick "The recording includes the speaker line" (on unless you
+untick it; remembered) that decides whether the recording's words include that line.
+Previous / Next verse move within the chapter. Tap the red button, recite, tap again.
 
-Silence (and stray clicks) at the start and end of a take are trimmed automatically before
-saving; untick "Trim silence at the start and end" to keep a recording as it was captured.
-The trimmer reads the room from the lead and the tail of the take (before the first and
-after the last loud moment, less the microphone's settling and a breath), so a steady room
-noise is never taken for sound; the cut keeps 120 ms before the first sound and 220 ms after
-the last.
-A short lead-in (about a tenth of a second) and the natural decay at the end are kept.
+The **take** then shows its waveform with Play and what the trimmer removed, its **pace**
+("4.9 akṣaras per second — 39 akṣaras in 7.9 s of sound", with the pace the chosen learner
+has shown beside it, so a recording made much faster or slower than the learner recites is
+noticed before it is saved; the teacher's pace is theirs to choose), a suggested
+**name** that follows the folder's own pattern (ch12-03 beside ch12-15, CH12-03 beside
+CH12-04, CH12-03 when the folder is new), and the **folder** — the chapter's (CH-12, or
+whatever the library calls it; made when you save if it does not exist yet), or any other,
+or "New folder…". When the verse is **recorded already**, a notice names the recording
+with its date and length and asks: *Replace it* — its WAV and sidecars move to
+`library/backup`, nothing is deleted — or *Keep it, and add this one*, which gets the next
+free name ("ch12-03 (2)"). With one existing recording Replace is offered first; with
+several, Keep. Save, and the chapter is read again, the tick appears, and the **next verse
+is in view**, so a chapter can be recorded verse after verse without going back to the grid.
 
-Saving also analyses the recording once and caches the result next to the WAV, so evaluating
-yourself against it later starts instantly.
+The recording is **linked to the verse exactly** — the one you chose, not a guess from the
+name — and the verse's text from the reference dataset becomes its words (the Library's
+Details show the link and the text, read-only). Nothing recorded here is transcribed.
+**Recording details** — who recorded it, how it is judged, a tradition — fold under the
+record button; the fold's summary line shows the current choice, and the choice is
+remembered.
 
-**Details of a sloka.** Under the name and folder, three optional fields are saved with the
+**Use an audio file instead…** takes a recording you already have, for the verse in view
+or for a text of your own: it is converted to a mono 16-bit WAV and kept whole — trimmed
+only if you tick "Trim silence" on the review — and goes through the same name, folder and
+replace-or-keep step.
+
+**A text of your own** (the dashed card after the chapters) is for anything not in the
+Gītā: a stotra, a mantra, another text. The details open with the **Text** field unlocked;
+type the words and they become the sloka's reference text. Saved without a text, the
+recording is heard once in the background by Whisper (Sanskrit; the sidebar shows the
+progress, with Stop), and the transcript can be checked and corrected in the Library's
+Transcript panel. The folder used last for such texts is remembered. Without a reference
+dataset at all (no `reference/gita/`), Learn says so and offers the free text alone; see
+"The Bhagavad Gītā reference dataset" below.
+
+Silence (and stray clicks) at the start and end of a microphone take are trimmed
+automatically before saving; untick "Trim silence at the start and end" to keep a recording
+as it was captured. The trimmer reads the room from the lead and the tail of the take
+(before the first and after the last loud moment, less the microphone's settling and a
+breath), so a steady room noise is never taken for sound; the cut keeps 120 ms before the
+first sound and 220 ms after the last. A short lead-in (about a tenth of a second) and the
+natural decay at the end are kept. Saving also analyses the recording once and caches the
+result next to the WAV, so evaluating yourself against it later starts instantly.
+
+**Details of a sloka.** Under the record button, three optional fields are saved with the
 sloka and used when it is evaluated against:
 
 * **Recorded by** – the person whose voice this is, from the People list (see "Who's
@@ -125,10 +167,11 @@ sloka and used when it is evaluated against:
   matter of style, shown but not scored), Vedic with svaras (pitch counts as a melody), a
   stotra or bhajan *sung*, a poem, prose, a song, Indian classical. A tradition or school
   (Śṛṅgeri, Kāñcī…) can be noted beside it.
-* **Text** – the words as they should be recited, one pāda or line per row. SlokAbhyasa
-  derives the script, the number of akṣaras and the pādas (on `।` and `॥`), measures the pace
-  of the recording in akṣaras per second, and uses the text as the reference for the
-  pronunciation score instead of the recording's own transcript, which may itself have errors.
+* **Text** – for a text of your own, the words as they should be recited, one pāda or line
+  per row; for a verse of the Gītā the field shows the verse's text and is not edited.
+  SlokAbhyasa derives the script, the number of akṣaras and the pādas (on `।` and `॥`),
+  measures the pace of the recording in akṣaras per second, and uses the text as the
+  reference for the pronunciation score.
 
 The last person and style used are remembered. Slokas saved before these fields existed get a
 details file on the next start, with nothing guessed: open **Details** in the Library to fill
@@ -184,28 +227,65 @@ slokas you had ticked there.
    they appear, steps 1 and 2 fold up into their heads — "1 sloka ticked", "Recorded 0:21 ·
    open to record again" — so the report is what you see; click a head to open that step
    again (to tick another sloka, say), and "Record again" opens both. The same happens in
-   Teach and in a quiz. From the moment you stop, the results card says **Evaluating…**,
-   with the progress of the listening, the comparison and, in a quiz, the scoring, until
-   the open sloka's report is in — its scores and, when the words are transcribed, its
-   transcript; a report opened with Previous / Next whose words are still on their way
-   shows it again until they come.
+   Teach and in a quiz. From the moment you stop, the sloka's card on the scoreboard
+   carries a **spinner** ("Evaluating…" in its tooltip) with the progress of the listening,
+   the comparison and, in a quiz, the scoring, under the cards; the report below shows the
+   moment the sound is compared, its word tiles waiting for the transcript, and fills in
+   when the words come.
+   * The results open on a **scoreboard**, for one sloka or many: the take's overall in a
+     ring (the mean over the slokas recited) with its grade and a few words, a line saying
+     how many were recited and scored, less than half recited, not recited or still
+     comparing, and **one card per sloka** — its name, score, grade and what went wrong
+     ("restarted pāda 3", "less than half recited · not scored", "not recited") — the open
+     one marked. A card still being evaluated (its sound compared, or its words on their
+     way) carries a **spinner**, "Evaluating…" in its tooltip; the comparison's or the
+     words' progress bar, with its Stop, sits under the cards. A card opens that sloka's
+     report below, which shows the moment its sound is compared, the word tiles waiting
+     for the transcript.
    * The **overall score**, in the middle: a ring with the weighted mean of the seven
      categories (see "What is scored" below — phonemes 30, vowel length 25, syllables 15,
      emphasis 10, pitch contour 10, phrasing 5, timing 5 by default; the **Settings** page
-     changes them) and its **grade**: Excellent from 90, Good from 80, Fair from 65, Needs
-     practice below. Only the categories that could be judged count; the overall is
-     recomputed when the word scores arrive with the transcript. The ring also carries the
-     verdict for the whole report (**within tolerance** or not, see below).
-   * **"Play both together"**, directly under the overall, plays the sloka and your attempt
-     at once, the sloka in the left ear and yours in the right, from the start of the part
-     that was compared and at the same speed, so the difference is heard rather than read
-     (headphones make the two sides distinct). The speed slider beside it applies to every
-     play button of the report.
-   * **Analysis**, folded under that; open it for the detail:
+     changes them) and its **grade**: 🌟 Excellent from 90, 😊 Good from 80, 💪 Fair from
+     65, 🌱 Needs practice below, each shown as its emoji and its word with a few words of
+     encouragement under it (the same ones each time for a given sloka; plainer for a
+     grown-up learner; "not your best today, your best is still 84" rather than praise for
+     a take below the learner's best; plain labels instead with a switch in Settings). Only
+     the categories that could be judged count; the overall is recomputed when the word
+     scores arrive with the transcript. A **slip** in the recitation itself makes the grade
+     Needs practice, for that sloka and for the take, and the report row says which. The
+     slips that are the learner correcting themself — a word said twice, a pāda or the
+     sloka started again, found in the words heard — read as one stream of sounds, blind
+     to word breaks, since Whisper writes a compound as two or three words and alters a
+     nasal or two (and a restart heard by the ear while
+     recording several slokas) — also cost **15 % of the sloka's score**, once, whatever
+     their number; the line under the grade says what was lost and why ("Lost 14 points
+     (15 %) for self-correction: repeated "पर्युपासते""), and the Analysis names each one
+     with the word said twice or the word the pāda or the sloka was started again at.
+     Getting stuck inside a pāda or dropping akṣaras (heard by the ear and confirmed by the
+     sound comparison or the words) is a slip too but costs nothing beyond the categories
+     it already lowers. Under the
+     grade, once the take is saved, a line or two from the learner's history: a first
+     Excellent on this sloka, a new best, a climb since last week, "you kept at it: four
+     takes today and the last was your best", a streak of days, a welcome back after a
+     fortnight; or, when a sloka has not moved in five takes, a nudge towards Teach mode
+     instead. The ring also carries the verdict for the whole report (**within tolerance**
+     or not, see below).
+   * **"Play both together"**, beside the scoreboard's ring (above the sloka cards), plays
+     the sloka and your attempt at once, the sloka in the left ear and yours in the right,
+     from the start of the part that was compared and at the same speed, so the difference
+     is heard rather than read (headphones make the two sides distinct). The speed slider
+     under it applies to every play button of the report. In a quiz, which has its own card
+     instead of the scoreboard, the button sits at the top of the report.
+   * **Analysis**, folded under the scoreboard, titled with the open sloka's name
+     ("Analysis · CH12-03"); the first line inside is that sloka's verdict (within tolerance
+     or not), what its overall was weighted over, and any points lost to self-correction.
+     There is no second ring under the cards: the sloka's score is its card's. Open the fold
+     for the detail:
      - the **transcript** of the sloka and of your attempt, with the words that differ
        highlighted (see "Transcripts" below). Each row has a **play button** by its label —
-       "Sloka ▶" plays the sloka, "Yours ▶" plays your recording; "Transcribe again" reruns
-       the words with another language or model;
+       "Sloka ▶" plays the sloka, "Yours ▶" plays your recording (the words are heard
+       automatically, in the language the text is shown in, by the Best model unless one
+       was chosen before; there is no Transcribe button and no model dropdown anywhere);
      - the seven **category tiles**, each with its score, what it rests on and whether it
        is within tolerance; a category that cannot be judged for this report (no
        transcript yet, pitch shown for interest only for recited text) is collapsed under
@@ -216,13 +296,10 @@ slokas you had ticked there.
      - the **list of deviations**, each with a "Sloka" and a "Yours" button that plays just
        that moment (with a little padding).
 
-**Several slokas at once.** With more than one sloka ticked, the results show **one report
-at a time**: Previous / Next step through them ("1 / 3"), and "All the reports", folded
-under the buttons, lists them — each row with the sloka's name, a bar that stands for your
-recording from start to end with the stretch where that sloka was found shaded, coloured
-marks for the conflicts inside it, the overall score and the number of conflicts; click a
-row to open that report. The sloka panel above switches with the open report, so its play
-button and text always belong to it. Once the take is compared, the **words of every
+**Several slokas at once.** With more than one sloka ticked, the scoreboard has a card per
+sloka — its score, grade and what went wrong, a spinner while it is being evaluated — and
+the report below is the open card's; click a card to open its report. The sloka panel
+above switches with the open report, so its play button and text always belong to it. Once the take is compared, the **words of every
 report are transcribed in the background**, in turn, the open one first (each sloka's own
 stretch of the recording), and their word scores filled in as they arrive — so Next opens a
 report with its words ready, and the session's scores cover every sloka. Better still, turn
@@ -232,29 +309,117 @@ that was in view — to the speech worker at once, as a background job that touc
 the recording nor the page ("Listening to CH12-03 in the background…" under the timer).
 Afterwards each report's stretch of the take takes those words when the recorded stretch
 overlaps it well enough, so the words are there the moment the results open. You need not
-turn the pages at all: while several slokas are recorded the app **listens for the end of
-each sloka** by itself — it counts the akṣaras it hears (the syllable nuclei of the
-loudness envelope) against the akṣaras of the sloka in view, and once they are all but in
-and a pause follows, that sloka's stretch goes to the speech worker and the panel turns to
-the next sloka ("24 of 33 akṣaras" under the timer shows the count as it grows, "every
-sloka heard · tap to stop" when the last is in). The queued stretches are transcribed one
+turn the pages at all: while slokas are recorded (one or several) the app **listens for the
+end of each sloka** by itself — it counts the akṣaras it hears (the syllable nuclei of the
+loudness envelope) against the **akṣara plan** of the sloka in view (the speaker line's
+count and each pāda's, from the verse's text by its metre — the custom file can set a plan
+for a verse that does not scan), and once the count is at the sloka's end and a pause
+follows, of the length this learner leaves between slokas, that sloka's stretch goes to the
+speech worker and the panel turns to the next sloka ("24 of 33 akṣaras · pāda 3 of 4"
+under the timer shows where the learner is and lights the line of the text they are in;
+the ear expects nothing of the clock from the teacher's recording — only from the
+learner's own speed once it is known, and until then the plan and the learner's pauses
+alone decide when a sloka has ended (a count at the plan's end and a breath; a count well
+short and a long pause, three of the learner's own breaths between pādas; four seconds of
+silence whatever the count);
+"every sloka heard · tap to stop" when the last is in). The page turns the moment the
+position reaches the sloka's end — the last akṣara registers within a tenth of a second of
+its sound, sooner than any breath; a position a little short waits for a short pause, one
+well short for a long one — and the sloka's stretch is closed a moment later, off the
+page-turn path, so the turn waits for nothing. A take **starts on the first sloka** of the
+list and the panel turns to it as the recording begins, whatever page was in view before
+(the last sloka ticked, or the page the last take ended on); to begin on a later sloka,
+press Next once the recording has started. A quiz attempt starts from its first sloka
+too. A quiz loads its slokas' recordings as it
+opens, so the ear has their plans and times from the first sloka. Where they are is read from **their
+own speed**, never the teacher's: the syllable count calibrated to their voice (how many
+nuclei the counter hears per akṣara of it, learnt from each sloka they recite whole) and,
+once their speed is known — this take's earlier slokas, or their profile — blended half and
+half with the time they have been singing at that speed, which rides over the counter's
+slips; both are kept in the chosen learner's profile take by take. A count well short needs a long
+pause, longer still when the clock has run far past the teacher's time for the sloka. The
+ear also listens to what the learner sings after each pause: matched against the first
+moments of each pāda in the teacher's recording (the **pāda-start fingerprints**, kept with
+the sloka's features), a start the count has already passed is a **restart** — the count
+goes back to that pāda, or, for the sloka's own opening, starts again with what came
+before marked a false start — and a long pause inside a pāda is a **stall**; both are
+slips (above). A match is believed only when it is clearly nearer than any other start and
+under a threshold set from the teacher's own recording, so a different voice means fewer
+restarts heard rather than wrong ones. When the words of a closed stretch come back as
+another sloka's than the page assumed, the stretch is relabelled and the page turns on
+from the sloka actually heard. And you can always say where you are: **tap a line** of
+the text to set the count to that line's first pāda, or tap the count line to count the
+sloka from the top. **What the app learns of a learner**, take by take, into the chosen profile (a running
+mean over the last twenty takes, so it follows them as they change): their **speed**
+(akṣaras per second of their singing, from slokas recited whole), how their **voice
+counts** (syllable nuclei the counter hears per akṣara — slow chanting carries more than
+one — learnt at a close, and within a take from the first stretch whose words are heard,
+so even a first take is tuned by its second sloka), their **breath between pādas** and
+their **pause between slokas** (medians), the **stop they make before starting a pāda
+again** (from restarts heard by sound; it sets how long a pause the ear listens after),
+and their **tempo against each teacher's recording** (kept for the reports, never used by
+the ear). With these the ear's patience fits the learner, whoever recorded the sloka;
+without them, the plan and the pauses decide. The teacher's own recording also gives the
+ear the places its pādas start, read from the recording's pauses (a linked recording's
+transcript spreads its lines evenly and would put them early), so a pāda started again
+can be heard by sound as well as by the words. A sloka of which **less than half** was recited — the ear closed
+it, the page was turned, or the take stopped, with its position under half the plan — is
+neither transcribed nor scored: it counts as not recited, its card and row say "less than
+half recited (12 of 33 akṣaras) · not scored", and its recommendation is Needs practice.
+A sloka the take stops short of by three akṣaras or more is marked "akṣaras dropped" by
+the ear at the stop (unsure until the words confirm akṣaras missing), as it would be at a
+close — one sloka or several alike; and the words alone raise it when four or more of
+the sloka's akṣaras (a tenth of it at least) are missing from what was heard, since the
+ear's count cannot be trusted for a voice it has not learnt. Its grade is then Needs
+practice at the full score: a dropped pāda is not a self-correction, so nothing is
+deducted.
+The speech model is loaded the moment slokas are chosen, so it sits ready, idle, until the
+first sloka ends; the live analysis of what follows a pause runs in the analysis worker, so
+the page stays smooth. A **Stop listening** button under the timer, shown while a stretch
+is being heard, halts the background listening for the rest of the take: the sound is still
+compared, and the open report can still ask for its words afterwards. The sloka in view when the take
+stops has its stretch closed at once, so its words start at the stop rather than after. The queued stretches are transcribed one
 after another in the background until none is left, so the words of every sloka but the
 last are ready when the take stops. The count is a guide, not a judge: the comparison
 afterwards finds each sloka in the take on its own, and a page turned by hand still works.
-One take holds **22 slokas at most** — a chapter's worth; the number stands in for a
-heuristic from the machine's memory and cores that may replace it. The speech
+One take holds as many slokas as **Slokas per take** in Settings allows — 10 unless you
+change it, 20 at most; memory and the time to hear the words grow with the number. The speech
 model is loaded in its worker as soon as a sloka is ready to be recited, so neither the
 recording nor the page feels the loading — the worker is its own thread, and the recording
 runs on the audio thread. Tick another
 sloka after a take and it is compared straight away, without recording again.
 You can also tick slokas in the Library and press "Self Evaluation with selected".
 
-*Different lengths.* A sloka does not have to be as long as your recording. When one is
-much longer than the other (more than 1.5 times), SlokAbhyasa first finds the part of the longer
-recording that matches the shorter one and compares only that: recite verses 1 to 8 in one take
-and tick the single-verse slokas, or recite one verse against a sloka that holds the
-whole chapter. The report says which part was used, all times stay those of the full
-recordings, and the word comparison greys out the words outside that part.
+*Different lengths.* A sloka does not have to be as long as your recording, and a teacher
+may record at any pace. Where a sloka lies in your take is decided by what the **ear**
+heard, never by the lengths alone, because a sloka recited slowly is longer than its
+recording without holding more. With several slokas ticked, the stretch the ear closed for
+each sloka is the part compared with it, and no search runs (the report says "the stretch
+of your recording the ear closed for this sloka (0:07–0:19) was compared"). With one
+sloka, when the ear counted the sloka's akṣaras in your take (within 30 %), the take is
+compared whole to whole whatever its length: the pace difference is read off from how
+long each sounds, the sloka's recording is stretched to that pace before the two are
+aligned, and the alignment is made to span both from end to end, so a slow recitation of
+a brisk recording is no longer laid over a stretch of the recording's own length with the
+rest left over. Only when the ear has nothing to say — a sloka it never reached, Teach, a
+file — does the length rule stand: when one recording is more than 1.5 times the other,
+SlokAbhyasa finds the part of the longer one that matches the shorter and compares only
+that (recite one verse against a sloka that holds the whole chapter, or the reverse). The
+report says which part was used, all times stay those of the full recordings, and the
+word comparison greys out the words outside that part. The words have the last say for
+every sloka of a take: when the sound comparison says "does not sound like this sloka"
+but most of the sloka's words were heard, that sloka is scored. The words also **move the
+ear's boundaries**: when a stretch's words begin with the tail of the sloka before (the
+ear closed that one early) or end with the head of the sloka after, the boundary moves to
+where the later sloka's words begin, and the slokas whose windows moved are compared
+again from the corrected stretches. Where the ear was not listening — Teach has it now; a
+file, or a sloka the ear never reached — the search tries the sloka at several tempos
+(half to double) and keeps the window that reads best, comparing whole to whole with the
+pace read off when none convinces. No window ever cuts the words: a report's words come
+from the whole take when it was heard whole, else from the stretch that holds the window. (Before 16 October 2026 the length
+rule ran first, and a brisk teacher's recording against a slow recitation was searched for
+inside it as if the take held more than the sloka; the search then laid the recording over
+a stretch of its own length and the first part of the sloka went unheard and unscored.)
 
 *Conflicts.* Besides the deviations inside each report, the list highlights:
 
@@ -349,8 +514,8 @@ tolerance fields stay visible but greyed until the switch is off again.
   and compared, in the Transcript block at the top of the Analysis fold: sloka words that were not
   heard are highlighted in red there and at the top; extra or different words in your attempt
   are highlighted in amber. Click any phrase to hear it; the small "i" by "Yours" opens
-  this legend as an overlay. "Transcribe again" reruns with another model.
-* **Library** – "Transcript" shows, creates or corrects the transcript of a sloka: the Library
+  this legend as an overlay.
+* **Library** – "Transcript" shows or corrects the transcript of a sloka (no Transcribe button or model there: "Transcribe all" in the toolbar makes the missing ones): the Library
   is the one place a sloka's words are corrected (the panels of Teach, Self Evaluation and
   quizzes show them without an "Edit" button). A **right-click** on
   a sloka opens a popup listing everything in its details file — the file itself, who recorded
@@ -358,7 +523,7 @@ tolerance fields stay visible but greyed until the switch is off again.
   audio's hash and format, the software, the chandas — which closes when it loses focus (Esc,
   or a click elsewhere); "Details" on the card edits what can be edited.
 
-Every transcript panel has a model choice and an "Automatic" switch (shared across the
+Every transcript panel but the Library's has a model choice and an "Automatic" switch (shared across the
 app). Automatic is on by default — in Learn, Self Evaluation, Teach and quizzes — so
 transcripts are made without being asked for; turn it off if you would rather transcribe
 only on demand.
@@ -370,7 +535,10 @@ a visarga or an anusvāra folded where Whisper spells one as a vowel or a nasal)
 Telugu and romanised (IAST) text are then *written from the Sanskrit*, akṣara by akṣara,
 rather than transcribed separately, so the three never disagree with it; in those three
 every akṣara carries its weight in the metre above it — **◡ laghu** (light) or **— guru**
-(heavy) — the way chandas is taught. "Show the sloka's text in" under Settings › Sloka text
+(heavy) — the way chandas is taught. In those three the visarga is ḥ, or the visarga sign
+(ಃ, ః), and the anusvāra is ṃ, or the circle (ಂ, ం) — also where Devanagari writes a class
+nasal before a stop of its place (सङ्ग → ಸಂಗ, saṃga; चिन्त्य → ಚಿಂತ್ಯ), whatever the
+transcription wrote; Sanskrit itself is shown as written. "Show the sloka's text in" under Settings › Sloka text
 chooses the script, for the sloka panel, every transcript panel and the rows of a report;
 the text typed in a sloka's details may be in any of the four and is read the same way.
 `js/lipi.js` does the writing; `js/translit.js` brings romanised, Kannada or Telugu text
@@ -394,7 +562,7 @@ acoustic analysis, and the app stays usable meanwhile:
 * In **Self Evaluation** your attempt's transcription starts the moment you stop recording,
   while the comparison runs; the results appear first and the word diff fills in after.
 * Every transcription shows a progress bar with a **Stop** button. Stopping leaves the
-  recording without a transcript (press "Transcribe" later to make one); stopping while a
+  recording without a transcript (it is made the next time the sloka is used); stopping while a
   quiz is being scored gives that attempt no pronunciation score. After a stop the next
   transcription can take a few seconds longer while the speech model is reloaded from the
   browser's cache.
@@ -547,8 +715,10 @@ A memory test drawn from your library.
 vowel length, syllables, emphasis, pitch contour, phrasing, timing); a sloka that was not
 found in your recording scores 0 everywhere. The results lead with the quiz's **overall
 score** in the ring: each sloka's weighted mean over the chosen categories, with the weights
-in force when the attempt was made, averaged over the slokas, with its **grade** — Excellent
-from 90, Good from 80, Fair from 65, Needs practice below — and, under it, the
+in force when the attempt was made, averaged over the slokas, with its **grade** — 🌟
+Excellent from 90, 😊 Good from 80, 💪 Fair from 65, 🌱 Needs practice below, a slip in any
+sloka making it Needs practice (see Self Evaluation), with a few words of encouragement
+and the moments from the learner's history under it — and, under those, the
 **correctness**: the share of the picked slokas that are *correct*, a sloka being correct
 when every chosen category is within the quiz tolerance (fixed: the defaults for the
 learner). The chosen categories are **phonemes, vowel length and syllables** by default; click
@@ -626,23 +796,67 @@ updated as more slokas are ticked or pronunciation scores arrive).
   under each sloka with its number of assessments and best score. Click a line to open that
   session's results.
 
+A **Progress** strip at the top shows what the history says for the chosen learner (or
+this device when no one is chosen): the streak of days with a take, weeks of steady
+practice (three practice days each), the latest take's moments (a first Excellent, a new
+best, a climb…), and how many badges they hold.
+
 The choices (mode, period, date, folder, grouping) are remembered.
 
+### Badges
+A badge marks a quiz **mastered**: the same learner completes the quiz with the grade
+Excellent at least three times — every sloka recited, no slip — on three different days by
+default, so the badge says the quiz *stays* Excellent rather than that it was Excellent
+three times in one sitting (a Settings switch counts attempts on any days instead). A star
+is added at five such attempts and at ten. When a learner's badged quizzes together cover
+every verse of a chapter, the chapter is **by heart** 📖; every chapter, the Gītā 🪔. The
+badge is awarded the moment the attempt is saved — a calm card over the results says what
+it is for and on which days it was earned — and shown on **Home** for the chosen learner
+(with the date and the slokas), beside a mastered quiz in the Quiz list, and counted in
+the Reports strip. Badges are derived data: they live in `badges.json` beside the
+recordings, by profile id (names stay in `profiles.json`), and
+`node tools/badges.mjs --recompute` rebuilds the file from the attempts at any time
+(`node tools/badges.mjs` lists them). A quiz edited or deleted afterwards keeps the badge
+it earned, with the slokas it was earned with.
+
 ### Settings
+**Several slokas in one take** — *Slokas per take, at most* (2 to 20; 10 by default) is how
+many slokas Self Evaluation and a quiz let you tick for one recording; the quiz setup's
+"at most" field is capped by it. Learn records one sloka at a time.
+
 Four cards, all remembered in the browser: **Weights** (what the overall score is made of,
-see "What is scored"; "Defaults" restores the recommended 30/25/15/10/10/5/5), **Tolerance**
+see "What is scored"; "Defaults" restores the recommended 30/25/15/10/10/5/5; the switch
+for grades with an emoji and a word of encouragement, or plain labels; and the badge rule,
+three Excellent attempts on three different days or on any days — this one is kept on the
+server, with the badges), **Tolerance**
 (the acceptable variation per category for Self Evaluation and Teach; a quiz always uses the
 defaults for the chosen learner; and the "Ignore tolerances" switch that turns every
-within/outside verdict off, leaving scores and grades), **Speech recognition** (the model,
-and whether transcripts are made automatically — the same controls that sit beside every
-transcript panel; the words are always heard as Sanskrit), and **Sloka text** (whether the slokas' text is
+within/outside verdict off, leaving scores and grades), **Speech recognition** (the switch
+**Hear the words after Self Evaluation and quizzes**, on by default: the words of what you
+sang are heard in the language the text is shown in, by the Best model unless one was
+chosen before — on one and the same recording Best heard 91, Better 68 and Fast 72 — a
+graphics card that gets it wrong sending it to the processor; there is no model dropdown
+and no Transcribe button anywhere. Switched off, nothing is transcribed, and these are not
+evaluated: phonemes, vowel length and syllables — the three word categories, 70 of the 100
+weight by default, so the overall is the weighted mean of the sound categories alone —
+the self-corrections found in the words and akṣaras dropped, the transcript block, and a
+quiz's correctness on the word categories (a quiz scored on the word categories alone then
+has no correctness and no overall: choose sound categories too). Still evaluated: the
+four sound categories, the ear's count and pāda, a restart heard by the sound, a stall
+confirmed by the sound comparison, less than half recited, and the grades, moments and
+badges on what was scored), and **Sloka text** (whether the slokas' text is
 shown during Self Evaluation and while reciting a quiz, both on by default; whether the
 Transcript block is hidden in the results (off by default: on, the sloka's words and yours
 and the words-heard line, at the top of the Analysis fold, are left out, in Self Evaluation
-and quizzes, "Play both together" staying under the overall, while the words are still heard
+and quizzes, "Play both together" staying beside the ring, while the words are still heard
 and scored); the script the
-sloka's text is shown in — Sanskrit as heard, or Kannada, Telugu or romanised (IAST) written
-from it, each akṣara then carrying ◡ laghu or — guru above it; the chandas hint; and whether
+sloka's text is shown in — Sanskrit, Kannada, Telugu or romanised (IAST) — which is also
+the language the words are heard in, so what you read and what was heard are written the
+same way with no transliteration between — with one safeguard: Whisper knows Sanskrit chant
+far better as Sanskrit than as Kannada, Telugu or English, so when a hearing in one of those
+comes back poor (under 40 % of the sloka's words) the stretch is heard again as Sanskrit and
+written in the chosen script; whether every akṣara carries ◡ laghu or — guru
+above it, in every script (on by default; off with the switch); the chandas hint; and whether
 an anuṣṭubh sloka is written in two lines or four). Beside them, "Why these defaults" explains how the
 weights and tolerances are tuned for Sanskrit śloka recitation and lists the references
 (reproduced under "References" below). Under both columns a short note, "Whisper · how the
@@ -697,10 +911,46 @@ English translation (Annie Besant, 1905, public domain); plus the chapter names 
 colophons. `manifest.json` names the source, the commit it was taken from, the licence and
 the file's hash; `LICENSE` and `ATTRIBUTION.txt` travel with it. The folder is independent
 of the app and of your data: `node tools/gita/fetch.mjs` makes or updates it (`--check`
-validates it), and it ships inside the package. Source: the Sanskrit fields of the Vedic
-Scriptures dataset (MIT; the text itself is public domain) with eight typos corrected; the
-survey behind the choice and the licence findings are described in `tools/gita/README.md`.
-The app does not read it yet: the redesign of Learn around it is planned.
+validates it, `node tools/reference-check.mjs` checks any dataset folder verse by verse),
+and it ships inside the package. A copy placed in `<data>/reference/gita/` (your data
+folder) takes precedence over the app's own, so it survives an upgrade. Source: the
+Sanskrit fields of the Vedic Scriptures dataset (MIT; the text itself is public domain)
+with eight typos corrected; the survey behind the choice and the licence findings are
+described in `tools/gita/README.md`. The dataset's files are **read-only** (the fetch tool
+sets them so) and the app never writes there. The server serves it under `/api/reference`
+(the datasets found, a dataset with its chapters and coverage, a chapter's entries with
+their recordings, one verse — a combined id such as `1.21-22` composed from its parts).
+
+**Recordings linked to verses.** A recording's details can carry the verse it is a
+recording of (`verse` in its `.json` sidecar: the dataset and version, the id, a copy of the
+verse's text with its hash, the metre, the licence, how the link was made). A linked
+recording's **reference text is the dataset's** — the sloka panel, the comparison and the
+chandas use it instead of a transcript (a text you typed under Details before the link still
+wins) — the panel's name line says "Gītā 12.3", the card carries a "Gītā 12.3" tag, and the
+verse's meaning shows under its text. The words of a linked recording are not edited: the
+Details text field is read-only and the Transcript panel has no "Edit" button, each with a
+note saying so; unlink the verse to type your own text. **The words follow the link**: a
+linked recording's transcript is made of the verse's own lines — the speaker line and the
+half-verses — with the timings of what Whisper heard spread over them by their akṣaras, so
+the Library's panel, Teach's panel and every script written from the text show the Gītā's
+words, and click-to-play plays each line; what was heard is kept and comes back on unlink.
+"Link to the Gītā" and `node tools/map-verses.mjs --words` redo the words of every linked
+recording from the dataset (after a dataset update, say); a transcription made later for a
+linked recording only lends its timings. Links are made three ways: a recording saved in Learn under
+a name that names a verse (CH12-03, ch12-7, 12.4) is linked at once; the Library's **Link
+to the Gītā** button links every unlinked recording whose name reads so (a recording whose
+transcript does not match the verse's words is listed as doubtful and left alone; one
+whose name names nothing, such as `Ch12-Starting`, is listed too); and **Details › Link…**
+links one by hand (or changes or removes the link). `node tools/map-verses.mjs` does the
+same from the command line (`--dry` to look first). When the dataset is updated and a
+verse's text changes, the card says so ("text differs from the dataset"); the recording
+keeps the text it was made against until it is linked again.
+
+**Your additions to a verse** — a meaning in your own words, in the language the text is
+shown in, and notes — are kept in your data folder (`<data>/reference/gita.custom.json`),
+never in the dataset, and are laid over the dataset's entry wherever the verse is served
+(the panel's meaning line prefers them); a corrected verse text, variant readings and a
+speaker line can be kept there too (`PUT /api/reference/gita/verses/12.3/custom`).
 
 ## How the comparison works
 
@@ -838,7 +1088,33 @@ Runs the DSP suite on synthetic signals (tones, chant-like syllables, transposit
 pauses, dropped notes, a verse hidden inside a longer recording, a child's allowances against
 an adult's), the transcript diff, the quiz scoring and picking, the metadata (presets, text
 derivation, voice measurements, sidecars, bext chunks, profiles) and the library helpers, with
-Node's built-in test runner.
+Node's built-in test runner. `test/slips.test.js` holds the learner's slips as the
+simulations of 17 October 2026 exercised them: a pāda said twice and a pāda left out, judged
+from the words as Whisper actually wrote them (the compound split, a nasal changed) and from
+the sound of synthetic verses cut the same way.
+
+### Simulated slips, end to end
+
+```
+node tools/simulate-slips.mjs --take <take.wav> --sloka CH12-03
+```
+
+Cuts flawed versions of a real recitation of the sloka — the first word of pāda 3 said
+twice, pāda 3 started again (after a 0.4 s and a 0.9 s stop), its first syllable stuttered,
+pāda 2 left out, pāda 4 replaced (by the take's own first pāda, or the last pāda of
+`--other <wav>` in the same voice) — reading the pādas from the pauses of the recording
+(`--padas a,b,c` to say where they are), then plays each into the running app as the
+microphone, once in Self Evaluation and once in a one-sloka quiz it creates ("Simulations
+CH12-03"), and checks the outcome: the control must be Excellent or Good with no slip; a
+restarted pāda must be named, cost 15 % and grade Needs practice; a dropped pāda must be
+"akṣaras dropped" and Needs practice; a wrong pāda must be scored without a slip; a single
+word said twice and a stutter are known limits (Whisper smooths them away) and are
+reported, not failed. It writes `report.md` and `report.html` with every case's scores,
+words heard, deviations, screenshots, session and quiz attempt, beside the audio, under
+`<data>/simulations/<date>` (`--out`), keeps the sessions and the attempts in the app for
+a person to open (`--clean` deletes them), and exits 1 when a case that must be caught was
+not. Needs the app running (`--app`), Chrome, and the speech model downloaded once into
+Chrome's "slokabhyasa-sim-profile".
 
 ## Layout
 
@@ -861,13 +1137,16 @@ js/lipi.js             the Sanskrit text written in Kannada, Telugu or IAST, ak�
 js/textdiff.js         word tokenisation and diff for transcripts
 js/quizscore.js        the seven categories, weights, tolerances, grades and quiz scoring (pure, Node-testable)
 js/phon.js             akṣaras and phonemes from Indic text; the recitation against the text, slip by slip (pure)
-js/reports.js          periods, assessments in one shape, per-sloka rows for the Reports dashboard (pure, shared)
+js/reports.js          periods, assessments in one shape, per-sloka rows, progress (moments, streaks) for the Reports dashboard (pure, shared)
+js/badges.js           a quiz mastered: three Excellent attempts on three days, levels, chapter and Gītā badges (pure, shared)
+js/dsp/starts.js       pāda-start fingerprints: templates from a recording's MFCC frames, a banded DTW, a calibrated match (pure)
 js/libutil.js          folder-name cleaning, sloka file names, WAV header reading (shared with the server)
 js/dsp/                features, alignment, locating a part inside a longer recording, deviations,
                        scoring, silence trimming (pure, Node-testable)
 js/visualizer.js       waveforms and the comparison chart
 datadir.js             where the data folder is (local.json / SLOKABHYASA_DATA, else the project folder)
 tools/trim-library.mjs command-line trimming of every WAV in the library
+tools/badges.mjs       lists the badges on file, or rebuilds them from the quizzes' attempts (--recompute)
 tools/analyse-attempt.mjs  re-runs a kept quiz recording through the comparison and prints what it saw
 test/                  synthetic signal generators and the DSP tests
 reports/               the research the presets and the details file follow

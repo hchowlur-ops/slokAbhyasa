@@ -1,38 +1,126 @@
 {
+  "schemaVersion": "1.0.0",
   "id": "gita",
-  "name": "Bhagavad Gītā — Sanskrit mūla",
-  "schema": 1,
+  "work": "Bhagavad Gītā",
+  "name": "Bhagavad Gītā — Vedic Scriptures text",
+  "version": "2026.10.12",
+  "sourceCommit": "5a3fb5a00b1e92c1f0bd51c31e962d3670b4f4d3",
   "source": {
-    "repo": "vedicscriptures/vedicscriptures.github.io",
-    "commit": "5a3fb5a00b1e92c1f0bd51c31e962d3670b4f4d3",
-    "homepage": "https://github.com/vedicscriptures/vedicscriptures.github.io",
-    "fetchedAt": "2026-10-11T18:07:03.510Z",
-    "files": {
-      "chapters": "chapters/index.json",
-      "verses": "slok/<chapter>/<verse>/index.json"
-    }
+    "name": "vedicscriptures/vedicscriptures.github.io",
+    "url": "https://github.com/vedicscriptures/vedicscriptures.github.io",
+    "retrieved": "2026-10-12T16:12:52.527Z"
   },
-  "licence": "MIT",
-  "licenceFile": "LICENSE",
-  "attribution": "Vedic Scriptures (Pt. Prashant Tripathi), github.com/vedicscriptures — MIT; the Sanskrit text is public domain",
+  "licence": {
+    "id": "MIT",
+    "name": "MIT License",
+    "url": "https://opensource.org/license/mit",
+    "file": "LICENSE"
+  },
+  "attribution": "Sanskrit text: Vedic Scriptures (Pt. Prashant Tripathi), https://github.com/vedicscriptures/vedicscriptures.github.io, MIT licence; the verses themselves are public domain. English: Annie Besant (1905), public domain, aligned by pralia-labs/canoncite (CC BY 4.0).",
+  "updateUrl": "https://github.com/vedicscriptures/vedicscriptures.github.io",
+  "files": {
+    "verses": "verses.json"
+  },
+  "sha256": {
+    "verses.json": "b17f4553824a26a5687569c928cd797f62d395dce0ff966b4093a413502f7c50"
+  },
   "translations": {
     "en": {
-      "language": "en",
+      "name": "English",
       "translator": "Annie Besant (1905)",
       "licence": "public domain",
-      "via": "huggingface.co/datasets/pralia-labs/canoncite (corpora/bhagavad_gita/corpus_index.jsonl, commit e759f0a52fcccd2c062acd1546779b038115ac90; alignment and metadata CC BY 4.0)",
+      "source": "huggingface.co/datasets/pralia-labs/canoncite (corpora/bhagavad_gita/corpus_index.jsonl, commit e759f0a52fcccd2c062acd1546779b038115ac90)",
+      "alignmentLicence": "CC BY 4.0 (pralia-labs/canoncite)",
       "verses": 700
     }
   },
   "counts": {
     "chapters": 18,
     "verses": 701,
-    "colophons": 18
+    "extras": 18
   },
   "checks": {
     "countMismatch": [],
     "metreMismatch": 9,
-    "overridesNotFound": []
+    "overridesNotFound": [],
+    "warnings": [
+      "1.20: iast has 2 lines, deva 3",
+      "1.21: iast has 3 lines, deva 1",
+      "1.colophon: iast has 1 lines, deva 3",
+      "2.5: iast has 2 lines, deva 4",
+      "2.6: iast has 2 lines, deva 4",
+      "2.7: iast has 2 lines, deva 4",
+      "2.8: iast has 2 lines, deva 4",
+      "2.19: iast has 1 lines, deva 2",
+      "2.20: iast has 2 lines, deva 4",
+      "2.22: iast has 2 lines, deva 4",
+      "2.29: iast has 2 lines, deva 4",
+      "2.70: iast has 2 lines, deva 4",
+      "2.colophon: iast has 1 lines, deva 3",
+      "3.colophon: iast has 1 lines, deva 3",
+      "4.colophon: iast has 1 lines, deva 3",
+      "5.colophon: iast has 1 lines, deva 3",
+      "6.colophon: iast has 1 lines, deva 3",
+      "7.colophon: iast has 1 lines, deva 3",
+      "8.9: iast has 2 lines, deva 4",
+      "8.10: iast has 2 lines, deva 4",
+      "8.11: iast has 2 lines, deva 4",
+      "8.28: iast has 2 lines, deva 4",
+      "8.colophon: iast has 1 lines, deva 3",
+      "9.20: iast has 2 lines, deva 4",
+      "9.21: iast has 2 lines, deva 4",
+      "9.colophon: iast has 1 lines, deva 3",
+      "10.colophon: iast has 1 lines, deva 3",
+      "11.15: iast has 2 lines, deva 4",
+      "11.16: iast has 2 lines, deva 4",
+      "11.17: iast has 2 lines, deva 4",
+      "11.18: iast has 2 lines, deva 4",
+      "11.19: iast has 2 lines, deva 4",
+      "11.20: iast has 2 lines, deva 4",
+      "11.21: iast has 2 lines, deva 4",
+      "11.22: iast has 2 lines, deva 4",
+      "11.23: iast has 2 lines, deva 4",
+      "11.24: iast has 2 lines, deva 4",
+      "11.25: iast has 2 lines, deva 4",
+      "11.26: iast has 2 lines, deva 4",
+      "11.27: iast has 2 lines, deva 4",
+      "11.28: iast has 2 lines, deva 4",
+      "11.29: iast has 2 lines, deva 4",
+      "11.30: iast has 2 lines, deva 4",
+      "11.31: iast has 2 lines, deva 4",
+      "11.32: iast has 2 lines, deva 4",
+      "11.33: iast has 2 lines, deva 4",
+      "11.34: iast has 2 lines, deva 4",
+      "11.35: iast has 2 lines, deva 4",
+      "11.36: iast has 2 lines, deva 4",
+      "11.37: iast has 2 lines, deva 4",
+      "11.38: iast has 2 lines, deva 4",
+      "11.39: iast has 2 lines, deva 4",
+      "11.40: iast has 2 lines, deva 4",
+      "11.41: iast has 2 lines, deva 4",
+      "11.42: iast has 2 lines, deva 4",
+      "11.43: iast has 2 lines, deva 4",
+      "11.44: iast has 2 lines, deva 4",
+      "11.45: iast has 2 lines, deva 4",
+      "11.46: iast has 2 lines, deva 4",
+      "11.47: iast has 2 lines, deva 4",
+      "11.48: iast has 2 lines, deva 4",
+      "11.49: iast has 2 lines, deva 4",
+      "11.50: iast has 2 lines, deva 4",
+      "11.colophon: iast has 1 lines, deva 3",
+      "12.colophon: iast has 1 lines, deva 3",
+      "13.colophon: iast has 1 lines, deva 3",
+      "14.colophon: iast has 1 lines, deva 3",
+      "15.2: iast has 2 lines, deva 4",
+      "15.3: iast has 2 lines, deva 4",
+      "15.4: iast has 3 lines, deva 4",
+      "15.5: iast has 2 lines, deva 4",
+      "15.15: iast has 2 lines, deva 4",
+      "15.colophon: iast has 1 lines, deva 3",
+      "16.colophon: iast has 1 lines, deva 3",
+      "17.colophon: iast has 1 lines, deva 3",
+      "18.colophon: iast has 1 lines, deva 3"
+    ]
   },
   "overrides": [
     "8.12",
@@ -42,11 +130,5 @@
     "16.19",
     "17.11",
     "18.60"
-  ],
-  "files": {
-    "verses.json": {
-      "bytes": 546262,
-      "sha256": "f9b1fb45dd26c84c8b454b8e78f7c8da820f4add62d6b1098c100ed5a32000df"
-    }
-  }
+  ]
 }

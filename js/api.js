@@ -12,8 +12,10 @@ export async function listBaselines() {
   return res.json();
 }
 
-export async function createBaseline({ name, blob, duration, sampleRate, source, folder = '' }) {
-  const q = new URLSearchParams({ name, duration: String(duration), sampleRate: String(sampleRate), source, folder });
+// verse: the dataset verse the recording is of (Learn), linked exactly by the server; autolink: a
+// name such as CH12-03 links by itself.
+export async function createBaseline({ name, blob, duration, sampleRate, source, folder = '', autolink = false, verse = null, dataset = 'gita', speakerLine = true }) {
+  const q = new URLSearchParams({ name, duration: String(duration), sampleRate: String(sampleRate), source, folder, ...(autolink && !verse ? { autolink: '1' } : {}), ...(verse ? { verse, dataset, speakerLine: speakerLine ? '1' : '0' } : {}) });
   const res = await check(await fetch(`/api/baselines?${q}`, { method: 'POST', headers: { 'Content-Type': 'audio/wav' }, body: blob }));
   return res.json();
 }
@@ -34,8 +36,9 @@ export async function renameBaseline(id, name) {
   return res.json();
 }
 
-export async function deleteBaseline(id) {
-  await check(await fetch(`/api/baselines/${encodeURIComponent(id)}`, { method: 'DELETE' }));
+// backup: the WAV and its sidecars are moved to library/backup first (a recording replaced in Learn)
+export async function deleteBaseline(id, { backup = false } = {}) {
+  await check(await fetch(`/api/baselines/${encodeURIComponent(id)}${backup ? '?backup=1' : ''}`, { method: 'DELETE' }));
 }
 
 // Trims silence at both ends of the stored WAV. Returns { changed, removedStart, removedEnd, duration }.
@@ -224,5 +227,66 @@ export const sessionAudioUrl = (id) => sessionUrl(id, '/audio');
 // Every quiz attempt and evaluation session in one shape, newest first (see js/reports.js).
 export async function listAssessments() {
   const res = await check(await fetch('/api/assessments'));
+  return res.json();
+}
+
+// ---------- the reference datasets (read-only) ----------
+const refUrl = (ds, sub = '') => `/api/reference/${encodeURIComponent(ds)}${sub}`;
+export async function listReference() {
+  const res = await check(await fetch('/api/reference'));
+  return res.json();
+}
+export async function getReference(ds) {
+  const res = await check(await fetch(refUrl(ds)));
+  return res.json();
+}
+export async function getChapter(ds, n) {
+  const res = await check(await fetch(refUrl(ds, `/chapters/${n}`)));
+  return res.json();
+}
+export async function getVerse(ds, id) {
+  const res = await check(await fetch(refUrl(ds, `/verses/${encodeURIComponent(id)}`)));
+  return res.json();
+}
+export async function getCoverage(ds) {
+  const res = await check(await fetch(refUrl(ds, '/coverage')));
+  return res.json();
+}
+export async function linkVerse(id, { dataset = 'gita', verseId, speakerLineRecited = true }) {
+  const res = await check(await fetch(`/api/baselines/${encodeURIComponent(id)}/verse`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dataset, id: verseId, speakerLineRecited }) }));
+  return res.json();
+}
+export async function unlinkVerse(id) {
+  const res = await check(await fetch(`/api/baselines/${encodeURIComponent(id)}/verse`, { method: 'DELETE' }));
+  return res.json();
+}
+export async function mapVerses(ds, body = {}) {
+  const res = await check(await fetch(refUrl(ds, '/map'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }));
+  return res.json();
+}
+export async function putVerseCustom(ds, id, fields) {
+  const res = await check(await fetch(refUrl(ds, `/verses/${encodeURIComponent(id)}/custom`), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(fields) }));
+  return res.json();
+}
+export async function deleteVerseCustom(ds, id) {
+  const res = await check(await fetch(refUrl(ds, `/verses/${encodeURIComponent(id)}/custom`), { method: 'DELETE' }));
+  return res.json();
+}
+export async function wordsFromVerses(ds, body = {}) {
+  const res = await check(await fetch(refUrl(ds, '/words'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }));
+  return res.json();
+}
+
+// ---------- badges (a quiz mastered; see js/badges.js) ----------
+export async function listBadges(learner = '') {
+  const res = await check(await fetch(`/api/badges${learner ? `?learner=${encodeURIComponent(learner)}` : ''}`));
+  return res.json();
+}
+export async function recomputeBadges() {
+  const res = await check(await fetch('/api/badges/recompute', { method: 'POST' }));
+  return res.json();
+}
+export async function patchBadgeRule(rule) {
+  const res = await check(await fetch('/api/badges', jsonReq('PATCH', rule)));
   return res.json();
 }

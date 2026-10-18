@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { syllabify, comparePhonology } from '../js/phon.js';
 import { withDandas } from '../js/textdiff.js';
-import { gitaVerse, gitaFamily, syllableWeights, identifyChandas, padaBreaks, layoutSloka, linesFor, uvacaOffset, chandasLabel, chandasForRecord, INDRAVAJRA, UPENDRAVAJRA } from '../js/chandas.js';
+import { gitaVerse, gitaFamily, syllableWeights, identifyChandas, padaBreaks, layoutSloka, linesFor, uvacaOffset, chandasLabel, chandasForRecord, aksharaPlan, INDRAVAJRA, UPENDRAVAJRA } from '../js/chandas.js';
 
 // 18.66 (anuṣṭubh) and 2.5 (upajāti), as printed
 const V18_66 = 'सर्वधर्मान्परित्यज्य मामेकं शरणं व्रज । अहं त्वा सर्वपापेभ्यो मोक्षयिष्यामि मा शुचः ॥';
@@ -132,4 +132,45 @@ test('an "uvāca" opening is left out of the metre, laid on its own line, and sk
   const c = comparePhonology(withUvaca, withUvaca, { perPada: 8, offset: uvacaOffset(withUvaca) });
   assert.deepEqual(c.padas.map((p) => p.ref), [8, 8, 8, 8]);
   assert.deepEqual(c.padas.map((p) => p.heard), [8, 8, 8, 8]);
+});
+
+test('chandasForRecord: a linked verse settles the family and names the text\'s source', () => {
+  const meta = { text: { body: 'गुरूनहत्वा हि महानुभावान्\nश्रेयो भोक्तुं भैक्ष्यमपीह लोके ।\nहत्वार्थकामांस्तु गुरूनिहैव\nभुञ्जीय भोगान् रुधिरप्रदिग्धान् ॥', origin: 'reference', language: 'sa' }, verse: { dataset: 'gita', id: '2.5', chapter: 2, verse: 5, metre: { family: 'trishtubh', name: 'triṣṭubh' } } };
+  const ch = chandasForRecord({ name: 'Some name', meta, store: null });
+  assert.equal(ch.family, 'trishtubh');
+  assert.equal(ch.source, 'reference');
+  assert.deepEqual(ch.verse, { chapter: 2, verse: 5 });
+});
+
+test('layoutSloka: a text with its half-verses is written in four pādas or two, as asked', () => {
+  const two = 'कर्मण्येवाधिकारस्ते मा फलेषु कदाचन ।\nमा कर्मफलहेतुर्भूर्मा ते सङ्गोऽस्त्वकर्मणि ॥';
+  assert.equal(layoutSloka(two, { perPada: 8, lines: 2 }), two, 'two wanted, two there');
+  const four = layoutSloka(two, { perPada: 8, lines: 4 });
+  assert.deepEqual(four.split('\n'), ['कर्मण्येवाधिकारस्ते', 'मा फलेषु कदाचन ।', 'मा कर्मफलहेतुर्भूर्मा', 'ते सङ्गोऽस्त्वकर्मणि ॥']);
+  assert.equal(layoutSloka(four, { perPada: 8, lines: 2 }), two, 'and back');
+  assert.equal(layoutSloka(four, { perPada: 8, lines: 4 }), four);
+  const withSpeaker = `श्रीभगवानुवाच\n${two}`;
+  assert.equal(layoutSloka(withSpeaker, { perPada: 8, lines: 4 }).split('\n').length, 5, 'the speaker line stays on its own');
+  const tri = 'गुरूनहत्वा हि महानुभावान्\nश्रेयो भोक्तुं भैक्ष्यमपीह लोके ।\nहत्वार्थकामांस्तु गुरूनिहैव\nभुञ्जीय भोगान् रुधिरप्रदिग्धान् ॥';
+  assert.equal(layoutSloka(tri, { perPada: 11, lines: 2 }), tri, 'the triṣṭubh family stays in four');
+});
+
+test('aksharaPlan: the speaker line and each pāda counted, from half-verses, pādas or one line', () => {
+  const v123 = 'अर्जुन उवाच\nये त्वक्षरमनिर्देश्यमव्यक्तं पर्युपासते ।\nसर्वत्रगमचिन्त्यञ्च कूटस्थमचलन्ध्रुवम् ॥';
+  const p = aksharaPlan(v123, { perPada: 8 });
+  assert.equal(p.speakerLine, 6, 'a-rju-na u-vā-ca');
+  assert.deepEqual(p.padas, [8, 8, 8, 8]);
+  assert.equal(p.total, 38);
+  assert.deepEqual(p.checkpoints, [6, 14, 22, 30, 38]);
+  const noSpeaker = aksharaPlan(v123.split('\n').slice(1).join('\n'));
+  assert.equal(noSpeaker.speakerLine, 0, 'no speaker line: none counted');
+  assert.deepEqual(noSpeaker.checkpoints, [8, 16, 24, 32], 'the metre read from the text when not given');
+  const t = aksharaPlan('गुरूनहत्वा हि महानुभावान्\nश्रेयो भोक्तुं भैक्ष्यमपीह लोके ।\nहत्वार्थकामांस्तु गुरूनिहैव\nभुञ्जीय भोगान् रुधिरप्रदिग्धान् ॥', { perPada: 11 });
+  assert.deepEqual(t.padas, [11, 11, 11, 11], 'a triṣṭubh written in its pādas');
+  const one = aksharaPlan('ये त्वक्षरमनिर्देश्यमव्यक्तं पर्युपासते सर्वत्रगमचिन्त्यञ्च कूटस्थमचलन्ध्रुवम्', { perPada: 8 });
+  assert.equal(one.padas.length, 4, 'one line holding the whole sloka is split into four');
+  assert.equal(one.total, 32);
+  const prose = aksharaPlan('ॐ तत्सदिति श्रीमद्भगवद्गीतासूपनिषत्सु\nब्रह्मविद्यायां योगशास्त्रे', { perPada: null });
+  assert.equal(prose.padas.length, 2, 'a text that fits no metre: one unit per line');
+  assert.deepEqual(aksharaPlan(''), { speakerLine: 0, padas: [], total: 0, checkpoints: [] });
 });

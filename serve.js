@@ -18,13 +18,18 @@ import { fileURLToPath } from 'node:url';
 import { trimSilence } from './js/dsp/trim.js';
 import { decodeWav, encodeWavBytes } from './js/wav.js';
 import { cleanFolder, parseBaselineFilename, nameFromSlug, parseWavHeader, RESERVED_FOLDERS } from './js/libutil.js';
-import { normalizeCategories, normalizeTolerance, normalizeWeights, recordTolerance, correctness, attemptOverall, gradeOf } from './js/quizscore.js';
-import { resolveDataDir } from './datadir.js';
+import { normalizeCategories, normalizeTolerance, normalizeWeights, recordTolerance, correctness, attemptOverall, gradeWithSlips, anySlips, cleanSlips } from './js/quizscore.js';
+import { resolveDataDir, resolveReferenceDirs } from './datadir.js';
+import crypto from 'node:crypto';
+import { initReference, datasets as referenceList, dataset as referenceDataset, verse as referenceVerse, verseHash as referenceVerseHash, chapter as referenceChapter, coverage as referenceCoverage, saveCustom as referenceSaveCustom } from './reference.js';
+import { parseVerseId, verseLink, linkHashInput, verseBody, mapNameToVerse, verseTranscript, heardTranscript } from './js/verses.js';
+import { compareWords, tokenize } from './js/textdiff.js';
 import { readMeta, writeMeta, removeMeta, moveMeta, ensureMeta, sanitizeMeta, audioInfo, withBext, bextDescription, readProfiles, writeProfiles, sanitizeProfile } from './meta-store.js';
 import { normalizeStore, pickTranscript, putInStore, removeFromStore, shiftStore, transcriptToText, applyTextEdit, publicStore } from './js/transcripts.js';
 import { transliterateTranscript } from './js/translit.js';
 import { assessmentsFromQuiz, assessmentFromSession, byDateDesc } from './js/reports.js';
 import { chandasForRecord } from './js/chandas.js';
+import { computeBadges, quizBadges, coverageBadges, diffBadges, mergeBadges, DEFAULT_RULE, BADGES_VERSION } from './js/badges.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const DATA = resolveDataDir(ROOT);
@@ -33,6 +38,9 @@ const INDEX = path.join(LIB, 'index.json');
 const QUIZZES = path.join(DATA, 'quizzes');
 const SESSIONS = path.join(DATA, 'sessions');
 const PROFILES = path.join(DATA, 'profiles.json');
+const BADGES = path.join(DATA, 'badges.json');
+const REFERENCE_DIRS = resolveReferenceDirs(ROOT);
+initReference(REFERENCE_DIRS, { customDir: path.join(DATA, 'reference') }); // customisations beside the data, the datasets themselves read-only
 const HOST = '127.0.0.1';
 const PORT = Number(process.env.PORT) || 8787;
 const MAX_UPLOAD = 512 * 1024 * 1024; // 512 MB
@@ -229,6 +237,18 @@ const audioPath = (rec) => path.join(LIB, ...rec.file.split('/'));
 const featuresPath = (rec) => path.join(LIB, ...rec.file.replace(/\.wav$/i, '.features.json').split('/'));
 const transcriptPath = (rec) => path.join(LIB, ...rec.file.replace(/\.wav$/i, '.transcript.json').split('/'));
 const textPath = (rec) => path.join(LIB, ...rec.file.replace(/\.wav$/i, '.txt').split('/'));
+// Copies a record's WAV and sidecars into library/backup (the trim's untouched original, when
+// there is one, is left alone: the copy gets a "-replaced-<stamp>" suffix).
+const stamp = () => new Date().toISOString().replace(/[-:]/g, '').replace(/\..*$/, '').replace('T', '-'); // 20261015-071530
+async function backupRecord(rec) {
+  const backupDir = path.join(LIB, 'backup');
+  let target = path.join(backupDir, ...rec.file.split('/'));
+  if (await fileExists(target)) target = target.replace(/\.wav$/i, `-replaced-${stamp()}.wav`);
+  await fsp.mkdir(path.dirname(target), { recursive: true });
+  const side = (p, ext) => p.replace(/\.wav$/i, ext);
+  const pairs = [[audioPath(rec), target], [featuresPath(rec), side(target, '.features.json')], [transcriptPath(rec), side(target, '.transcript.json')], [textPath(rec), side(target, '.txt')], [side(audioPath(rec), '.json'), side(target, '.json')]];
+  for (const [from, to] of pairs) { if (await fileExists(from)) await fsp.copyFile(from, to); }
+}
 
 // Reads the stored transcripts (one per language; see js/transcripts.js). If <name>.txt
 // was edited by hand more recently than the JSON, its text wins for the current language
@@ -344,7 +364,7 @@ function quizSummary(q) {
   const scoreOf = (a) => (hasItems(a) ? correctness(a.items, q.categories, recordTolerance(a)).pct : a.score == null ? null : a.score);
   const overallOf = (a) => (hasItems(a) ? attemptOverall(a.items, q.categories, a.weights ? normalizeWeights(a.weights) : undefined) : a.overall == null ? null : a.overall);
   const lastOverall = last ? overallOf(last) : null;
-  const lastGrade = gradeOf(lastOverall);
+  const lastGrade = gradeWithSlips(lastOverall, last && anySlips(last.items) ? [{ kind: 'restart' }] : null); // a slip: Needs practice
   return {
     id: q.id, name: q.name, createdAt: q.createdAt, folders: q.folders, mode: q.mode, maxFiles: q.maxFiles,
     items: q.items, categories: q.categories, attempts: attempts.length,
@@ -353,6 +373,8 @@ function quizSummary(q) {
     bestOverall: attempts.reduce((m, a) => { const s = overallOf(a); return s != null && (m == null || s > m) ? s : m; }, null),
   };
 }
+// The items of an attempt or a session, their slips (a restart, a stall…) kept to what is known.
+const cleanSlippedItems = (items) => (Array.isArray(items) ? items : []).filter((it) => it && typeof it === 'object').map((it) => (Array.isArray(it.slips) ? { ...it, slips: cleanSlips(it.slips) } : it));
 const cleanItems = (items) => (Array.isArray(items) ? items : [])
   .filter((it) => it && typeof it.id === 'string')
   .map((it) => ({ id: it.id, name: String(it.name || '').slice(0, 80), folder: typeof it.folder === 'string' ? it.folder : '' }));
@@ -402,7 +424,7 @@ async function handleQuizzes(req, res, parts) {
       byCategory: a.byCategory,
       counted: Number(a.counted) || 0,
       recited: Number(a.recited) || 0,
-      items: Array.isArray(a.items) ? a.items : [],
+      items: cleanSlippedItems(a.items),
     };
     // the tolerance, weights and learner it was judged with (a child's allowances differ)
     if (a.tolerance && typeof a.tolerance === 'object') attempt.tolerance = normalizeTolerance(a.tolerance);
@@ -414,7 +436,10 @@ async function handleQuizzes(req, res, parts) {
     q.attempts = Array.isArray(q.attempts) ? q.attempts : [];
     q.attempts.push(attempt);
     await writeQuiz(q);
-    return sendJson(res, 201, q);
+    // a badge earned or raised by this attempt (see js/badges.js) comes back with the quiz
+    let awards = [];
+    try { awards = await awardBadges(q); } catch (err) { console.warn(`Badges could not be awarded: ${err.message}`); }
+    return sendJson(res, 201, { ...q, awards });
   }
   // PUT /api/quizzes/:id/attempts/:n/audio  (body: WAV bytes) — the take of attempt n (1-based),
   // kept as quizzes/<id>/attempt-<n>.wav so a scoring can be looked into afterwards.
@@ -484,7 +509,7 @@ async function listSessions() {
   }
   return out;
 }
-const cleanSessionItems = (items) => (Array.isArray(items) ? items : []).filter((it) => it && typeof it.id === 'string').slice(0, 500);
+const cleanSessionItems = (items) => cleanSlippedItems(items).filter((it) => typeof it.id === 'string').slice(0, 500);
 function sessionFields(body, s) {
   if (Array.isArray(body.items)) s.items = cleanSessionItems(body.items);
   if (body.overall !== undefined) s.overall = body.overall == null ? null : Number(body.overall);
@@ -642,6 +667,78 @@ async function fileExists(p) {
 
 // ---------- API ----------
 
+// ---------- badges ----------
+// Derived from the quizzes' attempts (js/badges.js) and kept in <data>/badges.json by the
+// learner's profile id (names stay in profiles.json). Awarded on each attempt, idempotent;
+// rebuilt whole by a recompute (the tool, or a change of the rule).
+async function readBadges() {
+  try {
+    const b = JSON.parse(await fsp.readFile(BADGES, 'utf8'));
+    return { rule: { ...DEFAULT_RULE, ...(b && b.rule && typeof b.rule === 'object' ? { differentDays: !!b.rule.differentDays } : {}) }, badges: b && Array.isArray(b.badges) ? b.badges : [] };
+  } catch { return { rule: { ...DEFAULT_RULE }, badges: [] }; }
+}
+async function writeBadges(store) { await fsp.writeFile(BADGES, JSON.stringify({ schemaVersion: BADGES_VERSION, rule: store.rule, badges: store.badges }, null, 2) + '\n'); }
+let badgesLock = Promise.resolve();
+function withBadges(fn) {
+  const run = badgesLock.then(async () => {
+    const store = await readBadges();
+    const before = JSON.stringify(store);
+    const out = await fn(store);
+    if (JSON.stringify(store) !== before) await writeBadges(store);
+    return out;
+  });
+  badgesLock = run.catch(() => {});
+  return run;
+}
+// the verse ids each sloka of the library is linked to, for the chapter and Gītā badges
+async function verseIdsIndex() {
+  const map = new Map();
+  for (const r of await readIndex()) { const item = await withMeta(r); map.set(r.id, item.meta && item.meta.verse && item.meta.verse.id ? [item.meta.verse.id] : []); }
+  return map;
+}
+async function allQuizzes() {
+  let names = [];
+  try { names = await fsp.readdir(QUIZZES); } catch { return []; }
+  const out = [];
+  for (const n of names) { if (!n.endsWith('.json')) continue; const q = await readQuiz(n.slice(0, -5)); if (q) out.push(q); }
+  return out;
+}
+async function awardBadges(quiz) {
+  return withBadges(async (store) => {
+    const vmap = await verseIdsIndex();
+    const merged = mergeBadges(store.badges, quizBadges(quiz, store.rule));
+    const next = mergeBadges(merged, coverageBadges(merged.filter((b) => b.kind === 'quiz'), (id) => vmap.get(id) || []));
+    const awards = diffBadges(store.badges, next);
+    store.badges = next;
+    return awards;
+  });
+}
+async function recomputeBadges(rule = null) {
+  return withBadges(async (store) => {
+    if (rule && typeof rule === 'object' && 'differentDays' in rule) store.rule = { ...store.rule, differentDays: !!rule.differentDays };
+    const vmap = await verseIdsIndex();
+    store.badges = computeBadges(await allQuizzes(), { rule: store.rule, verseIdsOf: (id) => vmap.get(id) || [] });
+    return { rule: store.rule, badges: store.badges };
+  });
+}
+// GET /api/badges[?learner=<profile id>] · POST /api/badges/recompute · PATCH /api/badges {differentDays}
+async function handleBadges(req, res, parts, url) {
+  const sub = parts[2];
+  if (!sub && req.method === 'GET') {
+    const store = await readBadges();
+    const learner = url.searchParams.get('learner');
+    return sendJson(res, 200, { rule: store.rule, badges: learner ? store.badges.filter((b) => b.learner === learner) : store.badges });
+  }
+  if (sub === 'recompute' && req.method === 'POST') return sendJson(res, 200, await recomputeBadges());
+  if (!sub && req.method === 'PATCH') {
+    let body = null;
+    try { body = JSON.parse((await readBody(req, 1e5)).toString('utf8')); } catch { body = null; }
+    if (!body || typeof body !== 'object') return sendJson(res, 400, { error: 'Invalid JSON' });
+    return sendJson(res, 200, await recomputeBadges(body));
+  }
+  return sendJson(res, 405, { error: 'Method not allowed' });
+}
+
 // ---------- speaker profiles ----------
 // GET /api/profiles · POST /api/profiles {name, voiceType, ageGroup, roles}
 // PATCH /api/profiles/:id · DELETE /api/profiles/:id
@@ -694,6 +791,170 @@ async function handleProfiles(req, res, parts) {
   return sendJson(res, 405, { error: 'Method not allowed' });
 }
 
+// ---------- a recording linked to a verse ----------
+const sha256Hex = (x) => crypto.createHash('sha256').update(x).digest('hex');
+// The link: the sidecar gets `verse` (the copy of the text, its hash, the metre), the verse's
+// text as the recording's reference text (origin 'reference'; a text typed by hand keeps
+// winning), and the chandas recomputed. The dataset is read-only: nothing is written there.
+async function linkToVerse(rec, meta, ds, entry, { speakerLineRecited = true, mappedBy = 'manual', pinned = false } = {}) {
+  const link = verseLink(entry, { dataset: ds.id, datasetVersion: (ds.manifest && ds.manifest.version) || null, speakerLineRecited, mappedBy, licence: ds.manifest && ds.manifest.licence ? ds.manifest.licence.id : null, pinned });
+  link.textHash = sha256Hex(linkHashInput(link));
+  const keepTyped = !!(meta.text && meta.text.body && meta.text.origin === 'typed');
+  const body = keepTyped ? { verse: link } : { verse: link, text: { body: verseBody(entry, { speakerLine: link.speakerLineRecited }), language: 'sa', script: 'Deva', origin: 'reference', title: `Gītā ${entry.id}` } };
+  const next = sanitizeMeta(body, meta);
+  next.name = rec.name;
+  // the words: the verse's lines, with the timings of what was heard
+  const store = await wordsFromVerse(rec, entry, link.speakerLineRecited);
+  next.chandas = chandasForRecord({ name: rec.name, meta: next, store });
+  await writeMeta(audioPath(rec), next);
+  return next;
+}
+// A linked recording's transcript is the verse's text (the hearing's timings spread over its
+// lines, the hearing itself kept under `heard`); returns the store written.
+async function wordsFromVerse(rec, entry, speakerLine = true) {
+  const store = await readTranscripts(rec);
+  const prev = pickTranscript(store, 'sanskrit');
+  const t = verseTranscript(entry, { speakerLine, previous: prev });
+  const next = putInStore(store, t, { primary: true });
+  await writeTranscripts(rec, next);
+  return next;
+}
+async function unlinkVerse(rec, meta) {
+  const next = sanitizeMeta(meta.text && meta.text.origin === 'reference' ? { verse: null, text: null } : { verse: null }, meta);
+  next.name = rec.name;
+  // the hearing comes back, when the verse's words had replaced one
+  let store = await readTranscripts(rec);
+  const back = heardTranscript(pickTranscript(store, 'sanskrit'));
+  if (back) { store = putInStore(store, back, { primary: true }); await writeTranscripts(rec, store); }
+  next.chandas = chandasForRecord({ name: rec.name, meta: next, store });
+  await writeMeta(audioPath(rec), next);
+  return next;
+}
+// Whether a linked recording's copy of the text is the dataset's current text (null: not linked, or the dataset is not here).
+function verseCurrentOf(meta) {
+  if (!meta || !meta.verse) return null;
+  const ds = referenceDataset(meta.verse.dataset);
+  const h = ds ? referenceVerseHash(ds, meta.verse.id) : null;
+  return h ? h === meta.verse.textHash : null;
+}
+// The index with each record's link, for coverage and the chapter views.
+async function linkedIndex() {
+  const out = [];
+  for (const r of await readIndex()) {
+    let meta = null;
+    try { meta = await readMeta(audioPath(r)); } catch { meta = null; }
+    out.push({ ...r, verse: meta && meta.verse ? { dataset: meta.verse.dataset, id: meta.verse.id } : null });
+  }
+  return out;
+}
+const wordsOf = (text) => tokenize(text).map((w) => w.word);
+// A record's name read as a verse of the dataset, checked against its Sanskrit transcript
+// when it has one (the words of a mis-named file do not match the verse's).
+async function guessVerse(rec, ds) {
+  const g = mapNameToVerse(rec.name, folderOf(rec.file), new Set(ds.byId.keys()));
+  const entry = g ? referenceVerse(ds, g.id) : null;
+  if (!entry) return { guess: null, entry: null, similarity: null, doubtful: false };
+  let similarity = null;
+  try {
+    const store = await readTranscripts(rec);
+    const t = store && store.languages && store.languages.sanskrit;
+    if (t && t.text) { const c = compareWords(wordsOf(verseBody(entry, { speakerLine: true })), wordsOf(t.text)); similarity = c ? c.summary.similarity : null; }
+  } catch { similarity = null; }
+  return { guess: g, entry, similarity, doubtful: similarity !== null && similarity < 0.45 };
+}
+
+// ---------- the reference datasets ----------
+// GET /api/reference                         → every dataset found, errors included
+// GET /api/reference/:ds                     → manifest + chapters + coverage
+// GET /api/reference/:ds/chapters/:n         → the chapter's entries, each with its recordings
+// GET /api/reference/:ds/verses/:id          → one entry ("1.21-22" composed from its parts)
+// GET /api/reference/:ds/coverage            → how much of the dataset has a recording
+// PUT /api/reference/:ds/verses/:id/custom   {deva?, iast?, speaker?, translations?, notes?, variants?}
+//                                            → the customisation of that verse, kept in <data>/reference/<ds>.custom.json
+//                                              and laid over the dataset's entry wherever it is served; DELETE removes it
+// POST /api/reference/:ds/map                {ids?, write?: true, writeDoubtful?: false} → links the recordings whose names
+//                                            name a verse (CH12-03 → 12.3), checking the words of a transcript against the
+//                                            verse's; returns { mapped, doubtful, unmapped, linked }
+// Records are linked to verses by `verse` in their sidecar (see linkToVerse).
+async function handleReference(req, res, parts) {
+  const [, , dsId, sub, arg, sub2] = parts;
+  if (!dsId) { if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' }); return sendJson(res, 200, referenceList().map(({ dir, ...d }) => d)); }
+  const ds = referenceDataset(decodeURIComponent(dsId));
+  if (!ds) return sendJson(res, 404, { error: `No reference dataset "${dsId}"` });
+  if (ds.errors.length) return sendJson(res, 409, { error: 'The dataset has errors and is not served', errors: ds.errors });
+  if (sub === 'verses' && arg && sub2 === 'custom') {
+    const vid = decodeURIComponent(arg);
+    if (!referenceVerse(ds, vid)) return sendJson(res, 404, { error: `No verse "${vid}"` });
+    if (req.method === 'PUT') {
+      let body;
+      try { body = JSON.parse((await readBody(req, 1e6)).toString('utf8')); } catch { return sendJson(res, 400, { error: 'The customisation must be JSON' }); }
+      return sendJson(res, 200, referenceSaveCustom(ds, vid, body));
+    }
+    if (req.method === 'DELETE') return sendJson(res, 200, referenceSaveCustom(ds, vid, null));
+    return sendJson(res, 405, { error: 'Method not allowed' });
+  }
+  // POST /api/reference/:ds/words {ids?} → every linked recording's transcript made of its verse's lines again
+  if (sub === 'words') {
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+    let body = {};
+    try { const raw = await readBody(req, 1e6); body = raw.length ? JSON.parse(raw.toString('utf8')) : {}; } catch { return sendJson(res, 400, { error: 'The request must be JSON' }); }
+    const want = Array.isArray(body.ids) ? new Set(body.ids) : null;
+    const report = { written: [], skipped: [] };
+    for (const rec of await readIndex()) {
+      if (want && !want.has(rec.id)) continue;
+      const meta = await readMeta(audioPath(rec));
+      const link = meta && meta.verse;
+      const entry = link && link.dataset === ds.id ? referenceVerse(ds, link.id) : null;
+      if (!entry) { report.skipped.push({ id: rec.id, name: rec.name, reason: link ? 'its verse is not in this dataset' : 'not linked' }); continue; }
+      await wordsFromVerse(rec, entry, link.speakerLineRecited);
+      report.written.push({ id: rec.id, name: rec.name, verse: link.id });
+    }
+    return sendJson(res, 200, report);
+  }
+  if (sub === 'map') {
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+    let body = {};
+    try { const raw = await readBody(req, 1e6); body = raw.length ? JSON.parse(raw.toString('utf8')) : {}; } catch { return sendJson(res, 400, { error: 'The request must be JSON' }); }
+    const want = Array.isArray(body.ids) ? new Set(body.ids) : null;
+    const write = body.write !== false;
+    const report = { mapped: [], doubtful: [], unmapped: [], linked: 0 };
+    for (const rec of await readIndex()) {
+      if (want && !want.has(rec.id)) continue;
+      const meta = await ensureMeta(rec, audioPath(rec));
+      if (meta.verse) continue; // linked already
+      const g = await guessVerse(rec, ds);
+      if (!g.entry) { report.unmapped.push({ id: rec.id, name: rec.name, folder: folderOf(rec.file), reason: 'the name does not name a verse of the dataset' }); continue; }
+      const row = { id: rec.id, name: rec.name, folder: folderOf(rec.file), verse: g.entry.id, by: g.guess.by, similarity: g.similarity, firstLine: g.entry.deva[0] };
+      if (g.doubtful) { report.doubtful.push(row); if (!(write && body.writeDoubtful)) continue; } else report.mapped.push(row);
+      if (write) { await linkToVerse(rec, meta, ds, g.entry, { mappedBy: 'migration' }); report.linked++; }
+    }
+    return sendJson(res, 200, report);
+  }
+  if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+  const index = await linkedIndex();
+  if (!sub) return sendJson(res, 200, { ...ds.manifest, chapters: ds.data.chapters, coverage: referenceCoverage(ds, index), warnings: ds.warnings });
+  if (sub === 'coverage') return sendJson(res, 200, referenceCoverage(ds, index));
+  if (sub === 'chapters' && arg) {
+    const ch = referenceChapter(ds, Number(arg));
+    if (!ch) return sendJson(res, 404, { error: `No chapter ${arg}` });
+    const linked = index.filter((r) => r.verse && r.verse.dataset === ds.id && r.verse.id);
+    const covers = (rec, id) => {
+      if (rec.verse.id === id) return true;
+      const p = parseVerseId(rec.verse.id);
+      const q = parseVerseId(id);
+      return !!(p && q && p.kind === 'combined' && q.kind === 'verse' && q.chapter === p.chapter && q.verse >= p.verse && q.verse <= p.verseEnd);
+    };
+    const entries = ch.entries.map((e) => ({ ...e, recordings: linked.filter((r) => covers(r, e.id)).map((r) => publicRecord(r)) }));
+    return sendJson(res, 200, { ...ch, entries });
+  }
+  if (sub === 'verses' && arg) {
+    const v = referenceVerse(ds, decodeURIComponent(arg));
+    if (!v) return sendJson(res, 404, { error: `No verse "${arg}"` });
+    return sendJson(res, 200, v);
+  }
+  return sendJson(res, 404, { error: 'Not found' });
+}
+
 async function handleApi(req, res, url) {
   const parts = url.pathname.split('/').filter(Boolean); // ['api','baselines',id?,sub?]
   if (parts[1] === 'quizzes') return handleQuizzes(req, res, parts);
@@ -701,6 +962,8 @@ async function handleApi(req, res, url) {
   if (parts[1] === 'assessments') return handleAssessments(req, res);
   if (parts[1] === 'folders') return handleFolders(req, res);
   if (parts[1] === 'profiles') return handleProfiles(req, res, parts);
+  if (parts[1] === 'badges') return handleBadges(req, res, parts, url);
+  if (parts[1] === 'reference') return handleReference(req, res, parts);
   if (parts[1] !== 'baselines') return sendJson(res, 404, { error: 'Not found' });
   const id = parts[2];
   const sub = parts[3];
@@ -711,7 +974,7 @@ async function handleApi(req, res, url) {
     await syncIndex();
     const list = await readIndex();
     const out = [];
-    for (const r of list) out.push(await withMeta(r));
+    for (const r of list) { const item = await withMeta(r); item.verseCurrent = verseCurrentOf(item.meta); out.push(item); }
     return sendJson(res, 200, out);
   }
 
@@ -724,6 +987,14 @@ async function handleApi(req, res, url) {
     const folder = cleanFolder(url.searchParams.get('folder') || '');
     if (folder === null) return sendJson(res, 400, { error: 'That is not a usable folder name' });
     if (!folder) return sendJson(res, 400, { error: 'Slokas are saved in folders: choose or create one' });
+    // ?verse=12.3&dataset=gita&speakerLine=0|1 (Learn): the verse the teacher chose, linked exactly
+    let chosen = null;
+    if (url.searchParams.get('verse')) {
+      const ds = referenceDataset(String(url.searchParams.get('dataset') || 'gita'));
+      const entry = ds && !ds.errors.length ? referenceVerse(ds, String(url.searchParams.get('verse'))) : null;
+      if (!entry) return sendJson(res, 404, { error: `No verse "${url.searchParams.get('verse')}" in the reference dataset` });
+      chosen = { ds, entry, speakerLineRecited: url.searchParams.get('speakerLine') !== '0' };
+    }
     const rec = {
       id: newId(),
       name,
@@ -735,10 +1006,20 @@ async function handleApi(req, res, url) {
     };
     rec.file = `${folder ? folder + '/' : ''}${slug(name)}-${rec.id}.wav`;
     await fsp.mkdir(path.join(LIB, folder), { recursive: true });
-    const meta = sanitizeMeta({ name, source: rec.source }, { id: rec.id, createdAt: rec.createdAt, audio: audioInfo(body) });
+    let meta = sanitizeMeta({ name, source: rec.source }, { id: rec.id, createdAt: rec.createdAt, audio: audioInfo(body) });
     await writeWavWithBext(rec, body, meta);
     await writeMeta(audioPath(rec), meta);
     await withIndex((list) => { list.push(rec); });
+    if (chosen) meta = await linkToVerse(rec, meta, chosen.ds, chosen.entry, { speakerLineRecited: chosen.speakerLineRecited, mappedBy: 'learn' });
+    // ?autolink=1: a name that names a verse of a dataset here links the recording to it
+    else if (url.searchParams.get('autolink') === '1') {
+      for (const d of referenceList()) {
+        const ds = referenceDataset(d.id);
+        if (!ds || ds.errors.length) continue;
+        const g = await guessVerse(rec, ds);
+        if (g.entry) { meta = await linkToVerse(rec, meta, ds, g.entry, { mappedBy: 'name' }); break; }
+      }
+    }
     return sendJson(res, 201, publicRecord(rec, meta));
   }
 
@@ -851,6 +1132,13 @@ async function handleApi(req, res, url) {
       if (!body || typeof body !== 'object' || typeof body.text !== 'string') return sendJson(res, 400, { error: 'Transcript needs a text field' });
       if (!body.text.trim() && !(Array.isArray(body.chunks) && body.chunks.some((c) => c && String(c.text || '').trim()))) return sendJson(res, 400, { error: 'An empty transcript is not stored' });
       const primary = url.searchParams.get('primary') !== '0';
+      // a linked recording's words are the verse's: a hearing put here lends its timings, no more
+      const linkMeta = await readMeta(audioPath(rec)).catch(() => null);
+      if (linkMeta && linkMeta.verse && body.from !== 'reference' && body.language === 'sanskrit') {
+        const lds = referenceDataset(linkMeta.verse.dataset);
+        const entry = lds && !lds.errors.length ? referenceVerse(lds, linkMeta.verse.id) : null;
+        if (entry) body = verseTranscript(entry, { speakerLine: linkMeta.verse.speakerLineRecited, previous: body });
+      }
       const current = await readTranscripts(rec);
       // a background result only fills a gap: it never replaces a transcript that exists
       // (least of all one someone corrected); "Transcribe again" is a primary put
@@ -867,6 +1155,21 @@ async function handleApi(req, res, url) {
       return sendJson(res, 200, { ok: true, ...(publicStore(store) || { available: [] }) });
     }
     return sendJson(res, 405, { error: 'Method not allowed' });
+  }
+
+  // POST /api/baselines/:id/verse  {dataset, id, speakerLineRecited?}  → links the recording to that verse
+  // DELETE /api/baselines/:id/verse                                   → unlinks it (a text from the dataset goes with it)
+  if (sub === 'verse') {
+    const current = await ensureMeta(rec, audioPath(rec));
+    if (req.method === 'DELETE') return sendJson(res, 200, await unlinkVerse(rec, current));
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+    let body;
+    try { body = JSON.parse((await readBody(req, 1e5)).toString('utf8')); } catch { return sendJson(res, 400, { error: 'The link must be JSON' }); }
+    const ds = referenceDataset(String(body.dataset || 'gita'));
+    if (!ds || ds.errors.length) return sendJson(res, 404, { error: `No reference dataset "${body.dataset || 'gita'}"` });
+    const entry = referenceVerse(ds, String(body.id || ''));
+    if (!entry) return sendJson(res, 404, { error: `No verse "${body.id}"` });
+    return sendJson(res, 200, await linkToVerse(rec, current, ds, entry, { speakerLineRecited: body.speakerLineRecited !== false, mappedBy: 'manual' }));
   }
 
   // GET / PUT / PATCH /api/baselines/:id/meta  — the metadata sidecar. PUT replaces what
@@ -940,11 +1243,15 @@ async function handleApi(req, res, url) {
   }
 
   // DELETE /api/baselines/:id
+  // DELETE /api/baselines/:id[?backup=1]  — with backup=1 the WAV and its sidecars are moved to
+  // library/backup first (a recording replaced from Learn), beside the originals the trim keeps
   if (req.method === 'DELETE') {
+    const backup = url.searchParams.get('backup') === '1';
     await withIndex(async (l) => {
       const idx = l.findIndex((x) => x.id === id);
       if (idx >= 0) {
         const r = l[idx];
+        if (backup) await backupRecord(r);
         await fsp.rm(audioPath(r), { force: true });
         await fsp.rm(featuresPath(r), { force: true });
         await fsp.rm(transcriptPath(r), { force: true });

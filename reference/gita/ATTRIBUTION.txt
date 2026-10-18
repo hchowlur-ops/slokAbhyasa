@@ -5,6 +5,6 @@ commentaries, which are third-party copyrighted works, were not taken. Eight typ
 editorial variant notes removed by SlokAbhyasa's fetch tool (tools/gita/overrides.json).
 
 English translation: Annie Besant (1905), "The Bhagavad-Gîtâ" (public domain), aligned verse by verse in the
-CANONCITE corpus by pralia-labs (huggingface.co/datasets/pralia-labs/canoncite (corpora/bhagavad_gita/corpus_index.jsonl, commit e759f0a52fcccd2c062acd1546779b038115ac90; alignment and metadata CC BY 4.0)); the alignment and metadata are CC BY 4.0,
+CANONCITE corpus by pralia-labs (huggingface.co/datasets/pralia-labs/canoncite (corpora/bhagavad_gita/corpus_index.jsonl, commit e759f0a52fcccd2c062acd1546779b038115ac90)); the alignment and metadata are CC BY 4.0,
 https://creativecommons.org/licenses/by/4.0/ — attribution to pralia-labs/canoncite is required.
-Fetched 2026-10-11T18:07:03.510Z by tools/gita/fetch.mjs.
+Fetched 2026-10-12T16:12:52.527Z by tools/gita/fetch.mjs.

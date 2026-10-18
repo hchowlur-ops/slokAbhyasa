@@ -81,7 +81,7 @@ test('voice stats: pitch, levels and silences of a synthetic chant', () => {
 
 test('a new baseline record carries the vocabulary defaults and the derived text', () => {
   const m = newBaselineMeta({ name: 'BG 2.47', source: 'mic', speaker: { id: 'p1', voiceType: 'female', ageGroup: '40to59' }, text: { body: BG_2_47 } });
-  assert.equal(m.schemaVersion, '1.0.0');
+  assert.equal(m.schemaVersion, '1.1.0');
   assert.equal(m.style.mode, 'plain_sloka');
   assert.equal(m.style.pitchPrescribed, false);
   assert.equal(m.speaker.profileId, 'p1');

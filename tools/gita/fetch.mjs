@@ -1,15 +1,16 @@
 // Downloads the Bhagavad Gītā reference dataset and writes it, normalised, to reference/gita/
 // (see README.md in this folder). Run again at any time to update; `--ref <sha>` pins a
-// commit, `--to <dir>` chooses the folder, `--check` only validates what is there.
+// commit, `--to <dir>` chooses the folder, `--no-english` leaves the English layer out,
+// `--check` only validates what is there.
 //
 //   node tools/gita/fetch.mjs            # latest commit of the source → reference/gita/
-//   node tools/gita/fetch.mjs --check    # validate reference/gita/verses.json against its manifest
+//   node tools/gita/fetch.mjs --check    # validate reference/gita/ against its manifest
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { buildDataset, mergeEnglish, DATASET_ID } from './normalize.mjs';
-import { GITA_VERSES } from '../../js/chandas.js';
+import { validateDataset } from '../../js/verses.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(here, '..', '..');
@@ -19,19 +20,18 @@ const OUT = path.resolve(ROOT, opt('--to', path.join('reference', DATASET_ID)));
 const CHECK = args.includes('--check');
 const ENGLISH = !args.includes('--no-english');
 
+// The source: the MIT-licensed static copy of the vedicscriptures dataset (the same JSON the
+// data repository holds under GPL-3.0; the Sanskrit text itself is public domain).
+const OWNER = 'vedicscriptures';
+const REPO = 'vedicscriptures.github.io';
+const HOMEPAGE = `https://github.com/${OWNER}/${REPO}`;
+const CONCURRENCY = 8;
+
 // The English layer: Annie Besant's 1905 translation (public domain), aligned verse by verse
 // in the CANONCITE corpus file (its alignment and metadata CC BY 4.0, pralia-labs).
 const EN_REPO = 'pralia-labs/canoncite';
 const EN_FILE = 'corpora/bhagavad_gita/corpus_index.jsonl';
 const EN_TRANSLATOR = 'Annie Besant (1905)';
-
-// The source: the MIT-licensed static copy of the vedicscriptures dataset (the same JSON the
-// data repository holds under GPL-3.0; the Sanskrit text itself is public domain).
-const OWNER = 'vedicscriptures';
-const REPO = 'vedicscriptures.github.io';
-const LICENCE_NAME = 'MIT';
-const HOMEPAGE = `https://github.com/${OWNER}/${REPO}`;
-const CONCURRENCY = 8;
 
 const sha256 = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
 const readJson = (f) => JSON.parse(fs.readFileSync(f, 'utf8'));
@@ -57,15 +57,16 @@ async function mapLimit(items, limit, fn) {
 
 function check() {
   const manifest = readJson(path.join(OUT, 'manifest.json'));
-  const file = path.join(OUT, 'verses.json');
+  const file = path.join(OUT, manifest.files.verses);
   const buf = fs.readFileSync(file);
-  const ok = sha256(buf) === manifest.files['verses.json'].sha256;
+  const ok = sha256(buf) === manifest.sha256[manifest.files.verses];
   const data = JSON.parse(buf.toString('utf8'));
-  console.log(`${file}: ${data.verses.length} verses, ${data.colophons.length} colophons, schema ${data.schema}, source ${manifest.source.repo}@${manifest.source.commit.slice(0, 7)} (${manifest.source.fetchedAt})`);
+  const { errors, warnings } = validateDataset(data, { manifest });
+  console.log(`${file}: ${data.verses.filter((v) => v.kind === 'verse').length} verses, ${data.verses.filter((v) => v.kind !== 'verse').length} extras, schema ${data.schemaVersion}, version ${manifest.version}, source ${manifest.source.name} @ ${String(manifest.sourceCommit || '').slice(0, 7)} (${manifest.source.retrieved})`);
   console.log(`sha256 ${ok ? 'matches' : 'DOES NOT MATCH'} the manifest`);
-  const total = Object.values(GITA_VERSES).reduce((a, b) => a + b, 0);
-  if (data.verses.length !== total) console.log(`expected ${total} verses`);
-  process.exitCode = ok && data.verses.length === total ? 0 : 1;
+  for (const e of errors) console.log(`error: ${e}`);
+  for (const w of warnings) console.log(`warning: ${w}`);
+  process.exitCode = ok && !errors.length ? 0 : 1;
 }
 
 async function fetchAll() {
@@ -80,11 +81,11 @@ async function fetchAll() {
   for (const c of chapterFiles) {
     const ch = Number(c.chapter_number);
     const n = Number(c.verses_count);
-    for (let v = 1; v <= n + 1; v++) wanted.push([ch, v]);
+    for (let v = 1; v <= n + 1; v++) wanted.push([ch, v, n]);
   }
   let done = 0;
-  const slokFiles = await mapLimit(wanted, CONCURRENCY, async ([ch, v]) => {
-    const src = await getJson(raw(`slok/${ch}/${v}/index.json`)).catch((err) => { if (/HTTP 404/.test(err.message) && v > (GITA_VERSES[ch] || 0)) return null; throw err; });
+  const slokFiles = await mapLimit(wanted, CONCURRENCY, async ([ch, v, n]) => {
+    const src = await getJson(raw(`slok/${ch}/${v}/index.json`)).catch((err) => { if (/HTTP 404/.test(err.message) && v > n) return null; throw err; });
     done++;
     if (done % 100 === 0) process.stdout.write(`  ${done} of ${wanted.length} verse files\n`);
     // the Sanskrit fields alone: the translations and commentaries are third-party works
@@ -92,11 +93,14 @@ async function fetchAll() {
   });
   const overrides = readJson(path.join(here, 'overrides.json'));
   delete overrides._about;
-  const source = { repo: `${OWNER}/${REPO}`, commit: ref, homepage: HOMEPAGE, fetchedAt: new Date().toISOString(), files: { chapters: 'chapters/index.json', verses: 'slok/<chapter>/<verse>/index.json' } };
-  const data = buildDataset(chapterFiles, slokFiles.filter(Boolean), { overrides, source });
+  const now = new Date();
+  const version = `${now.getUTCFullYear()}.${now.getUTCMonth() + 1}.${now.getUTCDate()}`;
+  const retrieved = now.toISOString();
+  const source = { name: `${OWNER}/${REPO}`, url: HOMEPAGE, retrieved, files: { chapters: 'chapters/index.json', verses: 'slok/<chapter>/<verse>/index.json' } };
+  const data = buildDataset(chapterFiles, slokFiles.filter(Boolean), { overrides, source, version });
   for (const line of data.report) console.log(`note: ${line}`);
   for (const line of data.stats.countMismatch) console.log(`count: ${line}`);
-  console.log(`${data.verses.length} verses, ${data.colophons.length} colophons; ${data.stats.metreMismatch.length} verses whose syllable count does not fit the metre exactly:`);
+  console.log(`${data.stats.verses} verses, ${data.stats.extras} colophons; ${data.stats.metreMismatch.length} verses whose syllable count does not fit the metre exactly:`);
   for (const line of data.stats.metreMismatch) console.log(`  ${line}`);
   let english = null;
   if (ENGLISH) {
@@ -105,15 +109,20 @@ async function fetchAll() {
     const jsonl = await getText(`https://huggingface.co/datasets/${EN_REPO}/resolve/${sha}/${EN_FILE}`);
     const records = jsonl.split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l));
     const n = mergeEnglish(data, records);
-    english = { language: 'en', translator: EN_TRANSLATOR, licence: 'public domain', via: `huggingface.co/datasets/${EN_REPO} (${EN_FILE}, commit ${sha}; alignment and metadata CC BY 4.0)`, verses: n };
-    data.translations = { en: english };
-    console.log(`English (${EN_TRANSLATOR}): ${n} of ${data.verses.length} verses, via ${EN_REPO} @ ${sha.slice(0, 7)}`);
+    english = { name: 'English', translator: EN_TRANSLATOR, licence: 'public domain', source: `huggingface.co/datasets/${EN_REPO} (${EN_FILE}, commit ${sha})`, alignmentLicence: 'CC BY 4.0 (pralia-labs/canoncite)', verses: n };
+    console.log(`English (${EN_TRANSLATOR}): ${n} of ${data.stats.verses} verses, via ${EN_REPO} @ ${sha.slice(0, 7)}`);
   }
   const { report, stats, ...out } = data;
+  const { errors, warnings } = validateDataset(out);
+  for (const e of errors) console.log(`error: ${e}`);
+  if (errors.length) throw new Error(`the dataset does not pass its own checks (${errors.length} errors)`);
   fs.mkdirSync(OUT, { recursive: true });
+  const FILES = ['verses.json', 'LICENSE', 'ATTRIBUTION.txt', 'manifest.json'];
+  for (const f of FILES) { try { fs.chmodSync(path.join(OUT, f), 0o644); } catch { /* not there yet */ } } // writable for this update
   const versesJson = Buffer.from(JSON.stringify(out, null, 1), 'utf8');
   fs.writeFileSync(path.join(OUT, 'verses.json'), versesJson);
   fs.writeFileSync(path.join(OUT, 'LICENSE'), licence);
+  const attribution = `Sanskrit text: Vedic Scriptures (Pt. Prashant Tripathi), ${HOMEPAGE}, MIT licence; the verses themselves are public domain.${english ? ` English: ${EN_TRANSLATOR}, public domain, aligned by pralia-labs/canoncite (CC BY 4.0).` : ''}`;
   fs.writeFileSync(path.join(OUT, 'ATTRIBUTION.txt'), [
     'Bhagavad Gītā — Sanskrit text (Devanagari and IAST) and chapter names',
     `Source: ${HOMEPAGE} (commit ${ref}), by Vedic Scriptures (Pt. Prashant Tripathi), MIT licence (see LICENSE).`,
@@ -123,23 +132,27 @@ async function fetchAll() {
     ...(english ? [
       '',
       `English translation: ${EN_TRANSLATOR}, "The Bhagavad-Gîtâ" (public domain), aligned verse by verse in the`,
-      `CANONCITE corpus by pralia-labs (${english.via}); the alignment and metadata are CC BY 4.0,`,
+      `CANONCITE corpus by pralia-labs (${english.source}); the alignment and metadata are CC BY 4.0,`,
       'https://creativecommons.org/licenses/by/4.0/ — attribution to pralia-labs/canoncite is required.',
     ] : []),
-    `Fetched ${source.fetchedAt} by tools/gita/fetch.mjs.`,
+    `Fetched ${retrieved} by tools/gita/fetch.mjs.`,
     '',
   ].join('\n'));
   const manifest = {
-    id: DATASET_ID, name: 'Bhagavad Gītā — Sanskrit mūla', schema: out.schema, source, licence: LICENCE_NAME, licenceFile: 'LICENSE',
-    attribution: 'Vedic Scriptures (Pt. Prashant Tripathi), github.com/vedicscriptures — MIT; the Sanskrit text is public domain',
+    schemaVersion: out.schemaVersion, id: DATASET_ID, work: 'Bhagavad Gītā', name: 'Bhagavad Gītā — Vedic Scriptures text',
+    version, sourceCommit: ref, source: { name: source.name, url: source.url, retrieved },
+    licence: { id: 'MIT', name: 'MIT License', url: 'https://opensource.org/license/mit', file: 'LICENSE' },
+    attribution, updateUrl: HOMEPAGE,
+    files: { verses: 'verses.json' }, sha256: { 'verses.json': sha256(versesJson) },
     translations: english ? { en: english } : {},
-    counts: { chapters: out.chapters.length, verses: out.verses.length, colophons: out.colophons.length },
-    checks: { countMismatch: stats.countMismatch, metreMismatch: stats.metreMismatch.length, overridesNotFound: report },
+    counts: { chapters: out.chapters.length, verses: stats.verses, extras: stats.extras },
+    checks: { countMismatch: stats.countMismatch, metreMismatch: stats.metreMismatch.length, overridesNotFound: report, warnings },
     overrides: Object.keys(overrides),
-    files: { 'verses.json': { bytes: versesJson.length, sha256: sha256(versesJson) } },
   };
   fs.writeFileSync(path.join(OUT, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
-  console.log(`written to ${OUT}: verses.json (${(versesJson.length / 1024).toFixed(0)} KB), manifest.json, LICENSE, ATTRIBUTION.txt`);
+  // the dataset is read-only: the app never writes here (customisations go to <data>/reference/gita.custom.json)
+  for (const f of FILES) fs.chmodSync(path.join(OUT, f), 0o444);
+  console.log(`written to ${OUT}: verses.json (${(versesJson.length / 1024).toFixed(0)} KB), manifest.json, LICENSE, ATTRIBUTION.txt — read-only`);
 }
 
 try {

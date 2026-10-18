@@ -20,3 +20,6 @@ npm-debug.log*
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# research and design notes: their own private repository (hchowlur-ops/SlokaAbhyasa-research-notes)
+research_notes/

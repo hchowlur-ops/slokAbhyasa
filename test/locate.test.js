@@ -121,3 +121,76 @@ test('compareAuto: pauses that one recording marked as sound are not reported as
   assert.ok(!res.deviations.some((d) => d.type === 'extra'), JSON.stringify(res.deviations.map((d) => [d.type, d.label, d.tBase])));
   assert.ok(res.scores.overall >= 97, `overall ${res.scores.overall}`);
 });
+
+test("compareAuto: the ear's stretch is the window, and no search runs", () => {
+  const B = feat(verseB());
+  const H = feat(concat(verseA(), verseB(), verseC()));
+  const res = compareAuto(B, H, { window: [VERSE_SEC - 0.5, 2 * VERSE_SEC + 0.5] });
+  assert.equal(res.match.located, 'ear');
+  assert.ok(res.match.ok, `contrast ${res.match.contrast}`);
+  assert.ok(res.scores.overall >= 90, `overall ${res.scores.overall}`);
+  assert.ok(Math.abs(res.matched.heard[0] - B_START) < 1.2, `matched from ${res.matched.heard[0]}`); // the window has room at its ends and is spanned end to end, so the match begins in that room
+  assert.ok(Math.abs(res.matched.heard[1] - B_END) < 1.2, `matched to ${res.matched.heard[1]}`);
+  assert.equal(res.heardDuration, H.duration);
+  assert.ok(!res.deviations.some((d) => d.type === 'extra' && d.edge), 'the neighbouring verses are not reported as extra sound');
+  assert.ok(res.notes.some((n) => n.includes('the ear closed')));
+  assert.equal(res.chart.iOf[Math.round(1 / HOP_SEC)], -1, 'a frame in verse A maps to nothing');
+});
+
+test('compareAuto: locate false compares a slowly recited sloka whole to whole, whatever the length', () => {
+  const B = feat(verseB());
+  const slow = chant([67, 65, 67, 64, 62, 64, 60, 62], Math.round(NOTE * 1.8), [VOWEL_U, VOWEL_A, VOWEL_E, VOWEL_I, VOWEL_A, VOWEL_U, VOWEL_I, VOWEL_E]);
+  const H = feat(slow);
+  const spanRatio = (H.trimEnd - H.trimStart) / (B.trimEnd - B.trimStart);
+  assert.ok(spanRatio > 1.5, `the slow take is ${spanRatio.toFixed(2)} times the sloka: past the length rule`);
+  const whole = compareAuto(B, H, { locate: false });
+  assert.equal(whole.match.located, null);
+  assert.ok(whole.tempoRatio > 1.4 && whole.tempoRatio < 2.3, `tempo ${whole.tempoRatio}`);
+  const span = whole.matched.heard[1] - whole.matched.heard[0];
+  assert.ok(span > 0.8 * (H.trimEnd - H.trimStart) * HOP_SEC, `the whole take is compared (${span.toFixed(2)} s)`);
+  assert.ok(whole.scores.overall >= 80, `overall ${whole.scores.overall}`);
+});
+
+test('compare: the pace prior stretches the sloka to the take and reports times in the sloka\'s own frames', () => {
+  const B = feat(verseB());
+  const slow = chant([67, 65, 67, 64, 62, 64, 60, 62], Math.round(NOTE * 1.8), [VOWEL_U, VOWEL_A, VOWEL_E, VOWEL_I, VOWEL_A, VOWEL_U, VOWEL_I, VOWEL_E]);
+  const H = feat(slow);
+  const res = compare(B, H, { tempoPrior: 1.8 });
+  assert.equal(res.baseDuration, B.duration);
+  assert.equal(res.chart.times.length, B.n);
+  assert.equal(res.chart.jOf.length, B.n);
+  assert.equal(res.chart.iOf.length, H.n);
+  assert.ok(res.tempoRatio > 1.5 && res.tempoRatio < 2.1, `tempo ${res.tempoRatio}`);
+  assert.ok(res.matched.base[1] <= B.duration + 0.01 && res.matched.base[1] - res.matched.base[0] > 2, `base span ${res.matched.base}`);
+  assert.ok(res.matched.heard[1] - res.matched.heard[0] > 3.8, `heard span ${res.matched.heard}`);
+  assert.ok(res.scores.overall >= 80, `overall ${res.scores.overall}`);
+  for (const d of res.deviations) assert.ok(d.tBase[1] <= B.duration + 0.05, 'deviation times are the sloka\'s');
+  assert.ok(res.notes.some((n) => /longer than the sloka/.test(n)), 'the tempo note reads the real pace');
+});
+
+test('compareAuto: a sloka searched for inside a longer take is tried at several tempos', () => {
+  const B = feat(verseB());
+  // the take: verse A, then verse B sung 1.4 times slower, then verse C
+  const slowB = chant([67, 65, 67, 64, 62, 64, 60, 62], Math.round(NOTE * 1.4), [VOWEL_U, VOWEL_A, VOWEL_E, VOWEL_I, VOWEL_A, VOWEL_U, VOWEL_I, VOWEL_E]);
+  const H = feat(concat(verseA(), slowB, verseC()));
+  const res = compareAuto(B, H);
+  assert.equal(res.match.located, 'heard');
+  assert.ok(res.match.ok, `contrast ${res.match.contrast}`);
+  // B's slow rendering begins after verse A (3 s) and runs 8 × 0.42 + 0.6 s
+  assert.ok(Math.abs(res.matched.heard[0] - (VERSE_SEC + 0.3)) < 0.6, `matched from ${res.matched.heard[0]}`);
+  assert.ok(res.matched.heard[1] > VERSE_SEC + 3.3, `matched to ${res.matched.heard[1]}: the slow verse, not a window of B's own length`);
+  assert.ok(res.tempoRatio > 1.2 && res.tempoRatio < 1.7, `tempo ${res.tempoRatio}`);
+  assert.ok(res.scores.overall >= 85, `overall ${res.scores.overall}`);
+});
+
+test('compareAuto: a long take that holds nothing like the sloka still reads far worse than one that holds it, at any tempo', () => {
+  const B = feat(verseB());
+  const H = feat(concat(verseA(), verseD(), verseC()));
+  const res = compareAuto(B, H);
+  // synthetic verses do not reach the gate's line (0.87, set on real chanting): what the
+  // test can hold is the separation — an absent verse reads far worse than a present one,
+  // and trying several tempos must not close that gap
+  const present = compareAuto(B, feat(concat(verseA(), verseB(), verseC())));
+  assert.ok(res.match.contrast > present.match.contrast + 0.4, `absent ${res.match.contrast} vs present ${present.match.contrast}`);
+  assert.ok(res.match.contrast > 0.7, `absent contrast ${res.match.contrast}`);
+});

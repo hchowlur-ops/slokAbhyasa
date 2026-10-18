@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { toDeva, inScript, segments, wordSegments, weightMark, LAGHU, GURU } from '../js/lipi.js';
+import { toDeva, inScript, segments, wordSegments, weightMark, LAGHU, GURU, anusvaraForm } from '../js/lipi.js';
 import { syllabify } from '../js/phon.js';
 
 test('akṣaras remember the characters they were read from', () => {
@@ -53,4 +53,32 @@ test('the words of a transcript, each in the script, the weights read across the
   assert.equal(weightMark('L'), LAGHU);
   assert.equal(weightMark('G'), GURU);
   assert.equal(weightMark(null), '');
+});
+
+test('the visarga is ḥ in romanised text and the visarga sign in Kannada and Telugu', () => {
+  assert.equal(inScript('नमः शिवाय', 'english'), 'namaḥ śivāya');
+  assert.equal(inScript('नमः शिवाय', 'kannada'), 'ನಮಃ ಶಿವಾಯ');
+  assert.equal(inScript('नमः शिवाय', 'telugu'), 'నమః శివాయ');
+  assert.equal(inScript('दुःखम्', 'english'), 'duḥkham');
+  assert.equal(inScript('दुःखम्', 'kannada'), 'ದುಃಖಮ್');
+  assert.equal(inScript('दुःखम्', 'telugu'), 'దుఃఖమ్');
+  assert.deepEqual(segments('नमः', 'telugu').map((x) => x.text), ['న', 'మః'], 'the sign stays with its akṣara');
+});
+
+test('the anusvāra is the circle in Kannada and Telugu and ṃ in romanised text, a class nasal before a stop included', () => {
+  assert.equal(inScript('संगं', 'kannada'), 'ಸಂಗಂ');
+  assert.equal(inScript('संगं', 'telugu'), 'సంగం');
+  assert.equal(inScript('संगं', 'english'), 'saṃgaṃ');
+  // what a transcription (or a text) writes as a class nasal reads as the anusvāra too
+  assert.equal(inScript('सङ्गं', 'kannada'), 'ಸಂಗಂ');
+  assert.equal(inScript('सङ्गं', 'telugu'), 'సంగం');
+  assert.equal(inScript('सङ्गं', 'english'), 'saṃgaṃ');
+  assert.equal(inScript('चिन्त्यं सञ्जय', 'kannada'), 'ಚಿಂತ್ಯಂ ಸಂಜಯ');
+  assert.equal(inScript('चिन्त्यं सञ्जय', 'telugu'), 'చింత్యం సంజయ');
+  assert.equal(inScript('चिन्त्यं सञ्जय', 'english'), 'ciṃtyaṃ saṃjaya');
+  assert.equal(inScript('पाण्डवाः कम्पते', 'kannada'), 'ಪಾಂಡವಾಃ ಕಂಪತೇ');
+  assert.equal(inScript('सङ्गं चिन्त्यं', 'sanskrit'), 'सङ्गं चिन्त्यं', 'Sanskrit is shown as written');
+  assert.deepEqual(segments('सङ्गं', 'kannada').map((x) => [x.text, x.weight]), [['ಸಂ', 'G'], ['ಗಂ', 'G']]);
+  assert.deepEqual(segments('सङ्गं', 'english').map((x) => x.text), ['saṃ', 'gaṃ']);
+  assert.equal(anusvaraForm('न्य नम ङ्ग'), 'न्य नम ंग', 'only a nasal before a stop of its place');
 });

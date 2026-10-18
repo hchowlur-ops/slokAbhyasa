@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { periodRange, shiftPeriod, inRange, isoDate, assessmentsFromQuiz, assessmentFromSession, slokaRows, summarize } from '../js/reports.js';
+import { periodRange, shiftPeriod, inRange, isoDate, assessmentsFromQuiz, assessmentFromSession, slokaRows, summarize, progress, dayStreak, weekStreak } from '../js/reports.js';
 
 test('periods: a day, a Monday-to-Sunday week, a month, everything', () => {
   const day = periodRange('day', '2026-10-08');
@@ -93,4 +93,73 @@ test('the folder view: one line per sloka, newest first, a folder and its subfol
   const sum = summarize(all);
   assert.deepEqual({ count: sum.count, quizzes: sum.quizzes, evaluations: sum.evaluations, slokas: sum.slokas }, { count: 3, quizzes: 2, evaluations: 1, slokas: 3 });
   assert.equal(sum.best, Math.max(all[1].overall, 86));
+});
+
+// A take of one sloka on a day, as an assessment the progress arithmetic reads.
+const takeOn = (day, overall, { id = 'a', name = 'CH12-03', key = null, kind = 'evaluation', quizId = null, learner = null, grade = null, hour = 7 } = {}) => {
+  const g = grade || (overall >= 90 ? 'excellent' : overall >= 80 ? 'good' : overall >= 65 ? 'fair' : 'practice');
+  return { key: key || `${kind}:${day}:${hour}:${id}`, kind, quizId, at: `${day}T${String(hour).padStart(2, '0')}:00:00`, learner, overall, grade: g, items: [{ id, name, matched: true, missing: false, overall, grade: g }] };
+};
+
+test('streaks: consecutive days, and weeks of three practice days', () => {
+  assert.equal(dayStreak(['2026-10-06', '2026-10-07', '2026-10-08', '2026-10-08'], '2026-10-08'), 3);
+  assert.equal(dayStreak(['2026-10-06', '2026-10-08'], '2026-10-08'), 1, 'a gap ends the streak');
+  assert.equal(dayStreak([], '2026-10-08'), 0);
+  const days = ['2026-09-28', '2026-09-29', '2026-09-30', '2026-10-05', '2026-10-06', '2026-10-07', '2026-10-08'];
+  assert.equal(weekStreak(days, '2026-10-08'), 2, 'two weeks with three days each');
+  assert.equal(weekStreak(days.slice(3), '2026-10-08'), 1);
+  assert.equal(weekStreak(['2026-10-05', '2026-10-06'], '2026-10-08'), 0, 'two days are not a week of practice');
+});
+
+test('progress: a first Excellent, a new best, a climb, persistence, a streak, a welcome back, a plateau', () => {
+  const first = progress([takeOn('2026-10-08', 72)]);
+  assert.deepEqual(first.moments, [], 'nothing is said about a single take');
+  assert.equal(first.slokas.a.takes, 1);
+  // a new best, and a first Excellent, with three days running
+  const list = [takeOn('2026-10-06', 72), takeOn('2026-10-07', 78), takeOn('2026-10-08', 91)];
+  const p = progress(list);
+  assert.deepEqual(p.moments.map((m) => m.kind), ['firstExcellent', 'newBest']);
+  assert.ok(p.all.some((m) => m.kind === 'dayStreak' && m.text === '3 days in a row'), JSON.stringify(p.all));
+  assert.equal(p.slokas.a.best, 78, 'the best before this take, for "not your best"');
+  assert.equal(p.streak.days, 3);
+  // a climb: the best of the last three takes 5 above the best of the three before
+  const climb = [takeOn('2026-09-28', 70), takeOn('2026-09-29', 74), takeOn('2026-09-30', 72), takeOn('2026-10-06', 79), takeOn('2026-10-07', 77), takeOn('2026-10-08', 80)];
+  const c = progress(climb);
+  assert.ok(c.all.some((m) => m.kind === 'climbing' && m.text === 'Up 6 points on CH12-03 since last week'), JSON.stringify(c.all));
+  assert.ok(c.all.some((m) => m.kind === 'longClimb' && m.text.includes('from Fair to Good')), JSON.stringify(c.all));
+  // persistence: three takes today, the last the best
+  const day = [takeOn('2026-10-08', 70, { hour: 7 }), takeOn('2026-10-08', 74, { hour: 8 }), takeOn('2026-10-08', 76, { hour: 9 })];
+  assert.ok(progress(day).all.some((m) => m.kind === 'persistence' && m.text.startsWith('You kept at it: 3 takes')));
+  assert.ok(!progress([day[0], day[2], takeOn('2026-10-08', 71, { hour: 10 })]).all.some((m) => m.kind === 'persistence'), 'not when the last take was not the best');
+  // a welcome back after two weeks away
+  assert.ok(progress([takeOn('2026-09-20', 80), takeOn('2026-10-08', 78)]).moments.some((m) => m.kind === 'welcomeBack'));
+  // a plateau shows alone
+  const flat = ['2026-10-01', '2026-10-02', '2026-10-03', '2026-10-06', '2026-10-08'].map((d) => takeOn(d, 60));
+  const f = progress(flat);
+  assert.equal(f.moments.length, 1);
+  assert.equal(f.moments[0].kind, 'plateau');
+  // the learner: a profile's takes are its own; none chosen means the takes with no learner
+  const mixed = [takeOn('2026-10-07', 70, { learner: { profileId: 'p1' } }), takeOn('2026-10-08', 95, { learner: { profileId: 'p1' } }), takeOn('2026-10-08', 50)];
+  assert.ok(progress(mixed, { profileId: 'p1' }).moments.some((m) => m.kind === 'newBest'));
+  assert.deepEqual(progress(mixed).moments, [], 'the device alone has one take');
+  // `current` names an older take: nothing after it counts
+  assert.deepEqual(progress(list, { current: list[1].key }).moments.map((m) => m.kind), ['newBest'], 'an older take as current: only what came before it counts');
+  // a quiz: first Excellent and best on the quiz itself
+  const q = [takeOn('2026-10-07', 82, { kind: 'quiz', quizId: 'q1', id: 'x' }), takeOn('2026-10-08', 93, { kind: 'quiz', quizId: 'q1', id: 'x' })];
+  const pq = progress(q);
+  assert.ok(pq.all.some((m) => m.kind === 'firstExcellent' && m.quizId === 'q1'));
+  assert.equal(pq.quizzes.q1.excellent, 1);
+});
+
+test('a session with a sloka recited under half: the overall over the recited, the grade Needs practice', () => {
+  const s = { id: 's9', kind: 'evaluation', at: '2026-10-13T10:00:00', items: [
+    { id: 'a', name: 'CH12-03', matched: true, missing: false, phoneme: 96, vowel: 95, syllable: 97, emphasis: 90, pitch: 85, phrasing: 80, timing: 90, slips: [] },
+    { id: 'b', name: 'CH12-04', matched: false, missing: false, partial: true, phoneme: 0, vowel: 0, syllable: 0, emphasis: 0, pitch: 0, phrasing: 0, timing: 0, slips: [{ kind: 'partial', count: 15, expected: 32, by: 'ear' }] },
+  ] };
+  const a = assessmentFromSession(s);
+  assert.equal(a.recited, 1);
+  assert.ok(a.overall >= 90, `overall ${a.overall}`);
+  assert.equal(a.grade, 'practice');
+  assert.equal(a.items[1].grade, 'practice');
+  assert.equal(a.items[1].overall, 0);
 });

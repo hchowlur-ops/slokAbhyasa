@@ -149,12 +149,15 @@ export function tokenizeTranscript(t) {
 // recording, everything counts. A word's moment is interpolated along its chunk: Whisper's
 // chunks can be 30 s long (a chunk of a two-sloka take holds one sloka and half the next),
 // so the chunk's own extent says little about where one word is.
-export function windowedTokens(t, win, fullDuration) {
-  const toks = tokenizeTranscript(t);
-  const partial = !!win && (win[0] > 0.75 || win[1] < fullDuration - 0.75);
-  if (!partial || !t.chunks) return { toks, inside: toks.map(() => true) };
+// The moment of each token of a transcript (seconds), interpolated along its chunk: Whisper's
+// chunks can be long, and a word's place in one is its share of it. null for a token whose
+// chunk has no timing.
+export function tokenMoments(t, fullDuration, toks = tokenizeTranscript(t)) {
+  if (!t || !t.chunks) return toks.map(() => null);
+  // a word's share of its chunk is its length in sounds (a long compound takes longer than "ye")
+  const weight = (tok) => Math.max(1, phoneticKey(tok.norm || tok.word || '').length);
   const counts = new Map();
-  for (const tok of toks) counts.set(tok.chunk, (counts.get(tok.chunk) || 0) + 1);
+  for (const tok of toks) counts.set(tok.chunk, (counts.get(tok.chunk) || 0) + weight(tok));
   // a chunk without an end runs to the next chunk, or to the end of the recording
   const endOf = (ci) => {
     const c = t.chunks[ci];
@@ -163,16 +166,59 @@ export function windowedTokens(t, win, fullDuration) {
     return next ? next.start : fullDuration;
   };
   const seen = new Map();
-  const inside = toks.map((tok) => {
+  return toks.map((tok) => {
     const c = tok.chunk >= 0 ? t.chunks[tok.chunk] : null;
-    if (!c || typeof c.start !== 'number') return true;
-    const k = seen.get(tok.chunk) || 0;
-    seen.set(tok.chunk, k + 1);
+    if (!c || typeof c.start !== 'number') return null;
+    const w = weight(tok);
+    const before = seen.get(tok.chunk) || 0;
+    seen.set(tok.chunk, before + w);
     const span = Math.max(0, endOf(tok.chunk) - c.start);
-    const at = c.start + (span * (k + 0.5)) / counts.get(tok.chunk);
-    return at >= win[0] - 0.5 && at <= win[1] + 0.5;
+    return c.start + (span * (before + w / 2)) / counts.get(tok.chunk);
   });
+}
+export function windowedTokens(t, win, fullDuration) {
+  const toks = tokenizeTranscript(t);
+  const partial = !!win && (win[0] > 0.75 || win[1] < fullDuration - 0.75);
+  if (!partial || !t.chunks) return { toks, inside: toks.map(() => true) };
+  const moments = tokenMoments(t, fullDuration, toks);
+  const inside = toks.map((tok, i) => (moments[i] == null ? true : moments[i] >= win[0] - 0.5 && moments[i] <= win[1] + 0.5));
   return { toks, inside };
+}
+
+// Where the boundary between two stretches of a take should be, from their words. The ear
+// closes a stretch where it hears a sloka end; when it closes early, the later stretch
+// begins with the tail of the earlier sloka, and when it closes late, the earlier stretch
+// ends with the head of the later one. Either way the boundary belongs where the later
+// sloka's words begin. prev / next: { toks (heard tokens, tokenizeTranscript), moments
+// (tokenMoments, seconds into the take), ref (the sloka's own tokens) }. The words are
+// read as streams of sounds, as findSelfCorrections reads them. Returns the boundary in
+// seconds, or null when the words say nothing.
+export function refineBoundary(prev, next, { minSounds = 6, maxSounds = 60 } = {}) {
+  // streams of sounds, and where each token ends in them: a run of words belongs to a sloka
+  // whole, so a match is tried only at word boundaries
+  const stream = (toks) => { let s = ''; const ends = []; for (const t of toks || []) { s += phoneticKey(t.norm || t.word || ''); ends.push(s.length); } return { s, ends }; };
+  const prevRef = stream(prev.ref).s;
+  const nextRef = stream(next.ref).s;
+  const slack = (L) => Math.max(1, Math.round(L * 0.2));
+  // the later stretch begins with the earlier sloka's tail: its first k words
+  const N = stream(next.toks);
+  for (let k = N.ends.length - 1; k >= 1; k--) {
+    const L = N.ends[k - 1];
+    if (L > maxSounds || L > prevRef.length) continue;
+    if (L < minSounds) break;
+    if (editDistance(N.s.slice(0, L), prevRef.slice(prevRef.length - L)) > slack(L)) continue;
+    return next.moments[k] != null ? Math.max(0, next.moments[k] - 0.15) : null;
+  }
+  // the earlier stretch ends with the later sloka's head: its last words from word i on
+  const P = stream(prev.toks);
+  for (let i = 1; i < P.ends.length; i++) {
+    const L = P.s.length - P.ends[i - 1];
+    if (L > maxSounds || L > nextRef.length) continue;
+    if (L < minSounds) break;
+    if (editDistance(P.s.slice(P.s.length - L), nextRef.slice(0, L)) > slack(L)) continue;
+    return prev.moments[i] != null ? Math.max(0, prev.moments[i] - 0.15) : null;
+  }
+  return null;
 }
 
 // Sanskrit ślokas are written in two or four lines, and the display gives them their daṇḍas:
@@ -230,4 +276,84 @@ export function dandaMarks(text) {
 export function withDandas(text) {
   const { lines, marks } = dandaMarks(text);
   return lines.map((l, i) => (marks.has(i) ? `${l} ${marks.get(i)}` : l)).join('\n');
+}
+
+// The learner correcting themself, read from the words as one stream of sounds, blind to
+// word breaks: Whisper writes a compound as two or three words ("sarvatragam cintyañca"
+// for sarvatragamacintyañca) and alters a nasal or two, so a word-by-word match misses
+// what the ear plainly hears. A stretch of the stream said again right after itself (a
+// few sounds' slack between, small differences allowed) is a **repeat** of the heard
+// words it spans; when it starts where a pāda of the sloka starts and covers most of that
+// pāda or more, it is a **restart** of that pāda — of the sloka, when the pāda is the
+// first. `refPada[i]` says which pāda the sloka's word i begins in (0 the speaker line),
+// when known. Returns [{ kind, word, at (heard index of the second saying), pada?,
+// refIndex? }].
+const SELF_CORR_MIN_SOUNDS = 5; // about three akṣaras: shorter echoes are the language itself
+const SELF_CORR_MAX_SOUNDS = 60;
+function editDistance(a, b) {
+  const n = a.length;
+  const m = b.length;
+  let prev = new Int32Array(m + 1);
+  let cur = new Int32Array(m + 1);
+  for (let j = 0; j <= m; j++) prev[j] = j;
+  for (let i = 1; i <= n; i++) {
+    cur[0] = i;
+    for (let j = 1; j <= m; j++) {
+      const c = a.charCodeAt(i - 1) === b.charCodeAt(j - 1) ? 0 : 1;
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + c);
+    }
+    const t = prev; prev = cur; cur = t;
+  }
+  return prev[m];
+}
+export function findSelfCorrections(refToks, heardToks, { refPada = null } = {}) {
+  const stream = (toks) => { let s = ''; const tokAt = []; const starts = []; for (let i = 0; i < toks.length; i++) { const k = phoneticKey(toks[i].norm || toks[i].word || ''); starts.push(s.length); for (let c = 0; c < k.length; c++) tokAt.push(i); s += k; } return { s, tokAt, starts }; };
+  const H = stream(heardToks || []);
+  const R = stream(refToks || []);
+  const out = [];
+  if (H.s.length < 2 * SELF_CORR_MIN_SOUNDS) return out;
+  // where each pāda of the sloka starts in its stream, and how long it runs
+  const padaStart = new Map();
+  if (refPada) for (let i = 0; i < refPada.length && i < R.starts.length; i++) if (refPada[i] != null && !padaStart.has(refPada[i])) padaStart.set(refPada[i], R.starts[i]);
+  const padaOrder = [...padaStart.entries()].sort((x, y) => x[1] - y[1]);
+  const slack = (L) => Math.max(1, Math.round(L * 0.15));
+  let i = 0;
+  while (i + 2 * SELF_CORR_MIN_SOUNDS <= H.s.length) {
+    let hit = null;
+    const maxL = Math.min(SELF_CORR_MAX_SOUNDS, Math.floor((H.s.length - i) / 2));
+    for (let L = maxL; L >= SELF_CORR_MIN_SOUNDS && !hit; L--) {
+      const a = H.s.substr(i, L);
+      for (let gap = 0; gap <= 2 && !hit; gap++) {
+        const b = H.s.substr(i + L + gap, L);
+        if (b.length < L || a.slice(0, 3) !== b.slice(0, 3)) continue; // a saying again begins as the first did
+        if (editDistance(a, b) <= slack(L)) hit = { L, gap };
+      }
+    }
+    if (!hit) { i++; continue; }
+    // both sayings inside one heard word ("…somāśarasomayā" for śrutau vistaraśo mayā): the
+    // recogniser's echo, not the learner's — a word said twice is written as two words
+    if (H.tokAt[i] === H.tokAt[Math.min(H.tokAt.length - 1, i + 2 * hit.L + hit.gap - 1)]) { i += hit.L; continue; }
+    const { L, gap } = hit;
+    const run = H.s.substr(i, L);
+    // the sloka's stretch this is, when it is one: the position in the sloka's stream that reads most like it
+    let bestP = -1;
+    let bestD = Infinity;
+    for (let p = 0; p + Math.min(L, 4) <= R.s.length; p++) { const d = editDistance(run, R.s.substr(p, L)); if (d < bestD) { bestD = d; bestP = p; } }
+    const inSloka = bestP >= 0 && bestD <= Math.max(1, Math.round(L * 0.3));
+    // a pāda started again: the run begins where a pāda begins and holds most of one (six akṣaras or more — one vowel per akṣara in the key); a shorter echo at a pāda's start is a word said twice
+    const aksharas = (run.match(/[aeiou]/g) || []).length;
+    let restart = null;
+    if (inSloka && aksharas >= 6) for (const [pada, ps] of padaOrder) if (Math.abs(ps - bestP) <= 2) { restart = pada; break; }
+    const at = H.tokAt[Math.min(H.tokAt.length - 1, i + L + gap)];
+    if (restart != null) {
+      const refIndex = R.tokAt[padaStart.get(restart)];
+      out.push({ kind: 'restart', word: refToks[refIndex].word, at, refIndex, pada: restart });
+    } else {
+      const first = H.tokAt[i];
+      const last = H.tokAt[i + L - 1];
+      out.push({ kind: 'repeat', word: heardToks.slice(first, last + 1).map((t) => t.word).join(' '), at });
+    }
+    i += 2 * L + gap;
+  }
+  return out;
 }
