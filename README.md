@@ -317,6 +317,11 @@ for a verse that does not scan), and once the count is at the sloka's end and a 
 follows, of the length this learner leaves between slokas, that sloka's stretch goes to the
 speech worker and the panel turns to the next sloka ("24 of 33 akṣaras · pāda 3 of 4"
 under the timer shows where the learner is and lights the line of the text they are in;
+the ear expects nothing of the clock from the teacher's recording — only from the
+learner's own speed once it is known, and until then the plan and the learner's pauses
+alone decide when a sloka has ended (a count at the plan's end and a breath; a count well
+short and a long pause, three of the learner's own breaths between pādas; four seconds of
+silence whatever the count);
 "every sloka heard · tap to stop" when the last is in). The page turns the moment the
 position reaches the sloka's end — the last akṣara registers within a tenth of a second of
 its sound, sooner than any breath; a position a little short waits for a short pause, one
@@ -340,9 +345,20 @@ restarts heard rather than wrong ones. When the words of a closed stretch come b
 another sloka's than the page assumed, the stretch is relabelled and the page turns on
 from the sloka actually heard. And you can always say where you are: **tap a line** of
 the text to set the count to that line's first pāda, or tap the count line to count the
-sloka from the top. The learner's pace — their tempo against the teacher's, their pauses
-between pādas and slokas — is folded into the chosen profile take by take, so the ear's
-patience fits them. A sloka of which **less than half** was recited — the ear closed
+sloka from the top. **What the app learns of a learner**, take by take, into the chosen profile (a running
+mean over the last twenty takes, so it follows them as they change): their **speed**
+(akṣaras per second of their singing, from slokas recited whole), how their **voice
+counts** (syllable nuclei the counter hears per akṣara — slow chanting carries more than
+one — learnt at a close, and within a take from the first stretch whose words are heard,
+so even a first take is tuned by its second sloka), their **breath between pādas** and
+their **pause between slokas** (medians), the **stop they make before starting a pāda
+again** (from restarts heard by sound; it sets how long a pause the ear listens after),
+and their **tempo against each teacher's recording** (kept for the reports, never used by
+the ear). With these the ear's patience fits the learner, whoever recorded the sloka;
+without them, the plan and the pauses decide. The teacher's own recording also gives the
+ear the places its pādas start, read from the recording's pauses (a linked recording's
+transcript spreads its lines evenly and would put them early), so a pāda started again
+can be heard by sound as well as by the words. A sloka of which **less than half** was recited — the ear closed
 it, the page was turned, or the take stopped, with its position under half the plan — is
 neither transcribed nor scored: it counts as not recited, its card and row say "less than
 half recited (12 of 33 akṣaras) · not scored", and its recommendation is Needs practice.
@@ -388,11 +404,15 @@ that (recite one verse against a sloka that holds the whole chapter, or the reve
 report says which part was used, all times stay those of the full recordings, and the
 word comparison greys out the words outside that part. The words have the last say for
 every sloka of a take: when the sound comparison says "does not sound like this sloka"
-but most of the sloka's words were heard, that sloka is scored. *Known limit:* the ear's
-own decision that a sloka has ended still leans on the recording's length (a long pause
-past half the count closes it, sooner when the recording's time is well past), so a slow
-reciter against a brisk recording can have a sloka closed at a half-verse; the next
-change gives the ear its expectations from the learner alone. (Before 16 October 2026 the length
+but most of the sloka's words were heard, that sloka is scored. The words also **move the
+ear's boundaries**: when a stretch's words begin with the tail of the sloka before (the
+ear closed that one early) or end with the head of the sloka after, the boundary moves to
+where the later sloka's words begin, and the slokas whose windows moved are compared
+again from the corrected stretches. Where the ear was not listening — Teach has it now; a
+file, or a sloka the ear never reached — the search tries the sloka at several tempos
+(half to double) and keeps the window that reads best, comparing whole to whole with the
+pace read off when none convinces. No window ever cuts the words: a report's words come
+from the whole take when it was heard whole, else from the stretch that holds the window. (Before 16 October 2026 the length
 rule ran first, and a brisk teacher's recording against a slow recitation was searched for
 inside it as if the take held more than the sloka; the search then laid the recording over
 a stretch of its own length and the first part of the sloka went unheard and unscored.)

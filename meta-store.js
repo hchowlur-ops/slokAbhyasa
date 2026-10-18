@@ -289,6 +289,8 @@ export function sanitizeProfile(body, current = null) {
     const sp = num(b.pace.slokaPauseMs, 0, 10000); if (sp != null) p.slokaPauseMs = Math.round(sp);
     const ak = num(b.pace.aksPerSec, 0.5, 15); if (ak != null) p.aksPerSec = Math.round(ak * 100) / 100; // akṣaras per second of their singing
     const cr = num(b.pace.countRatio, 0.5, 2); if (cr != null) p.countRatio = Math.round(cr * 100) / 100; // syllable nuclei heard per akṣara of their voice
+    const rp = num(b.pace.restartPauseMs, 0, 5000); if (rp != null) p.restartPauseMs = Math.round(rp); // the stop they make before starting a pāda again
+    const lm = num(b.pace.leadMs, 0, 20000); if (lm != null) p.leadMs = Math.round(lm); // how long after tapping record they begin
     p.n = Math.round(Math.max(0, Math.min(20, Number(b.pace.n) || 0)));
     pace = Object.keys(p).length > 1 ? p : null;
   } else if (b.pace === null) pace = null;

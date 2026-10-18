@@ -7,7 +7,8 @@ import { encodeWav } from './wav.js';
 import * as api from './api.js';
 import { Analyzer } from './analyzer.js';
 import { drawWaveform, drawLiveWave, ComparisonChart } from './visualizer.js';
-import { serializeFeatures, deserializeFeatures, isValidFeatures, SR as FEAT_SR } from './dsp/features.js';
+import { serializeFeatures, deserializeFeatures, isValidFeatures, SR as FEAT_SR, HOP_SEC as FEAT_HOP } from './dsp/features.js';
+import { earExpectedMs, earPositionOf, earDecision, calibrateCountRatio, padaStartsFromPauses } from './dsp/ear.js';
 import { padaStarts, startTemplates, calibrate, matchStart, mfccRows, meanOf, TEMPLATE_SEC, TEMPLATE_FRAMES, MIN_TEMPLATE_FRAMES } from './dsp/starts.js';
 import { MISMATCH_CONTRAST, confirmByWords } from './dsp/compare.js';
 import { QUIZ_CATEGORIES, LEGACY_CATEGORIES, DEFAULT_QUIZ_CATEGORIES, DEFAULT_TOLERANCE, CATEGORY_WEIGHTS, categoryLabel, normalizeWeights, itemScores, attemptSummary, scoreFor, normalizeCategories, normalizeTolerance, recordTolerance, withinTolerance, itemVerdict, correctness, pickBaselines, overallScore, attemptOverall, itemOverall, applySlipPenalty, selfCorrections, SLIP_PENALTY, isPartial, droppedByWords, gradeOf, gradeById, gradeWithSlips, gradeWords, slipsLabel, anySlips, modernCategories } from './quizscore.js';
@@ -24,7 +25,7 @@ import { normalizeStore, putInStore, pickTranscript, availableLanguages } from '
 import { transliterateTranscript } from './translit.js';
 import { identifyChandas, layoutSloka, padaBreaks, linesFor, uvacaOffset, chandasLabel, chandasPattern, gitaVerse, gitaFamily, aksharaPlan } from './chandas.js';
 import { periodRange, shiftPeriod, inRange, isoDate, slokaRows, summarize, KIND_LABEL, progress } from './reports.js';
-import { diffWords, diffSummary, compareWords, tokenizeTranscript, windowedTokens, tokenize, dandaMarks, withDandas, uvacaWords, isUvacaLine, findSelfCorrections } from './textdiff.js';
+import { diffWords, diffSummary, compareWords, tokenizeTranscript, windowedTokens, tokenMoments, refineBoundary, tokenize, dandaMarks, withDandas, uvacaWords, isUvacaLine, findSelfCorrections } from './textdiff.js';
 import { AGE_GROUPS, VOICE_TYPES, STYLE_MODES, DEFAULT_STYLE_MODE, presetsFor, ADULT_PRESET, compareModeFor, speakerLabel, ageGroupLabel, styleMode, voiceStats, deriveText } from './meta.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -1764,6 +1765,8 @@ function learnerPace() {
     slokaPauseMs: Number(pace.slokaPauseMs) > 0 ? Number(pace.slokaPauseMs) : 1000,
     aksPerSec: Number(pace.aksPerSec) > 0 ? Number(pace.aksPerSec) : null, // akṣaras per second of their singing, once measured
     countRatio: Number(pace.countRatio) > 0 ? Number(pace.countRatio) : 1, // syllable nuclei the counter hears per akṣara of their voice
+    restartPauseMs: Number(pace.restartPauseMs) > 0 ? Number(pace.restartPauseMs) : null, // the stop they make before starting a pāda again
+    leadMs: Number(pace.leadMs) > 0 ? Number(pace.leadMs) : null, // how long after tapping record they begin
   };
 }
 // Where the learner is in the sloka, in akṣaras: the syllable count calibrated to their
@@ -1771,10 +1774,7 @@ function learnerPace() {
 // blended half and half with the time they have been singing at that speed, which rides
 // over the counter's slips. The learner's speed, never the teacher's.
 function earPosition(ear, st) {
-  const byCount = st.count / (ear.countRatio || 1);
-  if (!ear.aksPerSec || !ear.expected) return byCount;
-  const byTime = Math.min(ear.expected + 2, (ear.activeMs / 1000) * ear.aksPerSec);
-  return 0.5 * byCount + 0.5 * byTime;
+  return earPositionOf({ count: st.count, countRatio: ear.countRatio, activeMs: ear.activeMs, aksPerSec: ear.aksPerSec, expected: ear.expected });
 }
 // How many slokas one take may hold (Self Evaluation, a quiz): a chapter's worth. The take
 // stays in memory whole, and every sloka's stretch is transcribed from it, so the number is
@@ -2537,7 +2537,7 @@ $('#practice-rec').addEventListener('click', async () => {
     if (changed) toast(info, 'info', 2500);
     take.blob = encodeWav(take.samples, take.sampleRate);
     // the stretches transcribed while recording, in the take's time (the trimmed lead taken off)
-    take.segments = segments && segments.parts.length ? segments.parts.map((p) => ({ ...p, from: p.from - removedStart, to: p.to - removedStart })) : null;
+    take.segments = segments && segments.parts.length ? segments.parts.map((p) => ({ ...p, from: p.from - removedStart, to: p.to - removedStart, audioFrom: p.from - removedStart, audioTo: p.to - removedStart })) : null; // audioFrom/audioTo: the stretch's own hearing, whatever the words do to its window
     take.earCounts = earCounts;
     for (const list of practice.slips.values()) for (const x of list) if (x.at != null) x.at = Math.max(0, Math.round((x.at - removedStart) * 100) / 100); // the slips in the take's time too
     practice.take = take;
@@ -2569,6 +2569,23 @@ $('#practice-rec').addEventListener('click', async () => {
   }
 });
 
+// When every stretch's words are in, the boundaries are refined once more, and a sloka whose
+// window moved is compared again from the refined stretch (its words re-read too).
+function recompareWhenRefined(take) {
+  const segs = ((take && take.segments) || []).filter((x) => x.id && !x.skipped && x.promise);
+  if (!segs.length || practice.quiz) return;
+  Promise.allSettled(segs.map((x) => x.promise)).then(async () => {
+    if (practice.take !== take) return;
+    const moved = refineStretches(take);
+    if (!moved.length) return;
+    for (const id of moved) { practice.results.delete(id); practice.wordSims.delete(id); practice.phonology.delete(id); for (const k of [...practice.heardTranscripts.keys()]) if (k !== 'all') practice.heardTranscripts.delete(k); }
+    await runComparisons();
+    if (practice.take !== take) return;
+    if (moved.includes(practice.activeId)) showActiveReport();
+    renderReportBrowser();
+    transcribeAllParts();
+  }).catch(() => {});
+}
 // One take, compared with every ticked sloka.
 async function analyseAttempt() {
   const take = practice.take;
@@ -2585,6 +2602,7 @@ async function analyseAttempt() {
     // transcribed whole, the speech worker starts on them now, while the analysis worker
     // compares the take. (A longer take is transcribed part by part once the parts are known.)
     if (sttSettings.auto && take.duration <= TAKE_WHOLE_MAX_SEC && practice.selection.length === 1) transcribeTakePart(null, false).catch(() => {}); // several slokas: each stretch once it is found
+    refineStretches(take); // the words already in move the ear's boundaries before anything is compared
     practice.heard = await analyzer.features(take.samples, take.sampleRate, (p) => practiceProgress.set(p * 0.6), { warps: true });
     practice.options = {
       ignoreKey: $('#practice-ignorekey').checked,
@@ -2610,6 +2628,7 @@ async function analyseAttempt() {
     if (practice.quiz) scoreQuizAttempt();
     else saveSession(); // a Self Evaluation / Teach take is kept for the Reports dashboard
     transcribeAllParts(); // the other reports' words, in the background
+    recompareWhenRefined(take); // the last stretches' words, when they come, may move a boundary: those slokas are compared again
   } catch (err) {
     hideResults(); // Evaluating… goes with the results card
     toast(err.message, 'error', 7000);
@@ -3041,6 +3060,10 @@ const slokaTextOf = (base) => {
 // take: the recordings stay hidden), the speed, and its text when the setting allows. Outside
 // a quiz's wait the sloka in view is the active one, whose recording the play button plays
 // and whose report opens first, so Previous / Next change the active sloka.
+// The slokas the ear listens for: the panel's (several, paged); in Teach, the one chosen —
+// so a Teach take has the count, the stop's judgement and the same comparison as a
+// single-sloka Self Evaluation.
+const earItems = () => (practice.teach ? (practice.activeId ? [{ id: practice.activeId, name: nameOf(practice.activeId), folder: '' }] : []) : slokaTextItems());
 function slokaTextItems() {
   if (practice.teach) return [];
   const byId = new Map((libraryCache || []).map((r) => [r.id, r]));
@@ -3174,7 +3197,7 @@ function stepText(delta) {
 // the words of the recorded stretch that overlaps it well enough (transcribeTakePart), and is
 // transcribed afresh otherwise.
 let recSegments = null; // { from, parts: [{ from, to, name, promise, transcript }] } in recording time
-function markSegment(item, toSec = null, { transcribe = true, count = null, expected = null } = {}) {
+function markSegment(item, toSec = null, { transcribe = true, count = null, expected = null, nuclei = null } = {}) {
   const rec = practiceRecorder;
   if (!rec || !rec.active || !recSegments) return;
   const snap = rec.snapshot();
@@ -3182,7 +3205,7 @@ function markSegment(item, toSec = null, { transcribe = true, count = null, expe
   const to = toSec != null ? Math.max(from, Math.min(snap.duration, toSec)) : snap.duration;
   recSegments.from = to;
   if (to - from < 2) return; // a page turned back and forth: nothing to hear
-  const seg = { from, to, id: item ? item.id : null, name: item ? item.name : '', promise: null, transcript: null, done: true, ctrl: null, count, expected }; // count: the ear's akṣaras for this stretch
+  const seg = { from, to, id: item ? item.id : null, name: item ? item.name : '', promise: null, transcript: null, done: true, ctrl: null, count, expected, nuclei }; // count: the ear's akṣaras for this stretch; nuclei: the counter's raw count
   recSegments.parts.push(seg);
   // less than half recited, the listening stopped, or the words not wanted: the stretch is kept apart, its words never asked for
   if (!transcribe || recSegments.stopped || !sttSettings.auto) { seg.skipped = true; seg.promise = Promise.resolve(null); return; }
@@ -3191,7 +3214,7 @@ function markSegment(item, toSec = null, { transcribe = true, count = null, expe
   seg.done = false;
   sendStretch(seg, samples, sr);
 }
-const earCountFor = (item) => (liveEar && liveEar.item && item && liveEar.item.id === item.id ? { count: liveEar.pos, expected: liveEar.expected } : {});
+const earCountFor = (item) => (liveEar && liveEar.item && item && liveEar.item.id === item.id ? { count: liveEar.pos, expected: liveEar.expected, nuclei: liveEar.counter.state_().count } : {});
 const noteBusy = () => {
   const parts = recSegments ? recSegments.parts : [];
   const busy = parts.find((p) => !p.done);
@@ -3226,6 +3249,12 @@ function checkSegmentWords(seg) {
   if (!t || !seg.id) return;
   const heard = tokenizeTranscript(t).map((w) => w.word);
   if (heard.length < 4) return;
+  // the first stretch whose words are in tunes the count to this voice: the counter's
+  // nuclei against the akṣaras actually heard (a learner the ear knows keeps their ratio)
+  if (liveEar && !liveEar.countRatioN && seg.nuclei) {
+    const r = calibrateCountRatio({ nuclei: seg.nuclei, aksharasHeard: syllabify(heard.join(' ')).length });
+    if (r) { liveEar.countRatio = r; liveEar.countRatioN = 1; recNote(`the count tuned to this voice: ${r} per akṣara`); }
+  }
   const items = slokaTextItems();
   if (items.length < 2) return;
   const sims = items.map((it) => { const base = practice.bases.get(it.id); const text = base ? slokaTextOf(base) : ''; if (!text) return 0; const c = compareWords(tokenize(text).map((w) => w.word), heard); return c ? c.summary.similarity : 0; });
@@ -3312,7 +3341,14 @@ function fingerprintsOf(item, plan) {
   let fp = null;
   try {
     const chunks = base.transcript && Array.isArray(base.transcript.chunks) ? base.transcript.chunks : [];
-    const templates = startTemplates(base.features, padaStarts(chunks, plan));
+    // a linked recording's transcript is the verse's lines spread evenly over it, not a
+    // hearing: its timings put the pādas early (CH12-03: 0 / 4.1 / 8.2 / 12.3 s for pauses at
+    // 0.16 / 4.72 / 8.92 / 12.98). The recording's own pauses say where they are; a real
+    // hearing with timings keeps precedence; the spread timings serve failing both.
+    const heardTimings = chunks.length && base.transcript.from !== 'reference';
+    let starts = heardTimings ? padaStarts(chunks, plan) : padaStartsFromPauses(base.features.active, FEAT_HOP, plan);
+    if (!starts.length) starts = padaStarts(chunks, plan);
+    const templates = startTemplates(base.features, starts);
     if (templates.length >= 2) { const { threshold } = calibrate(templates, base.features); if (threshold != null) fp = { templates, threshold }; }
   } catch { fp = null; }
   base.fingerprints = fp;
@@ -3363,6 +3399,7 @@ async function hearRestart(ear, p) {
   if (k === first) {
     if (was < plan.total * 0.25) return; // only just begun: not a restart
     addSlip(item.id, { kind: 'falseStart', at: Math.round((recSegments ? recSegments.from : 0) * 100) / 100, word: padaFirstWord(item, plan, first), by: 'sound' });
+    if (p.pauseMs > 0) ear.restartPauses.push(p.pauseMs);
     setPosition(since);
     ear.stalled = new Set();
     if (recSegments) recSegments.from = Math.max(recSegments.from, p.at - 0.15);
@@ -3370,8 +3407,13 @@ async function hearRestart(ear, p) {
     return;
   }
   const sc = startCountOf(plan, k);
-  if (was < sc + 3) return; // the pāda is simply next
+  // the pāda is simply next unless the count had got well into it (three quarters of it):
+  // on a voice the ear has not learnt the count runs ahead, and a breath at a pāda's end
+  // would otherwise read as that pāda started again
+  const padaLen = k >= 1 ? plan.padas[k - 1] || 8 : 8;
+  if (was < sc + Math.max(3, 0.75 * padaLen)) return;
   addSlip(item.id, { kind: 'restart', at: Math.round(p.at * 100) / 100, pada: k, word: padaFirstWord(item, plan, k), by: 'sound' });
+  if (p.pauseMs > 0) ear.restartPauses.push(p.pauseMs);
   setPosition(sc + since);
   ear.stalled = new Set();
   recNote(`${padaName(k)} again: the count goes back to ${sc}`);
@@ -3422,7 +3464,7 @@ function lineOfPada(plan, pada) {
 // profile as a running mean (twenty takes deep, so it follows them as they change).
 async function savePace(ear) {
   const p = profileById(learnerId);
-  if (!p || !ear || (!ear.tempoN && !ear.speedN)) return;
+  if (!p || !ear || (!ear.tempoN && !ear.speedN && !ear.countRatioN && !(ear.restartPauses && ear.restartPauses.length))) return;
   const median = (a) => { if (!a.length) return null; const z = a.slice().sort((x, y) => x - y); return z[Math.floor(z.length / 2)]; };
   const cur = p.pace && typeof p.pace === 'object' ? p.pace : {};
   const n = Math.max(0, Math.min(20, Number(cur.n) || 0));
@@ -3433,28 +3475,31 @@ async function savePace(ear) {
   const sp = mix(cur.slokaPauseMs, median(ear.slokaPauses)); if (sp != null) pace.slokaPauseMs = Math.round(sp);
   if (ear.speedN) { const v = mix(cur.aksPerSec, ear.aksPerSec); if (v != null) pace.aksPerSec = Math.round(v * 100) / 100; }
   if (ear.countRatioN) { const v = mix(cur.countRatio, ear.countRatio); if (v != null) pace.countRatio = Math.round(v * 100) / 100; }
+  const rp = mix(cur.restartPauseMs, median(ear.restartPauses || [])); if (rp != null) pace.restartPauseMs = Math.round(rp);
+  if (cur.leadMs != null) pace.leadMs = cur.leadMs;
   pace.n = n + 1;
   try { const saved = await api.patchProfile(p.id, { pace }); Object.assign(p, saved); } catch { /* next time */ }
 }
 function startEar(rec) {
   stopEar();
-  const items = slokaTextItems();
+  const items = earItems();
   if (!items.length) return; // the ear counts whether or not the words are heard — one sloka too: its count says whether a long take is the sloka recited slowly
   const sr = rec.ctx.sampleRate;
   const pace = learnerPace();
-  const ear = { rec, counter: new SyllableCounter(sr), read: 0, samplesRead: 0, item: null, plan: null, fp: null, expected: null, expectedMs: 0, tempo: pace.tempoRatio, tempoN: 0, aksPerSec: pace.aksPerSec, speedN: 0, countRatio: pace.countRatio, countRatioN: 0, activeMs: 0, lastElapsed: 0, pos: 0, stalled: new Set(), prevPause: 0, pending: null, pendingClose: null, awaitingSlokaPause: false, padaPauses: [], slokaPauses: [], done: false, listener: null };
-  // the sloka in view: its plan, its fingerprints, the teacher's time for it
+  const ear = { rec, counter: new SyllableCounter(sr), read: 0, samplesRead: 0, item: null, plan: null, fp: null, expected: null, expectedMs: 0, tempo: pace.tempoRatio, tempoN: 0, aksPerSec: pace.aksPerSec, speedN: 0, countRatio: pace.countRatio, countRatioN: 0, restartPauses: [], teacherMs: 0, activeMs: 0, lastElapsed: 0, pos: 0, stalled: new Set(), prevPause: 0, pending: null, pendingClose: null, awaitingSlokaPause: false, padaPauses: [], slokaPauses: [], done: false, listener: null };
+  // the sloka in view: its plan, its fingerprints; the teacher's time only for the tempo
+  // learnt against it, never for what the ear expects (that is the learner's own, or nothing)
   const target = (i) => {
-    ear.item = slokaTextItems()[i] || null;
+    ear.item = earItems()[i] || null;
     ear.plan = planOf(ear.item);
     ear.fp = fingerprintsOf(ear.item, ear.plan);
     ear.expected = ear.plan ? ear.plan.total : null;
-    ear.expectedMs = (expectedSecOf(ear.item) || 0) * 1000;
+    ear.teacherMs = (expectedSecOf(ear.item) || 0) * 1000;
     ear.stalled = new Set();
     ear.pending = null;
   };
   const begin = () => {
-    target(currentTextIndex(slokaTextItems()));
+    target(practice.teach ? 0 : currentTextIndex(slokaTextItems()));
     ear.counter.reset();
     ear.activeMs = 0;
     ear.lastElapsed = 0;
@@ -3481,7 +3526,8 @@ function startEar(rec) {
       const resumedAt = ear.samplesRead / sr - st.pauseMs / 1000;
       if (ear.awaitingSlokaPause) { ear.awaitingSlokaPause = false; if (ear.prevPause < 6000) ear.slokaPauses.push(ear.prevPause); }
       if (ear.plan && ear.prevPause < 3000 && padaAt(ear.plan, pos).atBoundary) ear.padaPauses.push(ear.prevPause);
-      if (ear.fp && ear.prevPause >= 400 && !ear.pending) ear.pending = { at: resumedAt, count: st.count, pos };
+      const restartPause = pace.restartPauseMs ? Math.max(250, Math.round(pace.restartPauseMs * 0.7)) : 400; // the stop this learner makes before a pāda again, once learnt
+      if (ear.fp && ear.prevPause >= restartPause && !ear.pending) ear.pending = { at: resumedAt, count: st.count, pos, pauseMs: ear.prevPause };
     }
     ear.prevPause = st.pauseMs;
     if (ear.pending && ear.samplesRead / sr - ear.pending.at >= TEMPLATE_SEC + 0.15) { const p = ear.pending; ear.pending = null; hearRestart(ear, p).catch(() => {}); }
@@ -3489,23 +3535,11 @@ function startEar(rec) {
     if (sung < 3000) return;
     const exp = ear.expected;
     const pauseBegan = ear.samplesRead / sr - st.pauseMs / 1000;
-    // the sloka is complete when the count is at its end (the counter's tenth allowed) and a
-    // pause follows, of the length this learner leaves between slokas; a count well short
-    // needs a long pause — longer still when the clock has run far past the teacher's time,
-    // which means the learner is stalling or has dropped akṣaras
-    const slokaPause = Math.max(500, Math.round(pace.slokaPauseMs * 0.6));
-    const expectedSung = ear.expectedMs > 0 ? ear.expectedMs * ear.tempo : 0;
-    const overTime = expectedSung > 0 && sung > 1.6 * expectedSung;
-    // a learner the ear knows nothing of yet (no speed measured, no tempo learnt): the count
-    // alone, which can run ahead on a new voice, may not end a sloka before the teacher's
-    // time for it is nearly up — a sloka cut short would lose its last pāda to the next
-    const earlyByClock = !ear.aksPerSec && !ear.tempoN && expectedSung > 0 && sung < 0.95 * expectedSung;
-    // the sloka is complete the moment the position reaches its end (the last nucleus
-    // registers within a tenth of a second of its sound), a touch sooner than any breath;
-    // a position a little short waits for a short pause; one well short, for a long one
-    const complete = exp
-      ? (pos >= exp - 1 && st.pauseMs >= 120 && !earlyByClock) || (pos >= exp - 2 && st.pauseMs >= Math.min(350, slokaPause) && !earlyByClock) || (pos >= exp * (overTime ? 0.35 : 0.5) && st.pauseMs >= 1500) || (pos >= exp * 1.3 && st.pauseMs >= 400)
-      : sung >= 4000 && st.pauseMs >= 1500;
+    // the sloka is complete by the plan and the learner's own pauses and time (dsp/ear.js):
+    // nothing is expected of the clock until the learner's speed is known, and then it is
+    // their own time for the sloka, never the teacher's
+    const d = earDecision({ pos, expected: exp, pauseMs: st.pauseMs, sungMs: sung, expectedMs: earExpectedMs(ear.plan, { aksPerSec: ear.aksPerSec }), padaPauseMs: pace.padaPauseMs, slokaPauseMs: pace.slokaPauseMs });
+    const complete = d.complete;
     if (!complete) {
       // a long pause inside a pāda (not at a pāda's end) is a stall: marked once per pāda
       if (ear.plan && ear.item && st.pauseMs >= 1200 && pos < exp - 2) {
@@ -3515,9 +3549,9 @@ function startEar(rec) {
       return;
     }
     ear.awaitingSlokaPause = true; // the breath before the next sloka is measured when its sound begins
-    const partial = !!(ear.item && exp && pos < exp * 0.5); // less than half: not transcribed, not scored
+    const partial = !!(ear.item && exp && d.partial); // less than half: not transcribed, not scored
     if (partial) addSlip(ear.item.id, { kind: 'partial', at: Math.round(pauseBegan * 100) / 100, count: Math.round(pos), expected: exp, by: 'ear' });
-    else if (ear.item && exp && pos < exp - 2) addSlip(ear.item.id, { kind: 'dropped', at: Math.round(pauseBegan * 100) / 100, count: Math.round(pos), expected: exp, unsure: true, by: 'ear' }); // the words will say
+    else if (ear.item && exp && d.dropped) addSlip(ear.item.id, { kind: 'dropped', at: Math.round(pauseBegan * 100) / 100, count: Math.round(pos), expected: exp, unsure: true, by: 'ear' }); // the words will say
     else if (exp) {
       // a sloka recited whole teaches the ear this learner: their speed, how their voice
       // counts, and their pace against the teacher's
@@ -3526,15 +3560,15 @@ function startEar(rec) {
       if (secs > 1) { const v = Math.max(0.5, Math.min(15, exp / secs)); ear.aksPerSec = ear.aksPerSec ? mean(ear.aksPerSec, ear.speedN, v) : v; ear.speedN++; }
       const cr = st.count / exp;
       if (cr >= 0.6 && cr <= 1.6) { ear.countRatio = mean(ear.countRatio, ear.countRatioN, cr); ear.countRatioN++; }
-      if (ear.expectedMs > 0) { const r = Math.max(0.5, Math.min(2.5, sung / ear.expectedMs)); ear.tempo = mean(ear.tempo, ear.tempoN, r); ear.tempoN++; }
+      if (ear.teacherMs > 0) { const r = Math.max(0.5, Math.min(2.5, sung / ear.teacherMs)); ear.tempo = mean(ear.tempo, ear.tempoN, r); ear.tempoN++; } // against this teacher: kept for the reports, not for the ear
     }
-    const now = slokaTextItems();
-    const i = currentTextIndex(now);
+    const now = earItems();
+    const i = practice.teach ? 0 : currentTextIndex(now);
     // the page turns now; the stretch is closed a moment later — where the pause began, or a
     // third of a second on when there was none — so the last syllable's tail is in it and
     // the turn waits for nothing
-    const closing = { item: now[i], to: (st.pauseMs >= 120 ? pauseBegan : ear.samplesRead / sr) + 0.3, partial, count: pos, expected: exp, timer: null };
-    closing.timer = setTimeout(() => { if (ear.pendingClose === closing) ear.pendingClose = null; markSegment(closing.item, closing.to, { transcribe: !closing.partial, count: closing.count, expected: closing.expected }); }, 420);
+    const closing = { item: now[i], to: (st.pauseMs >= 120 ? pauseBegan : ear.samplesRead / sr) + 0.3, partial, count: pos, expected: exp, nuclei: st.count, timer: null };
+    closing.timer = setTimeout(() => { if (ear.pendingClose === closing) ear.pendingClose = null; markSegment(closing.item, closing.to, { transcribe: !closing.partial, count: closing.count, expected: closing.expected, nuclei: closing.nuclei }); }, 420);
     ear.pendingClose = closing;
     if (i + 1 < now.length) {
       if (practice.quiz) quizTextIndex = i + 1; else recTextIndex = i + 1;
@@ -3569,18 +3603,69 @@ function renderEar(ear, st) {
 }
 // The recorded stretch whose words serve a report's stretch of the take: the best overlap,
 // when it covers it well (the page was turned near the sloka's end).
+// The words move a boundary between two stretches (textdiff.refineBoundary): the ear
+// closes a stretch where it hears a sloka end, and when it closes early the next stretch
+// begins with the tail of the sloka before; the stretch's window moves to where its own
+// sloka's words begin, its hearing (audioFrom) staying where it was. Runs when the
+// comparison starts, with the words already in, and again when every stretch's words are
+// in; returns the ids whose window moved by more than 0.4 s.
+function refineStretches(take) {
+  const segs = ((take && take.segments) || []).filter((x) => x.id && !x.skipped && x.transcript);
+  const moved = new Set();
+  const refOf = (id) => { const base = practice.bases.get(id); const ref = base ? referenceWords(base) : null; return ref ? tokenizeTranscript(ref) : null; };
+  const side = (seg) => { const t = shiftTranscript(seg.transcript, seg.audioFrom != null ? seg.audioFrom : seg.from, take.duration); const toks = tokenizeTranscript(t); return { toks, moments: tokenMoments(t, take.duration, toks) }; };
+  for (let i = 1; i < segs.length; i++) {
+    const A = segs[i - 1];
+    const B = segs[i];
+    if (A.id === B.id || A.to < B.from - 1) continue; // not neighbours
+    const refA = refOf(A.id);
+    const refB = refOf(B.id);
+    if (!refA || !refB) continue;
+    let b = null;
+    try { b = refineBoundary({ ...side(A), ref: refA }, { ...side(B), ref: refB }); } catch { b = null; }
+    if (b == null || Math.abs(b - B.from) <= 0.4 || b <= A.from + 1 || b >= B.to - 1) continue;
+    if (b > B.from + 0.5 * (B.to - B.from) || b < A.to - 0.5 * (A.to - A.from)) continue; // a chunk's timings are coarse: not past the middle of either stretch
+    A.to = b;
+    B.from = b;
+    A.refined = B.refined = true;
+    moved.add(A.id);
+    moved.add(B.id);
+  }
+  return [...moved];
+}
+// The words heard inside a window of the take, from every stretch whose own hearing overlaps
+// it (their promises awaited), shifted to take time and joined in order; null when no
+// stretch covers the window's middle. The caller windows the tokens by their moments.
+async function transcriptForWindow(win, language) {
+  const take = practice.take;
+  if (!take || !take.segments || !win) return null;
+  const spanOf = (x) => [x.audioFrom != null ? x.audioFrom : x.from, x.audioTo != null ? x.audioTo : x.to];
+  const parts = take.segments.filter((x) => x.promise && !x.skipped && spanOf(x)[1] > win[0] + 0.3 && spanOf(x)[0] < win[1] - 0.3).sort((a, b) => spanOf(a)[0] - spanOf(b)[0]);
+  if (!parts.length) return null;
+  const mid = (win[0] + win[1]) / 2;
+  if (!parts.some((x) => spanOf(x)[0] <= mid && spanOf(x)[1] >= mid)) return null;
+  const heard = await Promise.all(parts.map((x) => x.promise.catch(() => null)));
+  if (practice.take !== take) return null;
+  if (heard.some((t) => !t || t.language !== language)) return null;
+  const shifted = heard.map((t, i) => shiftTranscript(t, spanOf(parts[i])[0], take.duration));
+  const chunks = [];
+  for (const t of shifted) for (const c of t.chunks || []) chunks.push(c);
+  return { ...shifted[0], text: shifted.map((t) => t.text || '').join(' '), chunks, merged: parts.length };
+}
 function segmentFor(win) {
   const take = practice.take;
   if (!take || !take.segments || !win) return null;
   let best = null;
   let bestIou = 0;
+  let holder = null; // a stretch that holds the whole window, when none overlaps it well
   for (const seg of take.segments) {
     const inter = Math.max(0, Math.min(seg.to, win[1]) - Math.max(seg.from, win[0]));
     const union = Math.max(seg.to, win[1]) - Math.min(seg.from, win[0]);
     const iou = union > 0 ? inter / union : 0;
     if (iou > bestIou) { bestIou = iou; best = seg; }
+    if (seg.from <= win[0] + 0.5 && seg.to >= win[1] - 0.5 && iou >= 0.3 && (!holder || seg.to - seg.from < holder.to - holder.from)) holder = seg;
   }
-  return bestIou >= 0.6 ? best : null;
+  return bestIou >= 0.6 ? best : holder; // the containing stretch's words are windowed by time when read
 }
 $('#practice-texts-prev').addEventListener('click', () => stepText(-1));
 $('#practice-texts-next').addEventListener('click', () => stepText(1));
@@ -4995,12 +5080,23 @@ async function transcribeTakePart(win, force, language = sttSettings.language) {
   const key = language === sttSettings.language ? partKey(win) : `${language}:${partKey(win)}`; // a hearing in another language is kept apart
   const have = practice.heardTranscripts.get(key);
   if (fits(have)) return have;
+  // a window of a take heard whole (one sloka): the whole's words, windowed by time when
+  // they are read — never a second hearing that could cut a word at the window's edge
+  if (win && !force) { const whole = practice.heardTranscripts.get(language === sttSettings.language ? 'all' : `${language}:all`); if (fits(whole)) return whole; }
+  if (win && !force) {
+    // the words of every stretch whose hearing touches the window, in take time, merged in
+    // order: a window the words moved can span two hearings, and a report's words are
+    // then windowed by their moments (windowedTokens)
+    const merged = await transcriptForWindow(win, language);
+    if (practice.take !== take) return null;
+    if (merged) { practice.heardTranscripts.set(key, merged); return merged; }
+  }
   const seg = !force ? segmentFor(win) : null;
   if (seg) {
     const t = await seg.promise;
     if (practice.take !== take) return null;
     if (t && t.language === language) {
-      const abs = shiftTranscript(t, seg.from, take.duration);
+      const abs = shiftTranscript(t, seg.audioFrom != null ? seg.audioFrom : seg.from, take.duration);
       practice.heardTranscripts.set(key, abs);
       return abs;
     }

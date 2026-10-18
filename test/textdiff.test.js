@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { tokenize, diffWords, diffSummary, compareWords, phoneticKey, tokenizeTranscript, windowedTokens, dandaMarks, withDandas, uvacaWords, isUvacaLine, splitUvaca } from '../js/textdiff.js';
-import { findSelfCorrections } from '../js/textdiff.js';
+import { findSelfCorrections, tokenMoments, refineBoundary } from '../js/textdiff.js';
 
 test('phoneticKey: Devanagari, Kannada and Latin spellings of one sound share a key', () => {
   assert.equal(phoneticKey('नमः'), 'namah');
@@ -49,7 +49,7 @@ test('compareWords: spelling and word-break differences of the recogniser are no
 
 test('windowedTokens: words of a long chunk are spread along it, so the part compared keeps its own words', () => {
   // a 44 s take of two slokas, transcribed as one 30 s chunk and one for the rest
-  const words = (n, p) => Array.from({ length: n }, (_, i) => `${p}${i + 1}`).join(' ');
+  const words = (n, p) => Array.from({ length: n }, (_, i) => `${p}${String(i + 1).padStart(2, '0')}`).join(' '); // words of one length: their moments are spread evenly (a longer word takes a larger share)
   const t = { text: '', chunks: [{ text: words(20, 'a'), start: 0, end: 30 }, { text: words(8, 'b'), start: 30, end: null }] };
   t.text = t.chunks.map((c) => c.text).join(' ');
   assert.equal(tokenizeTranscript(t).length, 28);
@@ -59,10 +59,10 @@ test('windowedTokens: words of a long chunk are spread along it, so the part com
   // the second sloka, 24–40 s: the last words of the first chunk and all of the second
   const w = windowedTokens(t, [24, 40], 44);
   const kept = w.toks.filter((_, i) => w.inside[i]).map((x) => x.word);
-  assert.deepEqual(kept, ['a17', 'a18', 'a19', 'a20', 'b1', 'b2', 'b3', 'b4', 'b5', 'b6']);
+  assert.deepEqual(kept, ['a17', 'a18', 'a19', 'a20', 'b01', 'b02', 'b03', 'b04', 'b05', 'b06']);
   // the first sloka, 0–22 s: the first chunk's early words only
   const v = windowedTokens(t, [0, 22], 44);
-  assert.deepEqual(v.toks.filter((_, i) => v.inside[i]).map((x) => x.word), Array.from({ length: 15 }, (_, i) => `a${i + 1}`));
+  assert.deepEqual(v.toks.filter((_, i) => v.inside[i]).map((x) => x.word), Array.from({ length: 15 }, (_, i) => `a${String(i + 1).padStart(2, '0')}`));
   // no timings at all: everything counts
   const plain = { text: 'x y z', chunks: [] };
   assert.ok(windowedTokens(plain, [1, 2], 10).inside.every(Boolean));
@@ -172,9 +172,37 @@ test('self-corrections survive the words as Whisper writes them: compounds split
   // a word said twice inside the compound's pāda: a repeat, named as heard
   const twice = findSelfCorrections(ref, T('येत्वक्षरम निर्देश्यम अव्यक्तं पर्युपासते सर्वत्रगम सर्वत्रगम चिंत्यम्चा कूटस्थम चलं थुवं'), { refPada });
   assert.deepEqual(twice.map((c) => [c.kind, c.word]), [['repeat', 'सर्वत्रगम']], JSON.stringify(twice));
+  // an echo inside one word is the recogniser's, not a repeat ("…somāśarasomayā" for śrutau vistaraśo mayā)
+  const refB = T('भवाप्ययौ हि भूतानां श्रुतौ विस्तरशो मया त्वत्तः कमलपत्राक्ष माहात्म्यमपि चाव्ययम्');
+  assert.deepEqual(findSelfCorrections(refB, T('भवप्ययोहिभुतनं सुतवित्तरसोमाशरसोमया त्वत्तः कमलपत्राक्ष माहात्म्यमपि चाव्ययम्'), { refPada: [1, 1, 1, 2, 2, 2, 3, 3, 4, 4] }), []);
   // the clean recitation as Whisper writes it: nothing
   assert.deepEqual(findSelfCorrections(ref, T('येत्वक्षरम निर्देश्यम अव्यक्तं पर्युपासते सर्वत्रगम चिंत्यम्चा कूटस्थम चलं थुवं'), { refPada }), []);
   // the sloka started again from the top, split as Whisper splits it
   const top = findSelfCorrections(ref, T('येत्वक्षरम निर्देश्यम अव्यक्तं येत्वक्षरम निर्देश्यम अव्यक्तं पर्युपासते सर्वत्रगम चिंत्यम्चा कूटस्थम चलं थुवं'), { refPada });
   assert.deepEqual(top.map((c) => [c.kind, c.word, c.pada]), [['restart', 'ये', 1]], JSON.stringify(top));
+});
+
+test('the words move a boundary between two stretches: a later stretch that begins with the earlier sloka\'s tail', () => {
+  // the 16 October three-sloka take: the ear closed 11.1 early, so the second stretch began
+  // with 11.1's last pāda ("moho 'yaṃ vigato mama") and then 11.2
+  const ref11_1 = tokenize('अर्जुन उवाच मदनुग्रहाय परमं गुह्यमध्यात्मसंज्ञितम् यत्त्वयोक्तं वचस्तेन मोहोऽयं विगतो मम');
+  const ref11_2 = tokenize('भवाप्ययौ हि भूतानां श्रुतौ विस्तरशो मया त्वत्तः कमलपत्राक्ष माहात्म्यमपि चाव्ययम्');
+  const T = (chunks) => ({ text: chunks.map((c) => c.text).join(' '), chunks });
+  const prevT = T([{ text: 'अर्जुन उवाच मदनुग्रहाय परमं गुह्यमध्यात्मसंज्ञितम्', start: 0.5, end: 7 }, { text: 'यत्त्वयोक्तं वचस्तेन', start: 7, end: 11.5 }]);
+  const nextT = T([{ text: 'मोहोयं विगतोमं भवप्ययोहिभुतनं', start: 12.0, end: 18.0 }, { text: 'श्रुतविस्तरसोमया त्वत्तः कमलपत्राक्ष माहात्म्यमपि चाव्ययम्', start: 18, end: 25 }]);
+  const take = 50;
+  const prev = { toks: tokenizeTranscript(prevT), moments: tokenMoments(prevT, take), ref: ref11_1 };
+  const next = { toks: tokenizeTranscript(nextT), moments: tokenMoments(nextT, take), ref: ref11_2 };
+  const b = refineBoundary(prev, next);
+  // the first chunk holds three tokens over 6 s: "moho yaṃ" at 13, "vigato mama" at 15, "bhavāpyayau…" at 17 → the boundary just before 17
+  assert.ok(b != null && b > 16 && b < 17.1, `boundary ${b}`);
+  // nothing to move when the later stretch begins with its own sloka
+  const clean = { toks: tokenizeTranscript(T([{ text: 'भवप्ययोहिभुतनं श्रुतविस्तरसोमया', start: 13, end: 19 }])), moments: tokenMoments(T([{ text: 'भवप्ययोहिभुतनं श्रुतविस्तरसोमया', start: 13, end: 19 }]), take), ref: ref11_2 };
+  assert.equal(refineBoundary(prev, clean), null);
+  // the earlier stretch that ends with the later sloka's head moves the boundary back to where that head begins
+  const late = T([{ text: 'यत्त्वयोक्तं वचस्तेन मोहोयं विगतोमं', start: 7, end: 12 }, { text: 'भवप्ययोहिभुतनं श्रुतविस्तरसोमया', start: 12, end: 16 }]);
+  const prevLate = { toks: tokenizeTranscript(late), moments: tokenMoments(late, take), ref: ref11_1 };
+  const nextLate = { toks: tokenizeTranscript(T([{ text: 'त्वत्तः कमलपत्राक्ष माहात्म्यमपि चाव्ययम्', start: 16.5, end: 22 }])), moments: tokenMoments(T([{ text: 'त्वत्तः कमलपत्राक्ष माहात्म्यमपि चाव्ययम्', start: 16.5, end: 22 }]), take), ref: ref11_2 };
+  const b2 = refineBoundary(prevLate, nextLate);
+  assert.ok(b2 != null && b2 > 11.5 && b2 < 13.2, `boundary back to the head of 11.2: ${b2}`);
 });

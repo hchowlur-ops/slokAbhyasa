@@ -64,6 +64,10 @@ export function confirmByWords(res, similarity, words = 0, { min = WORD_MATCH_MI
   return true;
 }
 const LOCATE_PAD = Math.round(0.3 / HOP_SEC);
+// The tempos the shorter recording is tried at when the sloka must be searched for inside
+// the longer one, and the contrast under which a found window is believed.
+export const SEARCH_TEMPOS = [0.5, 0.7, 1, 1.4, 2];
+export const SEARCH_CONVINCING = 0.95;
 const ACTIVITY_TOLERANCE_DB = 6;
 const mmss = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
 
@@ -128,15 +132,26 @@ export function compareAuto(B, H, options = {}) {
     // window it finds, against the window's own peak. The whole recording's peak may belong
     // to another, louder sloka, and judged against that one the quieter syllables of this
     // one would come out as "not heard" (or the whole of it, before it was even found).
+    // The search assumes nothing about the pace: the shorter recording is tried at several
+    // tempos and the window that reads best is kept; when none reads like the same material
+    // the two are compared whole to whole with the pace read off, rather than a window
+    // laid down at the recording's own length somewhere in the longer one.
     const heardIsLong = ratio > 1;
     const L = heardIsLong ? H : B;
-    const loc = locate(heardIsLong ? B : H, L);
+    const S = heardIsLong ? B : H;
+    let best = null;
+    for (const k of SEARCH_TEMPOS) {
+      const Sk = stretchFeatures(S, k);
+      const found = locate(Sk, L);
+      if (found && (!best || found.contrast < best.loc.contrast)) best = { loc: found, k };
+    }
+    const loc = best && best.loc.contrast < SEARCH_CONVINCING ? best.loc : null;
     if (loc) {
       const i0 = Math.max(0, loc.start - LOCATE_PAD);
       const i1 = Math.min(L.n - 1, loc.end + LOCATE_PAD);
       const Lc = sliceFeatures(L, i0, i1, [loc.start, loc.end]);
       const [Bw, Hw] = heardIsLong ? harmonise(B, Lc) : harmonise(Lc, H);
-      res = compare(Bw, Hw, options);
+      res = compare(Bw, Hw, { ...options, tempoPrior: heardIsLong ? best.k : 1 / best.k });
       if (heardIsLong) shiftHeard(res, i0, H); else shiftBase(res, i0, B);
       // Neighbouring material at the edges of the window is not the performer's mistake.
       const drop = heardIsLong ? 'extra' : 'missing';
@@ -147,9 +162,11 @@ export function compareAuto(B, H, options = {}) {
   }
   if (!res) {
     const [Bh, Hh] = harmonise(B, H);
-    // one sloka at whatever pace (locate false): the pace read off steadies the alignment
-    const prior = options.locate === false ? paceRatio(Bh, Hh) : 1;
-    res = compare(Bh, Hh, options.locate === false ? { ...options, tempoPrior: prior, spanBoth: true } : options);
+    // one sloka at whatever pace (locate false), or a search that found nothing convincing:
+    // the pace read off steadies the alignment, and it spans both recordings
+    const wholeAtPace = options.locate === false || (ratio >= LOCATE_RATIO || ratio <= 1 / LOCATE_RATIO);
+    const prior = wholeAtPace ? paceRatio(Bh, Hh) : 1;
+    res = compare(Bh, Hh, wholeAtPace ? { ...options, tempoPrior: prior, spanBoth: true } : options);
     const Bk = stretchFeatures(Bh, prior);
     const loc = Bk.trimEnd - Bk.trimStart <= Hh.trimEnd - Hh.trimStart ? locate(Bk, Hh) : locate(Hh, Bk);
     contrast = loc ? loc.contrast : null;

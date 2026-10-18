@@ -167,3 +167,30 @@ test('compare: the pace prior stretches the sloka to the take and reports times 
   for (const d of res.deviations) assert.ok(d.tBase[1] <= B.duration + 0.05, 'deviation times are the sloka\'s');
   assert.ok(res.notes.some((n) => /longer than the sloka/.test(n)), 'the tempo note reads the real pace');
 });
+
+test('compareAuto: a sloka searched for inside a longer take is tried at several tempos', () => {
+  const B = feat(verseB());
+  // the take: verse A, then verse B sung 1.4 times slower, then verse C
+  const slowB = chant([67, 65, 67, 64, 62, 64, 60, 62], Math.round(NOTE * 1.4), [VOWEL_U, VOWEL_A, VOWEL_E, VOWEL_I, VOWEL_A, VOWEL_U, VOWEL_I, VOWEL_E]);
+  const H = feat(concat(verseA(), slowB, verseC()));
+  const res = compareAuto(B, H);
+  assert.equal(res.match.located, 'heard');
+  assert.ok(res.match.ok, `contrast ${res.match.contrast}`);
+  // B's slow rendering begins after verse A (3 s) and runs 8 × 0.42 + 0.6 s
+  assert.ok(Math.abs(res.matched.heard[0] - (VERSE_SEC + 0.3)) < 0.6, `matched from ${res.matched.heard[0]}`);
+  assert.ok(res.matched.heard[1] > VERSE_SEC + 3.3, `matched to ${res.matched.heard[1]}: the slow verse, not a window of B's own length`);
+  assert.ok(res.tempoRatio > 1.2 && res.tempoRatio < 1.7, `tempo ${res.tempoRatio}`);
+  assert.ok(res.scores.overall >= 85, `overall ${res.scores.overall}`);
+});
+
+test('compareAuto: a long take that holds nothing like the sloka still reads far worse than one that holds it, at any tempo', () => {
+  const B = feat(verseB());
+  const H = feat(concat(verseA(), verseD(), verseC()));
+  const res = compareAuto(B, H);
+  // synthetic verses do not reach the gate's line (0.87, set on real chanting): what the
+  // test can hold is the separation — an absent verse reads far worse than a present one,
+  // and trying several tempos must not close that gap
+  const present = compareAuto(B, feat(concat(verseA(), verseB(), verseC())));
+  assert.ok(res.match.contrast > present.match.contrast + 0.4, `absent ${res.match.contrast} vs present ${present.match.contrast}`);
+  assert.ok(res.match.contrast > 0.7, `absent contrast ${res.match.contrast}`);
+});
