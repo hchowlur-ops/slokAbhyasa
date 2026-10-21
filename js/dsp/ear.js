@@ -50,7 +50,14 @@ export const longPauseMs = (padaPauseMs) => Math.max(1500, 3 * (Number(padaPause
 // it whatever the position. `partial` says under half was recited (not scored),
 // `dropped` that the plan was not reached by three akṣaras or more (unsure until the
 // words confirm it).
-export function earDecision({ pos, expected, pauseMs, sungMs, expectedMs = null, padaPauseMs = null, slokaPauseMs = null }) {
+//   runOnMs    sound heard since the position reached the plan's end, with no breath yet
+//              (0 when the end is not reached or a breath came): a learner who goes straight
+//              on into the next sloka
+//   ratioKnown whether the count is calibrated to this voice (a learnt ratio, or one read
+//              from a stretch's words); only then does a run-on close the sloka, since an
+//              uncalibrated count can run ahead by a few akṣaras
+export const RUN_ON_MS = 500;
+export function earDecision({ pos, expected, pauseMs, sungMs, expectedMs = null, padaPauseMs = null, slokaPauseMs = null, runOnMs = 0, ratioKnown = false }) {
   const out = { complete: false, partial: false, dropped: false, by: null };
   if (!(sungMs >= MIN_SUNG_MS)) return out;
   const exp = expected > 0 ? expected : null;
@@ -61,8 +68,12 @@ export function earDecision({ pos, expected, pauseMs, sungMs, expectedMs = null,
     if (sungMs >= 4000 && pauseMs >= 1500) { out.complete = true; out.by = 'pause'; }
     return out;
   }
+  // a pause the length of the learner's own pause between slokas (the default until learnt)
+  const ownSlokaPause = Math.max(500, Math.round((Number(slokaPauseMs) > 0 ? Number(slokaPauseMs) : DEFAULT_SLOKA_PAUSE_MS) * 0.9));
   if (pos >= exp - 1 && pauseMs >= 120) { out.complete = true; out.by = 'count'; }
+  else if (ratioKnown && pos >= exp && pauseMs < 120 && runOnMs >= RUN_ON_MS) { out.complete = true; out.by = 'run-on'; } // the next sloka has begun without a breath
   else if (pos >= exp - 2 && pauseMs >= Math.min(350, slokaPause)) { out.complete = true; out.by = 'count'; }
+  else if (pos >= 0.9 * exp && pauseMs >= ownSlokaPause) { out.complete = true; out.by = 'count'; } // a count a few short (the counter's error) and the learner's own breath between slokas
   else if (pos >= 1.3 * exp && pauseMs >= 400) { out.complete = true; out.by = 'count'; }
   else if (pos >= exp * (overTime ? 0.35 : 0.5) && pauseMs >= long) { out.complete = true; out.by = 'pause'; }
   else if (pauseMs >= STOP_PAUSE_MS) { out.complete = true; out.by = 'stop'; }

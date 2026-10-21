@@ -54,8 +54,16 @@ export const MISMATCH_NOTE = 'This does not sound like the same material as the 
 // A report whose match gate said "not this sloka" is overturned by its words: when the share
 // of the sloka's text heard in the take is high enough, it is this sloka in another voice,
 // microphone or room, and the scores stand. Returns true when the verdict changed.
-export function confirmByWords(res, similarity, words = 0, { min = WORD_MATCH_MIN, minWords = 4 } = {}) {
-  if (!res || !res.match || res.match.ok || !(similarity >= min) || words < minWords) return false;
+// A hearing of fast chant comes back with its sounds garbled though its words are there
+// (15 of 17 words, 72 % of the sounds, on a take of 21 October 2026): when most of the
+// words were heard (`wordShare`, the share of the sloka's words matched, WORD_SHARE_MIN or
+// more) a share of sounds a tenth under the bar confirms the sloka too. Transcripts of
+// other verses match few whole words, so the second signal does not loosen the first.
+export const WORD_SHARE_MIN = 0.8;
+export function confirmByWords(res, similarity, words = 0, { min = WORD_MATCH_MIN, minWords = 4, wordShare = null } = {}) {
+  const bySounds = similarity >= min;
+  const byWords = wordShare != null && wordShare >= WORD_SHARE_MIN && similarity >= min - 0.1;
+  if (!res || !res.match || res.match.ok || !(bySounds || byWords) || words < minWords) return false;
   res.match.ok = true;
   res.match.by = 'words';
   res.match.wordSimilarity = similarity;

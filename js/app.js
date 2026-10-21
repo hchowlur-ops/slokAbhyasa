@@ -2388,9 +2388,13 @@ async function setSelection(ids, activate) {
   if (!practice.quiz && !practice.teach) { try { localStorage.setItem(SELECTION_KEY, JSON.stringify(practice.selection)); } catch { /* ignore */ } }
   for (const id of [...practice.bases.keys()]) if (!practice.selection.includes(id)) practice.bases.delete(id);
   for (const id of [...practice.results.keys()]) if (!practice.selection.includes(id)) practice.results.delete(id);
-  const next = activate && practice.selection.includes(activate) ? activate
-    : practice.selection.includes(practice.activeId) ? practice.activeId
-      : practice.selection[0] || null;
+  // several slokas ticked before a take: the first of them is in view, the one the take will
+  // start on (ticking a second sloka used to put the one just ticked in view); after a take,
+  // or with one sloka, the sloka ticked or active stays
+  const next = practice.selection.length > 1 && !practice.take && !practice.quiz ? practice.selection[0]
+    : activate && practice.selection.includes(activate) ? activate
+      : practice.selection.includes(practice.activeId) ? practice.activeId
+        : practice.selection[0] || null;
   syncBaseList();
   if (next !== practice.activeId || !next || !practice.base) await setActiveBase(next);
   else updateRecLabel();
@@ -3237,9 +3241,49 @@ function sendStretch(seg, samples, sr) {
   recNote(`Listening to ${seg.name || 'that stretch'} in the background…`);
   setHidden($('#practice-rec-stop-listen'), false);
   seg.promise = runTranscription(samples, sr, null, seg.name || 'your recording', seg.ctrl.signal, { background: true })
+    .then((t) => rehearIfImplausible(t, seg, samples, sr))
     .then((t) => { seg.transcript = t; try { checkSegmentWords(seg); } catch { /* a guess only */ } return t; })
     .catch(() => null)
     .finally(() => { seg.done = true; noteBusy(); });
+}
+// A hearing that comes back with far fewer akṣaras than the counter heard nuclei in the
+// stretch — Whisper skipping the middle of a long stretch of fast chant: five words for
+// nineteen seconds of sound, seen on a take of 21 October 2026 — is heard again in two
+// halves, cut at the quietest moment near the middle, and the halves joined when they hear
+// more. The counter's nuclei are the model-free measure of how much was said.
+const REHEAR_MIN_AKSHARAS = 16;
+const REHEAR_SHARE = 0.4;
+function quietestNear(samples, sr, mid, spanSec = 2) {
+  const hop = Math.round(sr * 0.05);
+  const from = Math.max(0, mid - Math.round(spanSec * sr));
+  const to = Math.min(samples.length - hop, mid + Math.round(spanSec * sr));
+  let best = mid; let bestRms = Infinity;
+  for (let i = from; i < to; i += hop) { let s = 0; for (let j = 0; j < hop; j++) s += samples[i + j] * samples[i + j]; const r = Math.sqrt(s / hop); if (r < bestRms) { bestRms = r; best = i + (hop >> 1); } }
+  return best;
+}
+async function rehearIfImplausible(t, seg, samples, sr) {
+  if (!t || !seg.nuclei || !seg.ctrl || seg.ctrl.signal.aborted) return t;
+  const ratio = liveEar && liveEar.countRatio ? liveEar.countRatio : learnerPace().countRatio || 1.3;
+  const expect = seg.nuclei / ratio;
+  const heard = syllabify(t.text || '').length;
+  const dur = samples.length / sr;
+  if (expect < REHEAR_MIN_AKSHARAS || dur < 8 || heard >= REHEAR_SHARE * expect) return t;
+  const cut = quietestNear(samples, sr, Math.round(samples.length / 2));
+  const parts = [];
+  for (const [a, b] of [[0, cut], [cut, samples.length]]) {
+    if (seg.ctrl.signal.aborted) return t;
+    let h = null;
+    try { h = await runTranscription(samples.slice(a, b), sr, null, seg.name || 'your recording', seg.ctrl.signal, { background: true }); } catch { h = null; }
+    if (!h) return t;
+    parts.push({ h, offset: a / sr });
+  }
+  const chunks = [];
+  for (const { h, offset } of parts) for (const c of h.chunks || []) chunks.push({ ...c, start: typeof c.start === 'number' ? c.start + offset : c.start, end: typeof c.end === 'number' ? c.end + offset : c.end });
+  const joined = { ...parts[0].h, text: parts.map((p) => p.h.text || '').join(' ').trim(), chunks, rehear: 'halves' };
+  const again = syllabify(joined.text).length;
+  if (again <= heard) return t;
+  recNote(`${seg.name || 'that stretch'} heard again in two halves: ${again} akṣaras where ${heard} were heard at first`);
+  return joined;
 }
 // Stop listening: the background jobs of this take are stopped and no more are queued; the
 // sound is still compared, and the open report can still ask for its words afterwards.
@@ -3529,6 +3573,7 @@ function startEar(rec) {
     ear.activeMs = 0;
     ear.lastElapsed = 0;
     ear.pos = 0;
+    ear.completeAt = null;
     ear.done = false;
   };
   ear.retarget = target; // the page turned on by the words: the count goes on, the sloka changes
@@ -3563,7 +3608,13 @@ function startEar(rec) {
     // the sloka is complete by the plan and the learner's own pauses and time (dsp/ear.js):
     // nothing is expected of the clock until the learner's speed is known, and then it is
     // their own time for the sloka, never the teacher's
-    const d = earDecision({ pos, expected: exp, pauseMs: st.pauseMs, sungMs: sung, expectedMs: earExpectedMs(ear.plan, { aksPerSec: ear.aksPerSec }), padaPauseMs: pace.padaPauseMs, slokaPauseMs: pace.slokaPauseMs });
+    // when the position first reaches the plan's end: a learner who goes straight on into the
+    // next sloka without a breath is closed there (earDecision's run-on rule), not at the
+    // next breath a pāda later
+    const nowSec = ear.samplesRead / sr;
+    if (exp && pos >= exp && ear.completeAt == null) ear.completeAt = nowSec;
+    const runOnMs = ear.completeAt != null && st.pauseMs < 120 ? Math.max(0, (nowSec - ear.completeAt) * 1000) : 0;
+    const d = earDecision({ pos, expected: exp, pauseMs: st.pauseMs, sungMs: sung, expectedMs: earExpectedMs(ear.plan, { aksPerSec: ear.aksPerSec }), padaPauseMs: pace.padaPauseMs, slokaPauseMs: pace.slokaPauseMs, runOnMs, ratioKnown: !!ear.ratioKnown || ear.countRatioN > 0 });
     const complete = d.complete;
     if (!complete) {
       // a long pause inside a pāda (not at a pāda's end) is a stall: marked once per pāda
@@ -3573,7 +3624,8 @@ function startEar(rec) {
       }
       return;
     }
-    ear.awaitingSlokaPause = true; // the breath before the next sloka is measured when its sound begins
+    const runOn = d.by === 'run-on';
+    ear.awaitingSlokaPause = !runOn; // the breath before the next sloka is measured when its sound begins — there was none on a run-on
     const partial = !!(ear.item && exp && d.partial); // less than half: not transcribed, not scored
     if (partial) addSlip(ear.item.id, { kind: 'partial', at: Math.round(pauseBegan * 100) / 100, count: Math.round(pos), expected: exp, by: 'ear' });
     else if (ear.item && exp && d.dropped) addSlip(ear.item.id, { kind: 'dropped', at: Math.round(pauseBegan * 100) / 100, count: Math.round(pos), expected: exp, unsure: true, by: 'ear' }); // the words will say
@@ -3581,7 +3633,7 @@ function startEar(rec) {
       // a sloka recited whole teaches the ear this learner: their speed, how their voice
       // counts, and their pace against the teacher's
       const mean = (old, n, v) => (n ? (old * n + v) / (n + 1) : v);
-      const secs = ear.activeMs / 1000;
+      const secs = (ear.activeMs - (runOn ? runOnMs : 0)) / 1000; // the sound past the end on a run-on is the next sloka's
       if (secs > 1) { const v = Math.max(0.5, Math.min(15, exp / secs)); ear.aksPerSec = ear.aksPerSec ? mean(ear.aksPerSec, ear.speedN, v) : v; ear.speedN++; }
       const cr = st.count / exp;
       if (cr >= 0.6 && cr <= 1.6) { ear.countRatio = mean(ear.countRatio, ear.countRatioN, cr); ear.countRatioN++; }
@@ -3592,7 +3644,8 @@ function startEar(rec) {
     // the page turns now; the stretch is closed a moment later — where the pause began, or a
     // third of a second on when there was none — so the last syllable's tail is in it and
     // the turn waits for nothing
-    const closing = { item: now[i], to: (st.pauseMs >= 120 ? pauseBegan : ear.samplesRead / sr) + 0.3, partial, count: pos, expected: exp, nuclei: st.count, timer: null };
+    // the stretch closes where the pause began, or, on a run-on, where the count completed
+    const closing = { item: now[i], to: (runOn ? ear.completeAt : st.pauseMs >= 120 ? pauseBegan : ear.samplesRead / sr) + 0.3, partial, count: pos, expected: exp, nuclei: st.count, timer: null };
     closing.timer = setTimeout(() => { if (ear.pendingClose === closing) ear.pendingClose = null; markSegment(closing.item, closing.to, { transcribe: !closing.partial, count: closing.count, expected: closing.expected, nuclei: closing.nuclei }); }, 420);
     ear.pendingClose = closing;
     if (i + 1 < now.length) {
@@ -3766,7 +3819,7 @@ function renderQuizBox() {
 // Share of a sloka's words heard in the take, over the parts that were compared.
 function wordSimilarity(res, baseT, heardT, baseDuration, takeDuration, plan = null) {
   const d = windowedDiff(res, baseT, heardT, baseDuration, takeDuration, plan);
-  return d.ai.length ? { similarity: d.summary.similarity, phonology: d.phonology, corrections: d.corrections } : null;
+  return d.ai.length ? { similarity: d.summary.similarity, wordShare: d.summary.matched / d.ai.length, phonology: d.phonology, corrections: d.corrections } : null;
 }
 
 // What the comparison decided on the way to its scores, kept with a quiz attempt so a
@@ -3850,7 +3903,7 @@ async function scoreQuizAttempt() {
         practice.wordSims.set(id, ws.similarity);
         if (ws.phonology) practice.phonology.set(id, ws.phonology);
         setWordSlips(id, ws.corrections);
-        if (confirmByWords(res, ws.similarity, words) && practice.activeId === id) showActiveReport();
+        if (confirmByWords(res, ws.similarity, words, { wordShare: ws.wordShare }) && practice.activeId === id) showActiveReport();
       }
     }
     if (!live()) return;
@@ -5194,7 +5247,7 @@ async function transcribeAllParts() {
       // a "not this sloka" verdict from the timbre is overturned when the words say otherwise —
       // for these reports as for the open one, else a take whose sound sits far from the
       // recording's (another pace, another microphone) scores 0 on every sloka but the open one
-      if (confirmByWords(res, ws.similarity, tokenizeTranscript(ref).length) && practice.activeId === id) showActiveReport();
+      if (confirmByWords(res, ws.similarity, tokenizeTranscript(ref).length, { wordShare: ws.wordShare }) && practice.activeId === id) showActiveReport();
       refreshVerdicts();
       syncSession();
     } catch (err) {
@@ -5394,7 +5447,7 @@ function renderTranscriptDiff() {
     if (phonology) practice.phonology.set(practice.activeId, phonology);
     setWordSlips(practice.activeId, corrections);
     // a "not this sloka" verdict from the timbre is overturned when the words say otherwise
-    if (confirmByWords(res, sm.similarity, ai.length)) {
+    if (confirmByWords(res, sm.similarity, ai.length, { wordShare: ai.length ? sm.matched / ai.length : null })) {
       toast('The words confirm this is the sloka, though the recordings sound different; its scores now count.', 'info', 7000);
       const notes = $('#result-notes');
       notes.innerHTML = '';

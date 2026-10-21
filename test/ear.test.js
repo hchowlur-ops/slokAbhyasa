@@ -3,7 +3,7 @@
 // the count ratio learnt from the words, and pāda starts read from a recording's pauses.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { earExpectedMs, earPositionOf, earDecision, longPauseMs, calibrateCountRatio, padaStartsFromPauses, STOP_PAUSE_MS, DEFAULT_PADA_PAUSE_MS } from '../js/dsp/ear.js';
+import { earExpectedMs, earPositionOf, earDecision, longPauseMs, calibrateCountRatio, padaStartsFromPauses, STOP_PAUSE_MS, DEFAULT_PADA_PAUSE_MS, RUN_ON_MS } from '../js/dsp/ear.js';
 
 const plan = { total: 32, padas: [8, 8, 8, 8], speakerLine: false, checkpoints: [8, 16, 24, 32] };
 const user = { aksPerSec: 2.13, padaPauseMs: 482, slokaPauseMs: 515, countRatio: 1.35 }; // the user's profile on 17 October
@@ -91,4 +91,23 @@ test('pāda starts from a recording\'s own pauses', () => {
   // too few pauses: nothing, so the caller falls back
   const flat = new Uint8Array(1000).fill(1);
   assert.deepEqual(padaStartsFromPauses(flat, 0.01, plan), []);
+});
+
+test('earDecision: a learner who goes straight on past the end of the plan closes the sloka there, when the count is calibrated', () => {
+  const base = { pos: 44, expected: 44, pauseMs: 0, sungMs: 22000, padaPauseMs: 486, slokaPauseMs: 719 };
+  assert.equal(earDecision({ ...base, runOnMs: RUN_ON_MS, ratioKnown: true }).by, 'run-on');
+  assert.equal(earDecision({ ...base, runOnMs: RUN_ON_MS - 100, ratioKnown: true }).complete, false, 'not yet half a second on');
+  assert.equal(earDecision({ ...base, runOnMs: 2000, ratioKnown: false }).complete, false, 'an uncalibrated count waits for a breath');
+  assert.equal(earDecision({ ...base, pos: 43, runOnMs: 2000, ratioKnown: true }).complete, false, 'short of the end: no run-on');
+  assert.equal(earDecision({ ...base, pauseMs: 150, runOnMs: 0, ratioKnown: true }).by, 'count', 'a breath closes it as before');
+});
+
+test('earDecision: a count a few short with a pause the length of the learner\'s own sloka pause closes the sloka', () => {
+  // 21 October, take 06:15: 41.6 of 44 at a 0.95 s breath between the slokas (the learner\'s sloka pause 719 ms)
+  const base = { pos: 41.6, expected: 44, sungMs: 21000, padaPauseMs: 486, slokaPauseMs: 719 };
+  assert.equal(earDecision({ ...base, pauseMs: 400 }).complete, false, 'a short breath inside the last pāda is not the end');
+  assert.equal(earDecision({ ...base, pauseMs: 700 }).by, 'count');
+  assert.equal(earDecision({ ...base, pos: 39, pauseMs: 700 }).complete, false, 'under nine tenths of the plan: a long pause is needed');
+  assert.equal(earDecision({ pos: 29.5, expected: 32, pauseMs: 850, sungMs: 15000 }).complete, false, 'no sloka pause learnt: nine tenths of the default (900 ms) is needed');
+  assert.equal(earDecision({ pos: 29.5, expected: 32, pauseMs: 950, sungMs: 15000 }).by, 'count');
 });

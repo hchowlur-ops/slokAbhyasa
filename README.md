@@ -308,7 +308,10 @@ during the take, and each turn sends the stretch recorded since the last one —
 that was in view — to the speech worker at once, as a background job that touches neither
 the recording nor the page ("Listening to CH12-03 in the background…" under the timer).
 Afterwards each report's stretch of the take takes those words when the recorded stretch
-overlaps it well enough, so the words are there the moment the results open. You need not
+overlaps it well enough, so the words are there the moment the results open. A stretch
+whose hearing comes back with far fewer akṣaras than the ear counted in it (the speech
+model skipping the middle of a long stretch of fast chant) is heard again in two halves,
+cut at the quietest moment near the middle, and the halves kept when they hear more. You need not
 turn the pages at all: while slokas are recorded (one or several) the app **listens for the
 end of each sloka** by itself — it counts the akṣaras it hears (the syllable nuclei of the
 loudness envelope) against the **akṣara plan** of the sloka in view (the speaker line's
@@ -319,7 +322,10 @@ speech worker and the panel turns to the next sloka ("24 of 33 akṣaras · pād
 under the timer shows where the learner is and lights the line of the text they are in;
 the ear expects nothing of the clock from the teacher's recording — only from the
 learner's own speed once it is known, and until then the plan and the learner's pauses
-alone decide when a sloka has ended (a count at the plan's end and a breath; a count well
+alone decide when a sloka has ended (a count at the plan's end and a breath; a count at the
+plan's end and the voice going straight on for half a second — the next sloka begun without
+a breath, once the count is calibrated to the voice; a count a few short — the counter's
+error — and a pause the length of the learner's own breath between slokas; a count well
 short and a long pause, three of the learner's own breaths between pādas; four seconds of
 silence whatever the count);
 "every sloka heard · tap to stop" when the last is in). The page turns the moment the
@@ -328,7 +334,8 @@ its sound, sooner than any breath; a position a little short waits for a short p
 well short for a long one — and the sloka's stretch is closed a moment later, off the
 page-turn path, so the turn waits for nothing. A take **starts on the first sloka** of the
 list and the panel turns to it as the recording begins, whatever page was in view before
-(the last sloka ticked, or the page the last take ended on); to begin on a later sloka,
+(the page the last take ended on); with several slokas ticked, the first of them is in
+view before the take too; to begin on a later sloka,
 press Next once the recording has started. A quiz attempt starts from its first sloka
 too. A quiz loads its slokas' recordings as it
 opens, so the ear has their plans and times from the first sloka. Where they are is read from **their
@@ -408,7 +415,9 @@ that (recite one verse against a sloka that holds the whole chapter, or the reve
 report says which part was used, all times stay those of the full recordings, and the
 word comparison greys out the words outside that part. The words have the last say for
 every sloka of a take: when the sound comparison says "does not sound like this sloka"
-but most of the sloka's words were heard, that sloka is scored. The words also **move the
+but most of the sloka's words were heard, that sloka is scored (three quarters of its
+sounds; or, when four fifths of its words were matched, a share of sounds a tenth under
+that — a fast chant comes back with its sounds garbled though its words are there). The words also **move the
 ear's boundaries**: when a stretch's words begin with the tail of the sloka before (the
 ear closed that one early) or end with the head of the sloka after, the boundary moves to
 where the later sloka's words begin, and the slokas whose windows moved are compared

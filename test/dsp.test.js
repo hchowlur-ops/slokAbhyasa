@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { extractFeatures, hzToSt, serializeFeatures, deserializeFeatures, HOP_SEC } from '../js/dsp/features.js';
-import { compare, compareAuto, confirmByWords, MISMATCH_NOTE, WORD_MATCH_MIN } from '../js/dsp/compare.js';
+import { compare, compareAuto, confirmByWords, MISMATCH_NOTE, WORD_MATCH_MIN, WORD_SHARE_MIN } from '../js/dsp/compare.js';
 import { foldOctave } from '../js/dsp/deviations.js';
 import { alignDTW, pathMaps } from '../js/dsp/dtw.js';
 import { resample } from '../js/dsp/resample.js';
@@ -471,4 +471,19 @@ test('performance: three-minute pair compares quickly', () => {
   const ms = performance.now() - t0;
   assert.ok(res.scores.overall > 0);
   assert.ok(ms < 6000, `compare took ${ms.toFixed(0)} ms`);
+});
+
+test('confirmByWords: most of the words heard confirm a sloka whose sounds came back garbled, a tenth under the bar', () => {
+  const fresh = () => ({ match: { ok: false, by: null }, notes: [MISMATCH_NOTE] });
+  // the take of 21 October 2026: 15 of 17 words, 72 % of the sounds
+  let res = fresh();
+  assert.equal(confirmByWords(res, 0.72, 17, { wordShare: 15 / 17 }), true);
+  assert.equal(res.match.by, 'words');
+  // the same share of sounds with few whole words matched: not confirmed
+  res = fresh();
+  assert.equal(confirmByWords(res, 0.72, 17, { wordShare: 0.5 }), false);
+  // most words but the sounds far under the bar: not confirmed
+  res = fresh();
+  assert.equal(confirmByWords(res, WORD_MATCH_MIN - 0.11, 17, { wordShare: 1 }), false);
+  assert.equal(WORD_SHARE_MIN, 0.8);
 });
