@@ -23,3 +23,5 @@ desktop.ini
 
 # research and design notes: their own private repository (hchowlur-ops/SlokaAbhyasa-research-notes)
 research_notes/
+tools/bench/package-lock.json
+tools/bench/npm-install.log

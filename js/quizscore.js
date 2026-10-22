@@ -308,7 +308,10 @@ export function correctness(items, categories, tolerance = DEFAULT_TOLERANCE) {
 //   result        the comparison result for this sloka, or { error }
 //   phonology     comparePhonology() of the words heard against the sloka's text, or null
 //   sttAvailable  whether speech recognition worked for this attempt at all
-export function itemScores(result, { phonology = null, sttAvailable = false, partial = false } = {}) {
+//   history   – { phoneme, vowel, syllable } from the learner's evaluations of this sloka on
+//               its own (app: pronunciationHistory), used for the three word categories when
+//               the words of this take were not heard; the scores then carry fromHistory: true
+export function itemScores(result, { phonology = null, sttAvailable = false, partial = false, history = null } = {}) {
   const none = { matched: false, missing: true, phoneme: null, vowel: null, syllable: null, emphasis: null, pitch: null, phrasing: null, timing: null };
   if (!result || result.error || !result.scores) return none;
   const matched = !!(result.match && result.match.ok) && !partial; // less than half recited: not recited, not scored
@@ -321,12 +324,15 @@ export function itemScores(result, { phonology = null, sttAvailable = false, par
   // recited text (weight 0): pitch is a matter of style, shown but never judged
   const pitchJudged = s.pitch != null && !(s.weights && s.weights.pitch === 0);
   const p = phonology || {};
+  const h = !phonology && history && typeof history === 'object' ? history : null;
+  const pick = (own, past) => (own != null ? r(own) : h && past != null ? r(past) : null);
   return {
     matched: true,
     missing: false,
-    phoneme: p.phonemes == null ? null : r(p.phonemes),
-    vowel: p.vowels == null ? null : r(p.vowels),
-    syllable: p.syllables == null ? null : r(p.syllables),
+    phoneme: pick(p.phonemes, h && h.phoneme),
+    vowel: pick(p.vowels, h && h.vowel),
+    syllable: pick(p.syllables, h && h.syllable),
+    ...(h && (h.phoneme != null || h.vowel != null || h.syllable != null) ? { fromHistory: true } : {}),
     emphasis: s.emphasis == null ? null : r(s.emphasis),
     pitch: pitchJudged ? r(s.pitch) : null,
     phrasing: s.phrasing == null ? null : r(s.phrasing),

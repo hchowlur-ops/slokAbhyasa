@@ -88,9 +88,9 @@ test('pāda starts from a recording\'s own pauses', () => {
   // a speaker line takes the first pause
   const withLine = padaStartsFromPauses(active, 0.01, { ...plan, speakerLine: true, padas: [8, 8, 8] });
   assert.deepEqual(withLine.map((s) => s.pada), [0, 1, 2, 3]);
-  // too few pauses: nothing, so the caller falls back
+  // too few pauses: the starts fall by the akṣaras over the sung span (a fluent reciter)
   const flat = new Uint8Array(1000).fill(1);
-  assert.deepEqual(padaStartsFromPauses(flat, 0.01, plan), []);
+  assert.deepEqual(padaStartsFromPauses(flat, 0.01, plan).map((s) => [s.pada, Number(s.at.toFixed(2))]), [[1, 0], [2, 2.5], [3, 5], [4, 7.5]]);
 });
 
 test('earDecision: a learner who goes straight on past the end of the plan closes the sloka there, when the count is calibrated', () => {
@@ -110,4 +110,21 @@ test('earDecision: a count a few short with a pause the length of the learner\'s
   assert.equal(earDecision({ ...base, pos: 39, pauseMs: 700 }).complete, false, 'under nine tenths of the plan: a long pause is needed');
   assert.equal(earDecision({ pos: 29.5, expected: 32, pauseMs: 850, sungMs: 15000 }).complete, false, 'no sloka pause learnt: nine tenths of the default (900 ms) is needed');
   assert.equal(earDecision({ pos: 29.5, expected: 32, pauseMs: 950, sungMs: 15000 }).by, 'count');
+});
+
+test('padaStartsFromPauses: a fluent recording with fewer breaths than pādas still gets a start per pāda, by the akṣaras, snapped to a breath nearby', () => {
+  const hop = 0.02;
+  // 20 s of sound with one breath of 0.4 s at 10.1 s: four pādas of eleven
+  const active = new Uint8Array(1000).fill(1);
+  for (let k = 505; k < 525; k++) active[k] = 0;
+  const plan = { speakerLine: 0, padas: [11, 11, 11, 11], total: 44 };
+  const starts = padaStartsFromPauses(active, hop, plan);
+  assert.equal(starts.length, 4);
+  assert.deepEqual(starts.map((s) => s.pada), [1, 2, 3, 4]);
+  assert.equal(starts[0].at, 0);
+  assert.ok(Math.abs(starts[1].at - 5) < 0.3, `second pāda by the akṣaras: ${starts[1].at}`);
+  assert.equal(starts[2].at, 10.5, 'the third pāda snapped to the breath\'s end');
+  assert.ok(Math.abs(starts[3].at - 15) < 0.3, `fourth pāda by the akṣaras: ${starts[3].at}`);
+  // no sound at all: nothing
+  assert.deepEqual(padaStartsFromPauses(new Uint8Array(100), hop, plan), []);
 });

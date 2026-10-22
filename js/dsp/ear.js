@@ -97,6 +97,7 @@ export function calibrateCountRatio({ nuclei, aksharasHeard }) {
 // pāda begins where its pause ends. `active` is the per-frame activity of the recording's
 // features (10 ms frames, hopSec). Returns [{ pada, at }] like starts.padaStarts, or []
 // when the recording has too few pauses to tell.
+const SNAP_SEC = 0.6; // how far a pāda start placed by the akṣaras moves to a breath's end
 export function padaStartsFromPauses(active, hopSec, plan, { minPauseSec = 0.25 } = {}) {
   if (!active || !active.length || !plan || !plan.padas || !plan.padas.length) return [];
   const n = active.length;
@@ -113,11 +114,33 @@ export function padaStartsFromPauses(active, hopSec, plan, { minPauseSec = 0.25 
     if (on && start !== null) { const len = (k - start) * hopSec; if (len >= minPauseSec) gaps.push({ from: start * hopSec, to: k * hopSec, len }); start = null; }
   }
   const needed = plan.padas.length - 1 + (plan.speakerLine ? 1 : 0);
-  if (gaps.length < needed) return [];
-  const chosen = gaps.sort((a, b) => b.len - a.len).slice(0, needed).sort((a, b) => a.from - b.from);
   const out = [];
   let pada = plan.speakerLine ? 0 : 1;
   out.push({ pada, at: first * hopSec });
-  for (const g of chosen) { pada++; out.push({ pada, at: g.to }); }
+  if (gaps.length >= needed) {
+    const chosen = gaps.sort((a, b) => b.len - a.len).slice(0, needed).sort((a, b) => a.from - b.from);
+    for (const g of chosen) { pada++; out.push({ pada, at: g.to }); }
+    return out;
+  }
+  // a fluent reciter leaves fewer breaths than the plan has units (a linked teacher's
+  // recording of 2.5 had none of a quarter second): the starts fall by the akṣaras, each unit's
+  // share of the sung span, and move to a breath's end when one lies within SNAP_SEC —
+  // so the pāda fingerprints exist for every recording, if a little less exactly placed
+  const units = [];
+  if (plan.speakerLine) units.push(plan.speakerLine);
+  units.push(...plan.padas);
+  const total = units.reduce((a, b) => a + b, 0);
+  if (!total) return out;
+  const span = (last + 1 - first) * hopSec;
+  let acc = 0;
+  for (let u = 0; u < units.length - 1; u++) {
+    acc += units[u];
+    const ideal = first * hopSec + (span * acc) / total;
+    let at = ideal;
+    let best = SNAP_SEC;
+    for (const g of gaps) { const d = Math.abs(g.to - ideal); if (d < best) { best = d; at = g.to; } }
+    pada++;
+    out.push({ pada, at });
+  }
   return out;
 }

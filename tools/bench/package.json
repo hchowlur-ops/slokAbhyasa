@@ -1,0 +1,12 @@
+{
+  "name": "slokabhyasa-bench",
+  "private": true,
+  "description": "Benchmarks of the speech and encoder models on this machine, in Node (onnxruntime-node) — route A of the native-transcription note. Installed apart from the app, which has no dependencies.",
+  "type": "module",
+  "scripts": {
+    "node": "node node.mjs"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "3.8.1"
+  }
+}

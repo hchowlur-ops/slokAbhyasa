@@ -1,0 +1,19 @@
+clip 20.0 s from C:/DevTrees/SlokAbhyasa-data/sessions/20261018-073650-mt3b/take.wav · 12 threads · dtype fp32
+whisper base fp32 · load: 9.1 s · rss 79 → 960 MB
+whisper base fp32 · first hearing: 2.8 s · rss 960 → 1233 MB · {"words":22}
+whisper base fp32 · second hearing: 3.5 s · rss 1233 → 1329 MB · {"words":22}
+Xenova/wavlm-base-plus fp32 · load: 11.9 s · rss 312 → 953 MB
+Xenova/wavlm-base-plus fp32 · first forward: 4.6 s · rss 953 → 1234 MB · {"frames":999,"width":768}
+Xenova/wavlm-base-plus fp32 · second forward: 2.8 s · rss 1234 → 1364 MB · {"frames":999,"width":768}
+
+| run | seconds | rss before → after (MB) | detail |
+|---|---|---|---|
+| whisper base fp32 · load | 9.1 | 79 → 960 |  |
+| whisper base fp32 · first hearing | 2.8 | 960 → 1233 | {"words":22} |
+| whisper base fp32 · second hearing | 3.5 | 1233 → 1329 | {"words":22} |
+| Xenova/wavlm-base-plus fp32 · load | 11.9 | 312 → 953 |  |
+| Xenova/wavlm-base-plus fp32 · first forward | 4.6 | 953 → 1234 | {"frames":999,"width":768} |
+| Xenova/wavlm-base-plus fp32 · second forward | 2.8 | 1234 → 1364 | {"frames":999,"width":768} |
+
+written C:\DevTrees\Tutor\dist\bench\node-2026-10-21T19-58-30.json
+exit 0

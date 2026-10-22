@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { extractFeatures, hzToSt, serializeFeatures, deserializeFeatures, HOP_SEC } from '../js/dsp/features.js';
-import { compare, compareAuto, confirmByWords, MISMATCH_NOTE, WORD_MATCH_MIN, WORD_SHARE_MIN } from '../js/dsp/compare.js';
+import { compare, compareAuto, confirmByWords, confirmByEar, MISMATCH_NOTE, WORD_MATCH_MIN, WORD_SHARE_MIN, EAR_CONFIRM_SHARE } from '../js/dsp/compare.js';
 import { foldOctave } from '../js/dsp/deviations.js';
 import { alignDTW, pathMaps } from '../js/dsp/dtw.js';
 import { resample } from '../js/dsp/resample.js';
@@ -486,4 +486,22 @@ test('confirmByWords: most of the words heard confirm a sloka whose sounds came 
   res = fresh();
   assert.equal(confirmByWords(res, WORD_MATCH_MIN - 0.11, 17, { wordShare: 1 }), false);
   assert.equal(WORD_SHARE_MIN, 0.8);
+});
+
+test('confirmByEar: a sloka the timbre rejected but the ear counted whole is taken as recited', () => {
+  const fresh = () => ({ match: { ok: false, by: null }, notes: [MISMATCH_NOTE] });
+  let res = fresh();
+  assert.equal(confirmByEar(res, { count: 44, expected: 44 }), true);
+  assert.equal(res.match.by, 'ear');
+  assert.ok(!res.notes.includes(MISMATCH_NOTE));
+  res = fresh();
+  assert.equal(confirmByEar(res, { count: 30, expected: 44 }), true, 'most of it counted: recited, with dropped akṣaras for the caller to note');
+  assert.ok(res.notes[0].includes('most of it'));
+  res = fresh();
+  assert.equal(confirmByEar(res, { count: 20, expected: 44 }), false, 'under half: not recited');
+  res = fresh();
+  assert.equal(confirmByEar(res, { count: null, expected: 44 }), false, 'no count: nothing to go on');
+  res = fresh(); res.match.ok = true;
+  assert.equal(confirmByEar(res, { count: 44, expected: 44 }), false, 'already a match');
+  assert.equal(EAR_CONFIRM_SHARE, 0.5);
 });

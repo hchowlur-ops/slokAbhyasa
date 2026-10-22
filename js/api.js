@@ -217,6 +217,11 @@ export async function updateSession(id, patch) {
 export async function deleteSession(id) {
   await check(await fetch(sessionUrl(id), { method: 'DELETE' }));
 }
+// Every evaluation session, newest first, with its items and scores.
+export async function listSessions() {
+  const res = await check(await fetch('/api/sessions'));
+  return res.json();
+}
 
 export async function putSessionAudio(id, blob) {
   const res = await check(await fetch(sessionUrl(id, '/audio'), { method: 'PUT', headers: { 'Content-Type': 'audio/wav' }, body: blob }));

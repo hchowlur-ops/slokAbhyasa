@@ -327,7 +327,14 @@ plan's end and the voice going straight on for half a second — the next sloka 
 a breath, once the count is calibrated to the voice; a count a few short — the counter's
 error — and a pause the length of the learner's own breath between slokas; a count well
 short and a long pause, three of the learner's own breaths between pādas; four seconds of
-silence whatever the count);
+silence whatever the count; and, from three akṣaras before the plan's end, **the next
+sloka's opening heard by sound** — the live sound matched every third of a second against
+the next sloka's first pāda (or its attribution), with this sloka's own pāda starts as
+competitors — which closes the sloka where that opening began, breath or no breath, and
+hands the next sloka the akṣaras already counted since; every ticked sloka's recording
+loads as it is ticked, and the record button waits for any still loading before the
+microphone opens, so the ear has each one's plan and pāda starts by the time the page
+turns to it and nothing heavy runs while the take does);
 "every sloka heard · tap to stop" when the last is in). The page turns the moment the
 position reaches the sloka's end — the last akṣara registers within a tenth of a second of
 its sound, sooner than any breath; a position a little short waits for a short pause, one
@@ -368,8 +375,10 @@ and their **tempo against each teacher's recording** (kept for the reports, neve
 the ear). With these the ear's patience fits the learner, whoever recorded the sloka;
 without them, the plan and the pauses decide. The teacher's own recording also gives the
 ear the places its pādas start, read from the recording's pauses (a linked recording's
-transcript spreads its lines evenly and would put them early), so a pāda started again
-can be heard by sound as well as by the words. A sloka of which **less than half** was recited — the ear closed
+transcript spreads its lines evenly and would put them early) — or, for a fluent recording
+with fewer breaths than pādas, placed by each pāda's share of the akṣaras over the sung
+span and moved to a breath's end when one lies near — so a pāda started again can be
+heard by sound as well as by the words, and the next sloka's opening too. A sloka of which **less than half** was recited — the ear closed
 it, the page was turned, or the take stopped, with its position under half the plan — is
 neither transcribed nor scored: it counts as not recited, its card and row say "less than
 half recited (12 of 33 akṣaras) · not scored", and its recommendation is Needs practice.
@@ -853,7 +862,20 @@ quiz's correctness on the word categories (a quiz scored on the word categories 
 has no correctness and no overall: choose sound categories too). Still evaluated: the
 four sound categories, the ear's count and pāda, a restart heard by the sound, a stall
 confirmed by the sound comparison, less than half recited, and the grades, moments and
-badges on what was scored), and **Sloka text** (whether the slokas' text is
+badges on what was scored), **Hear the words in a take of several slokas too** (off by
+default: a take of several slokas is judged by its sound, and each sloka's three word
+categories come from your evaluations of that sloka on its own — the mean of the last
+three Good or Excellent ones, once there are three — so a long take scores in seconds; a
+sloka without three such evaluations shows the sound alone and asks to be evaluated on
+its own three times for an accurate score; on, every stretch is heard as before, minutes
+for ten slokas; the open report's "Hear the words" button hears that sloka either way;
+and since the words cannot overrule the sound in such a take, the ear does: a sloka the
+timbre comparison rejected but whose stretch the ear closed with at least half its
+count is taken as recited, with a note (and dropped akṣaras when short of the plan), and
+its sound scores stand; the slokas of a take are
+taken in verse order — 12.6 before 12.7 whatever their recording dates — the order the
+picker shows),
+and **Sloka text** (whether the slokas' text is
 shown during Self Evaluation and while reciting a quiz, both on by default; whether the
 Transcript block is hidden in the results (off by default: on, the sloka's words and yours
 and the words-heard line, at the top of the Analysis fold, are left out, in Self Evaluation
@@ -1179,8 +1201,11 @@ datadir.js             where the data folder is (local.json / SLOKABHYASA_DATA, 
 tools/trim-library.mjs command-line trimming of every WAV in the library
 tools/badges.mjs       lists the badges on file, or rebuilds them from the quizzes' attempts (--recompute)
 tools/analyse-attempt.mjs  re-runs a kept quiz recording through the comparison and prints what it saw
+tools/evaluate-set.mjs  scores the evaluation set of deliberate errors (research_notes) against its labels
+tools/bench/           benchmarks of the speech and encoder models on this machine: a page, a headless runner, a Node runner
 test/                  synthetic signal generators and the DSP tests
 reports/               the research the presets and the details file follow
+RELEASE-NOTES.md       what changed in each packaged version, and since the last one
 
 Not in the repository (.gitignore), beside the code or wherever local.json points:
 library/               your slokas, in folders if you like: <name>.wav, <name>.json (details),

@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SlokAbhyasa benchmark</title>
+<style>
+  body { font: 14px/1.5 system-ui, sans-serif; margin: 24px; background: #fff; color: #222; }
+  pre { background: #f4f4f4; padding: 12px; overflow: auto; max-height: 60vh; }
+  button { font: inherit; padding: 6px 12px; margin-right: 8px; }
+</style>
+</head>
+<body>
+<h1>SlokAbhyasa benchmark</h1>
+<p>Times the speech models and the self-supervised encoders on this machine, on a clip of a saved take. Driven by <code>tools/bench/run.mjs</code> (headless), or by hand here.</p>
+<p>
+  <label>session id <input id="session" size="28" placeholder="20261018-073650-mt3b" /></label>
+  <label>clip seconds <input id="seconds" size="4" value="20" /></label>
+  <button id="run-whisper">Whisper fast · better · best</button>
+  <button id="run-ssl">WavLM / wav2vec2 / HuBERT</button>
+</p>
+<pre id="out">ready</pre>
+<script type="module" src="./bench.js"></script>
+</body>
+</html>

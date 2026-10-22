@@ -1,0 +1,19 @@
+clip 20.0 s from C:/DevTrees/SlokAbhyasa-data/sessions/20261018-073650-mt3b/take.wav · 12 threads · dtype q8
+whisper base q8 · load: 7.8 s · rss 83 → 409 MB
+whisper base q8 · first hearing: 4.3 s · rss 409 → 698 MB · {"words":19}
+whisper base q8 · second hearing: 5.6 s · rss 698 → 727 MB · {"words":19}
+whisper small q8 · load: 15.3 s · rss 263 → 787 MB
+whisper small q8 · first hearing: 43.6 s · rss 787 → 1238 MB · {"words":13}
+whisper small q8 · second hearing: 43.4 s · rss 1238 → 1065 MB · {"words":13}
+
+| run | seconds | rss before → after (MB) | detail |
+|---|---|---|---|
+| whisper base q8 · load | 7.8 | 83 → 409 |  |
+| whisper base q8 · first hearing | 4.3 | 409 → 698 | {"words":19} |
+| whisper base q8 · second hearing | 5.6 | 698 → 727 | {"words":19} |
+| whisper small q8 · load | 15.3 | 263 → 787 |  |
+| whisper small q8 · first hearing | 43.6 | 787 → 1238 | {"words":13} |
+| whisper small q8 · second hearing | 43.4 | 1238 → 1065 | {"words":13} |
+
+written C:\DevTrees\Tutor\dist\bench\node-2026-10-21T19-56-28.json
+exit 0

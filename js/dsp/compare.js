@@ -71,6 +71,24 @@ export function confirmByWords(res, similarity, words = 0, { min = WORD_MATCH_MI
   res.notes.unshift(`Your recording and the sloka's sound different (another microphone, room or level), but the words settle it: ${Math.round(100 * similarity)}% of the sloka's text was heard, so it is this sloka and the scores stand.`);
   return true;
 }
+// A report whose match gate said "not this sloka" in a take whose words are not heard (a
+// take of several slokas, Settings) is overturned by the ear: it closed this sloka's
+// stretch with its count at the plan's end — the right number of akṣaras in the right place
+// — or at least half of it (the rest is a dropped-akṣaras slip, which the caller adds) —
+// which is evidence enough that the sloka was recited, in a voice or at a pace the timbre
+// comparison did not recognise. The sound scores then stand. Returns true when the
+// verdict changed; `res.match.earCount` carries the count.
+export const EAR_CONFIRM_SHARE = 0.5;
+export function confirmByEar(res, { count = null, expected = null } = {}) {
+  if (!res || !res.match || res.match.ok || !(expected > 0) || !(count >= EAR_CONFIRM_SHARE * expected)) return false;
+  res.match.ok = true;
+  res.match.by = 'ear';
+  res.match.earCount = { count: Math.round(count), expected };
+  const whole = count >= expected - 3;
+  res.notes = res.notes.filter((n) => n !== MISMATCH_NOTE);
+  res.notes.unshift(`Your recording and the sloka's sound different (another voice, pace or microphone), but the ear counted ${whole ? 'the sloka whole' : 'most of it'} — ${Math.round(count)} of ${expected} akṣaras — so it is taken as recited and the sound scores stand; its words were not heard (a take of several slokas).`);
+  return true;
+}
 const LOCATE_PAD = Math.round(0.3 / HOP_SEC);
 // The tempos the shorter recording is tried at when the sloka must be searched for inside
 // the longer one, and the contrast under which a found window is believed.
