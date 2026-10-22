@@ -570,6 +570,26 @@ async function handleSessions(req, res, parts) {
     }
     return sendJson(res, 405, { error: 'Method not allowed' });
   }
+  // PUT / GET /api/sessions/:id/ear — the ear's log of the take (js/earlog.js), kept beside the recording
+  if (sub === 'ear') {
+    const p = path.join(SESSIONS, id, 'ear.json');
+    if (req.method === 'PUT') {
+      const body = await json(20e6);
+      if (!body || typeof body !== 'object' || !Array.isArray(body.rows)) return sendJson(res, 400, { error: 'Body must be an ear log' });
+      await fsp.mkdir(path.dirname(p), { recursive: true });
+      await fsp.writeFile(p, JSON.stringify(body));
+      s.earLog = 'ear.json';
+      await writeSession(s);
+      return sendJson(res, 200, { ok: true });
+    }
+    if (req.method === 'GET') {
+      let text;
+      try { text = await fsp.readFile(p, 'utf8'); } catch { return sendJson(res, 404, { error: 'No ear log kept for this session' }); }
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      return res.end(text);
+    }
+    return sendJson(res, 405, { error: 'Method not allowed' });
+  }
   if (sub) return sendJson(res, 404, { error: 'Not found' });
   if (req.method === 'GET') return sendJson(res, 200, s);
   if (req.method === 'PUT' || req.method === 'PATCH') {

@@ -228,6 +228,12 @@ export async function putSessionAudio(id, blob) {
   return res.json();
 }
 export const sessionAudioUrl = (id) => sessionUrl(id, '/audio');
+// The ear's log of a take of several slokas (js/earlog.js), kept beside the recording.
+export async function putSessionEar(id, log) {
+  const res = await check(await fetch(sessionUrl(id, '/ear'), jsonReq('PUT', log)));
+  return res.json();
+}
+export const sessionEarUrl = (id) => sessionUrl(id, '/ear');
 
 // Every quiz attempt and evaluation session in one shape, newest first (see js/reports.js).
 export async function listAssessments() {

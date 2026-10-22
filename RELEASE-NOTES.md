@@ -4,7 +4,19 @@ What changed in each packaged version (`node tools/package.mjs` builds
 `dist/SlokAbhyasa-<version>-windows.zip`), newest first, and what has been built since the
 last package. The README describes every feature as it stands; this file says when it came.
 
-## Unreleased — since 1.6.0 (branch `AcousticAssessment`, 9–21 October 2026)
+## Unreleased — since 1.6.0 (branch `AcousticAssessment`, 9–22 October 2026)
+
+### 22 October 2026
+
+- **The ear's log.** A take of several slokas keeps a log of what the ear saw and decided
+  — the count against the plan about eleven times a second, pauses, restart and
+  next-sloka checks by sound, each close and its rule, each page turn, the stretches sent
+  on and the words back — saved beside the session as `sessions/<id>/ear.json` at no cost
+  to the take. `tools/ear-log.mjs` prints it with the comparison's windows and a summary
+  (when each sloka closed, by what rule, how long after the last sound the page turned,
+  the counter's nuclei per akṣara and the akṣaras per second against the learnt pace);
+  `tools/replay-take.mjs` replays a kept take through the live app in headless Chrome
+  and prints the same.
 
 ### 21 October 2026
 

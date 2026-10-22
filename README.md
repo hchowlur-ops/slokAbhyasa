@@ -389,6 +389,22 @@ the sloka's akṣaras (a tenth of it at least) are missing from what was heard, 
 ear's count cannot be trusted for a voice it has not learnt. Its grade is then Needs
 practice at the full score: a dropped pāda is not a self-correction, so nothing is
 deducted.
+
+**The ear's log.** In a take of several slokas the ear keeps a log of what it saw and
+decided — the count against the plan about eleven times a second, every pause that ended,
+every restart or next-sloka opening checked by sound, the moment the position reached the
+plan, each close and the rule that closed it, each page turn and the stretch sent on, and
+the words that came back — and saves it beside the session (`sessions/<id>/ear.json`) once
+the take is scored. It costs nothing you can hear: a few numbers pushed on a list per chunk
+of audio, written once at the end. `node tools/ear-log.mjs <session id>` prints it sloka by
+sloka with the comparison's window and the slips beside, and a summary of when each sloka
+closed, by what rule, how long after your last sound the page turned, and the counter's
+nuclei per akṣara and your akṣaras per second in this take against what the ear had learnt
+of you. `node tools/replay-take.mjs TAKE=<id> NAMES=<a,b> FOLDER=<folder>` replays a kept
+take through the live app in headless Chrome and prints the same, so a boundary the ear got
+wrong can be looked at without reciting again. In localStorage, `tutor-ear-log` set to `1`
+keeps the log for one-sloka takes too, `0` keeps none.
+
 The speech model is loaded the moment slokas are chosen, so it sits ready, idle, until the
 first sloka ends; the live analysis of what follows a pause runs in the analysis worker, so
 the page stays smooth. A **Stop listening** button under the timer, shown while a stretch
@@ -1193,6 +1209,7 @@ js/phon.js             akṣaras and phonemes from Indic text; the recitation ag
 js/reports.js          periods, assessments in one shape, per-sloka rows, progress (moments, streaks) for the Reports dashboard (pure, shared)
 js/badges.js           a quiz mastered: three Excellent attempts on three days, levels, chapter and Gītā badges (pure, shared)
 js/dsp/starts.js       pāda-start fingerprints: templates from a recording's MFCC frames, a banded DTW, a calibrated match (pure)
+js/earlog.js           the ear's log of a take of several slokas: cheap rows while recording, kept with the session (pure)
 js/libutil.js          folder-name cleaning, sloka file names, WAV header reading (shared with the server)
 js/dsp/                features, alignment, locating a part inside a longer recording, deviations,
                        scoring, silence trimming (pure, Node-testable)
@@ -1203,6 +1220,8 @@ tools/badges.mjs       lists the badges on file, or rebuilds them from the quizz
 tools/analyse-attempt.mjs  re-runs a kept quiz recording through the comparison and prints what it saw
 tools/evaluate-set.mjs  scores the evaluation set of deliberate errors (research_notes) against its labels
 tools/bench/           benchmarks of the speech and encoder models on this machine: a page, a headless runner, a Node runner
+tools/ear-log.mjs      prints the ear's log of a take of several slokas (sessions/<id>/ear.json), with the comparison beside it
+tools/replay-take.mjs  replays a kept take through the live app in headless Chrome and prints its ear log
 test/                  synthetic signal generators and the DSP tests
 reports/               the research the presets and the details file follow
 RELEASE-NOTES.md       what changed in each packaged version, and since the last one
@@ -1214,6 +1233,7 @@ library/               your slokas, in folders if you like: <name>.wav, <name>.j
 profiles.json          the people (names, voice type, age group) — never inside library/
 quizzes/<id>.json, quizzes/<id>/attempt-N.wav   quizzes with their attempts, and each attempt's recording
 sessions/<id>.json, sessions/<id>/take.wav      Self Evaluation / Teach takes with their scores and recording
+sessions/<id>/ear.json                          the ear's log of a take of several slokas (tools/ear-log.mjs)
 quizzes/               one JSON file per quiz: picked slokas, chosen categories, every attempt's scores
 local.json             { "data": "..." } when the two folders above live somewhere else
 ```
