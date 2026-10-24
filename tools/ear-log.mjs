@@ -75,6 +75,7 @@ export function formatEarLog(log, session = null, { every = 0.5, ticks = false }
     if (item) out.push(`  comparison: ${item.matched ? 'matched' : 'not matched'}${item.diag ? ` · window ${item.diag.matchedHeard ? item.diag.matchedHeard.map((x) => r2(x + lead)).join('–') : '?'} s of the recording (by ${item.diag.matchedBy || item.diag.located || '?'}) · tempo ${item.diag.tempoRatio} · contrast ${item.diag.contrast}` : ''}${item.partial ? ' · less than half recited' : ''} · slips ${item.slips && item.slips.length ? item.slips.map((s) => `${s.kind}${s.pada ? ` pāda ${s.pada}` : ''}${s.count != null ? ` ${s.count}/${s.expected}` : ''} at ${s.at}s by ${s.by}`).join('; ') : 'none'}`);
     out.push('');
   }
+  if (log.secondOpinion) out.push(...describeSecondOpinion(log));
   if (summary.length) {
     out.push('Summary');
     out.push(`  ${pad('sloka', 10)}${pad('closed at', 11)}${pad('by', 9)}${pad('pos/plan', 10)}${pad('nuclei', 8)}${pad('page after', 12)}${pad('nuclei/akṣ', 12)}${pad('akṣ/s', 8)}${pad('window (rec s)', 16)}${pad('tempo', 7)}result`);
@@ -84,6 +85,30 @@ export function formatEarLog(log, session = null, { every = 0.5, ticks = false }
     out.push('  (nuclei/akṣ and akṣ/s: this take, with what the ear expected in brackets; "page after": the page turned this long after the last sound before the close)');
   }
   return out.join('\n');
+}
+
+// The second opinion (js/dsp/segment.js): the cuts found from the whole take after the stop,
+// against the ear's stretches, per method. Both in the take's time.
+function describeSecondOpinion(log) {
+  const so = log.secondOpinion;
+  const out = ['Second opinion: the cuts found from the whole take after the stop (dsp/segment.js), against the ear\'s stretches'];
+  if (so.error) { out.push(`  error: ${so.error}`, ''); return out; }
+  const ear = new Map((log.segments || []).map((s) => [s.name, s]));
+  out.push(`  ${so.pauses} pauses · sound ${r2(so.sungTotal)} s of ${r2(so.spanTotal)} s · pace ${so.pace ? `tempo ${so.pace.tempoRatio ?? '—'}, ${so.pace.aksPerSec ?? '—'} akṣaras/s` : 'unknown'} · methods: ${Object.keys(so.results || {}).join(', ') || 'none'} · chosen ${so.chosen || '—'}`);
+  for (const [method, r] of Object.entries(so.results || {})) {
+    if (!r) { out.push(`  ${method}: too few pauses for the cuts`); continue; }
+    const ds = [];
+    out.push(`  ${method}${so.chosen === method ? ' (chosen)' : ''} · cost ${r.cost}${r.scale != null ? ` · pace scale ×${r.scale} · ${r.hypothesis}${r.hint && r.hint !== 'none' ? ` (the stop says ${r.hint})` : ''}` : ''}`);
+    r.segments.forEach((s, i) => {
+      const e = ear.get(s.name);
+      const dEnd = e && i < r.segments.length - 1 ? s.to - e.to : null;
+      if (dEnd != null) ds.push(Math.abs(dEnd));
+      out.push(`    ${pad(s.name, 10)} ${r2(s.from)}–${r2(s.to)} s · sung ${r2(s.sungSec)} s for ${r2(s.expectedSec)} expected (×${r2(s.ratio)})${e ? ` · the ear's stretch ${r2(e.from)}–${r2(e.to)} s` : ''}${dEnd != null ? ` · the cut ${dEnd >= 0 ? '+' : ''}${r2(dEnd)} s from the ear's close` : ''}${r.boundaries[i] && r.boundaries[i].runnerUp ? ` · next-best pause +${r2(r.boundaries[i].runnerUp.extraCost)}` : ''}`);
+    });
+    if (ds.length) out.push(`    cuts against the ear's closes: mean |Δ| ${r2(ds.reduce((a, b) => a + b, 0) / ds.length)} s, max ${r2(Math.max(...ds))} s`);
+  }
+  out.push('');
+  return out;
 }
 
 function describe(r) {

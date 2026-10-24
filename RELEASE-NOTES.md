@@ -6,6 +6,18 @@ last package. The README describes every feature as it stands; this file says wh
 
 ## Unreleased — since 1.6.0 (branch `AcousticAssessment`, 9–22 October 2026)
 
+### 24 October 2026
+
+- **A second opinion on the sloka boundaries.** After a take of several slokas the app
+  now also finds where the slokas lie from the whole recording: the cuts chosen together
+  among the take's pauses so that every sloka's sung time agrees with what is expected of
+  it (the plan at your speed, the teacher's time at your tempo, or each sloka's share of
+  the take's sound), a longer breath preferred; the pace on the day is fitted within a
+  range, and the ear's count at the stop says whether the take ended inside its last
+  sloka. Nothing is decided by it yet: it is written into the ear's log beside the ear's
+  own stretches, and `tools/second-opinion.mjs` compares the two on one kept take or all
+  of them. What it found on the kept takes is in the research note on the boundaries.
+
 ### 22 October 2026
 
 - **The ear's log.** A take of several slokas keeps a log of what the ear saw and decided

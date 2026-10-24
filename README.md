@@ -403,7 +403,16 @@ nuclei per akṣara and your akṣaras per second in this take against what the 
 of you. `node tools/replay-take.mjs TAKE=<id> NAMES=<a,b> FOLDER=<folder>` replays a kept
 take through the live app in headless Chrome and prints the same, so a boundary the ear got
 wrong can be looked at without reciting again. In localStorage, `tutor-ear-log` set to `1`
-keeps the log for one-sloka takes too, `0` keeps none.
+keeps the log for one-sloka takes too, `0` keeps none. The log also carries a **second
+opinion** on where the slokas lie, found from the whole take after the stop (`js/dsp/segment.js`):
+the cuts are chosen together among the take's pauses so that every sloka's sung time agrees
+with what is expected of it — the plan's akṣaras at your speed, the teacher's time at your
+tempo, or each sloka's share of the take's sound — with a longer breath preferred as a cut;
+your pace on the day is fitted within a range around the learnt one, and whether the take
+stopped inside its last sloka is taken from the ear's count at the stop, since the lengths
+alone cannot tell a faster reciter from an unfinished sloka. Nothing is decided by it yet; it is written beside the ear's own stretches so the two can be
+compared on every take (`node tools/second-opinion.mjs <session id>`, or `--all` for a table
+over every kept take of several slokas).
 
 The speech model is loaded the moment slokas are chosen, so it sits ready, idle, until the
 first sloka ends; the live analysis of what follows a pause runs in the analysis worker, so
@@ -1210,6 +1219,7 @@ js/reports.js          periods, assessments in one shape, per-sloka rows, progre
 js/badges.js           a quiz mastered: three Excellent attempts on three days, levels, chapter and Gītā badges (pure, shared)
 js/dsp/starts.js       pāda-start fingerprints: templates from a recording's MFCC frames, a banded DTW, a calibrated match (pure)
 js/earlog.js           the ear's log of a take of several slokas: cheap rows while recording, kept with the session (pure)
+js/dsp/segment.js      where the slokas of a take lie, found afterwards: the cuts chosen together among the pauses (pure)
 js/libutil.js          folder-name cleaning, sloka file names, WAV header reading (shared with the server)
 js/dsp/                features, alignment, locating a part inside a longer recording, deviations,
                        scoring, silence trimming (pure, Node-testable)
@@ -1222,6 +1232,7 @@ tools/evaluate-set.mjs  scores the evaluation set of deliberate errors (research
 tools/bench/           benchmarks of the speech and encoder models on this machine: a page, a headless runner, a Node runner
 tools/ear-log.mjs      prints the ear's log of a take of several slokas (sessions/<id>/ear.json), with the comparison beside it
 tools/replay-take.mjs  replays a kept take through the live app in headless Chrome and prints its ear log
+tools/second-opinion.mjs  the cuts found from a kept take's whole recording against the ear's, one take or all
 test/                  synthetic signal generators and the DSP tests
 reports/               the research the presets and the details file follow
 RELEASE-NOTES.md       what changed in each packaged version, and since the last one

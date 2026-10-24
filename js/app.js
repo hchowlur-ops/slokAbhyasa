@@ -10,6 +10,7 @@ import { drawWaveform, drawLiveWave, ComparisonChart } from './visualizer.js';
 import { serializeFeatures, deserializeFeatures, isValidFeatures, SR as FEAT_SR, HOP_SEC as FEAT_HOP } from './dsp/features.js';
 import { earExpectedMs, earPositionOf, earDecision, calibrateCountRatio, padaStartsFromPauses } from './dsp/ear.js';
 import { EarLog } from './earlog.js';
+import { segmentTake } from './dsp/segment.js';
 import { padaStarts, startTemplates, calibrate, matchStart, mfccRows, meanOf, TEMPLATE_SEC, TEMPLATE_FRAMES, MIN_TEMPLATE_FRAMES } from './dsp/starts.js';
 import { MISMATCH_CONTRAST, confirmByWords, confirmByEar } from './dsp/compare.js';
 import { QUIZ_CATEGORIES, LEGACY_CATEGORIES, DEFAULT_QUIZ_CATEGORIES, DEFAULT_TOLERANCE, CATEGORY_WEIGHTS, categoryLabel, normalizeWeights, itemScores, attemptSummary, scoreFor, normalizeCategories, normalizeTolerance, recordTolerance, withinTolerance, itemVerdict, correctness, pickBaselines, overallScore, attemptOverall, itemOverall, applySlipPenalty, selfCorrections, SLIP_PENALTY, isPartial, droppedByWords, gradeOf, gradeById, gradeWithSlips, gradeWords, slipsLabel, anySlips, modernCategories } from './quizscore.js';
@@ -2691,6 +2692,7 @@ async function analyseAttempt() {
     if (sttSettings.auto && take.duration <= TAKE_WHOLE_MAX_SEC && practice.selection.length === 1) transcribeTakePart(null, false).catch(() => {}); // several slokas: each stretch once it is found
     refineStretches(take); // the words already in move the ear's boundaries before anything is compared
     practice.heard = await analyzer.features(take.samples, take.sampleRate, (p) => practiceProgress.set(p * 0.6), { warps: true });
+    if (take.earLog && practice.selection.length > 1) take.earLog.secondOpinion = secondOpinionOf(take); // the cuts found from the whole take, beside the ear's; no verdict rests on them yet
     practice.options = {
       ignoreKey: $('#practice-ignorekey').checked,
       judgeSpeed: $('#practice-tempo').checked,
@@ -2741,6 +2743,22 @@ function optionsFor(base) {
 // sloka at whatever pace, compared whole to whole. Otherwise the length rule stands (a file,
 // Teach without the ear, a sloka the ear never reached).
 const EAR_WINDOW_PAD_SEC = 0.5;
+// The second opinion on where the slokas lie (dsp/segment.js): the cuts chosen together from
+// the whole take's pauses and the slokas' expected lengths — the plan at the learner's speed,
+// the teacher's time at their tempo, the take's own shares — written into the ear's log beside
+// the ear's own stretches, so the two can be compared on every take. Nothing is decided by it.
+function secondOpinionOf(take) {
+  try {
+    const items = practice.selection.map((id) => { const it = { id, name: nameOf(id) }; const plan = planOf(it); return { name: it.name, teacherSec: expectedSecOf(it) || null, total: plan ? plan.total : null }; });
+    const p = profileById(learnerId);
+    const pace = p && p.pace && typeof p.pace === 'object' ? { tempoRatio: Number(p.pace.tempoRatio) > 0 ? Number(p.pace.tempoRatio) : null, aksPerSec: Number(p.pace.aksPerSec) > 0 ? Number(p.pace.aksPerSec) : null } : null;
+    // the ear's position at the stop, as a share of the last sloka's plan: whether the take ended inside its last sloka, which the lengths alone cannot tell from a faster learner
+    const lastId = practice.selection[practice.selection.length - 1];
+    const ec = take.earCounts && take.earCounts[lastId];
+    const lastPos = ec && ec.expected > 0 ? ec.count / ec.expected : null;
+    return segmentTake(practice.heard, items, { pace, lastPos });
+  } catch (err) { return { error: String((err && err.message) || err) }; }
+}
 // The stretch the ear closed for a sloka in the take (the longest, two seconds at least).
 function earSegmentFor(id) {
   const take = practice.take;
