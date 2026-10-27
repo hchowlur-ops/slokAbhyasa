@@ -8,6 +8,12 @@ last package. The README describes every feature as it stands; this file says wh
 
 ### 27 October 2026
 
+- **The whole recital, then each sloka.** With several slokas the results open on the
+  whole recital: a card of its own whose play button plays the whole take, and whose wave
+  shows where the teacher's slokas were matched, where the ear cut and where the second
+  opinion cut (a thick line where you turned the page). A sloka's card opens its report,
+  where Yours plays that sloka's stretch alone and everything shown is its; the open card
+  again comes back. A Transcribe this sloka button hears the open sloka's words on demand.
 - **Turn the page from the keyboard, and tell the ear.** In Self Evaluation and a quiz the
   space bar or → turns to the next sloka and ← to the previous; while you recite, a turn
   is your word that the sloka is over: the stretch closes where your breath began, the

@@ -40,8 +40,11 @@ function peaksOf(canvas, samples, cols) {
   return data;
 }
 
-// Static waveform with a played-portion highlight and a cursor line.
-export function drawWaveform(canvas, samples, { progress = 0 } = {}) {
+// Static waveform with a played-portion highlight and a cursor line. With `duration` (the
+// recording's seconds) it also marks `spans` [{ from, to, color, label }] as shaded bands with
+// their names, and `lines` [{ at, color, label, row, dash, width }] as lines the height of the
+// wave, each label at its row from the bottom.
+export function drawWaveform(canvas, samples, { progress = 0, duration = 0, spans = [], lines = [] } = {}) {
   const fit = fitCanvas(canvas);
   if (!fit) return;
   const { ctx, w, h } = fit;
@@ -66,6 +69,23 @@ export function drawWaveform(canvas, samples, { progress = 0 } = {}) {
     const y2 = mid - Math.min(mn * mid, -0.6);
     ctx.fillStyle = x < cut ? played : rest;
     ctx.fillRect(x, y1, 1, Math.max(1, y2 - y1));
+  }
+  if (duration > 0) {
+    const xOf = (t) => Math.max(0, Math.min(w, (t / duration) * w));
+    ctx.font = '11px system-ui, sans-serif';
+    for (const s of spans || []) {
+      const x0 = xOf(s.from); const x1 = xOf(s.to);
+      ctx.globalAlpha = 0.16; ctx.fillStyle = s.color; ctx.fillRect(x0, 0, Math.max(1, x1 - x0), h); ctx.globalAlpha = 1;
+      ctx.fillRect(x0, 0, Math.max(1, x1 - x0), 3);
+      if (s.label) ctx.fillText(s.label, x0 + 4, 15);
+    }
+    ctx.font = '10px system-ui, sans-serif';
+    for (const l of lines || []) {
+      const x = xOf(l.at);
+      ctx.save(); ctx.strokeStyle = l.color; ctx.lineWidth = l.width || 1.5; ctx.setLineDash(l.dash || []);
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); ctx.restore();
+      if (l.label) { ctx.fillStyle = l.color; ctx.fillText(l.label, x + 3, h - 5 - (l.row || 0) * 12); }
+    }
   }
   if (progress > 0 && progress <= 1) {
     ctx.fillStyle = played;

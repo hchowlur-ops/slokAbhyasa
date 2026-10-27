@@ -6,7 +6,7 @@ import { Recorder } from './recorder.js';
 import { encodeWav } from './wav.js';
 import * as api from './api.js';
 import { Analyzer } from './analyzer.js';
-import { drawWaveform, drawLiveWave, ComparisonChart } from './visualizer.js';
+import { drawWaveform, drawLiveWave, ComparisonChart, cssVar } from './visualizer.js';
 import { serializeFeatures, deserializeFeatures, isValidFeatures, SR as FEAT_SR, HOP_SEC as FEAT_HOP } from './dsp/features.js';
 import { earExpectedMs, earPositionOf, earDecision, calibrateCountRatio, padaStartsFromPauses } from './dsp/ear.js';
 import { EarLog } from './earlog.js';
@@ -199,11 +199,31 @@ function bindPlayButton(btn, player) {
   return sync;
 }
 
-function bindWave(canvas, player, getSamples, curEl, durEl) {
+// A play button that plays a range of the recording when one is given — the stretch of the
+// take the open sloka was compared on — and the whole recording otherwise.
+function bindRangePlayButton(btn, player, getRange) {
+  btn.addEventListener('click', () => {
+    if (!player.loaded) return;
+    getCtx();
+    if (player.playing) { player.pause(); return; }
+    const range = getRange();
+    if (range && range[1] > range[0]) player.playRange(range[0], range[1]); else player.toggle();
+  });
+  const sync = () => {
+    btn.classList.toggle('playing', player.playing);
+    btn.setAttribute('aria-label', player.playing ? 'Pause' : 'Play');
+  };
+  for (const ev of ['play', 'pause', 'ended', 'rangeend']) player.addEventListener(ev, sync);
+  player.addEventListener('error', () => toast('Playback was blocked. Click play again.', 'error'));
+  return sync;
+}
+
+// `getMarks`, when given, adds drawWaveform's marks (duration, spans, lines) to every draw.
+function bindWave(canvas, player, getSamples, curEl, durEl, getMarks = null) {
   const draw = () => {
     const s = getSamples();
     if (!s) return;
-    drawWaveform(canvas, s, { progress: player.duration ? player.currentTime / player.duration : 0 });
+    drawWaveform(canvas, s, { progress: player.duration ? player.currentTime / player.duration : 0, ...(getMarks ? getMarks() : {}) });
   };
   player.addEventListener('tick', () => { draw(); if (curEl) curEl.textContent = fmtTime(player.currentTime); });
   player.addEventListener('loaded', () => { if (durEl) durEl.textContent = fmtTime(player.duration); if (curEl) curEl.textContent = fmtTime(0); draw(); });
@@ -1931,9 +1951,11 @@ function settleEvaluating() {
   setEvaluating(false); // nothing more is coming: the report shows without its words
 }
 const drawBaseWave = bindWave($('#practice-base-wave'), basePlayer, () => practice.base && practice.base.samples, $('#practice-base-cur'), $('#practice-base-dur'));
+const drawTakeWave = bindWave($('#take-wave'), heardPlayer, () => (practice.take ? practice.take.samples : null), $('#take-view-time'), $('#take-view-dur'), takeWaveMarks); // the whole recital, with the cuts
 bindPlayButton($('#practice-base-play'), basePlayer);
 bindPlayButton($('#res-play-base'), basePlayer);
-bindPlayButton($('#res-play-heard'), heardPlayer);
+bindRangePlayButton($('#res-play-heard'), heardPlayer, () => (practice.result && practice.result.matched && !takeViewOn() ? practice.result.matched.heard : null)); // the open sloka's stretch of the take, not the whole
+bindPlayButton($('#take-play-heard'), heardPlayer); // the whole recital
 const practicePanel = createTranscriptPanel($('#practice-transcript'), {
   title: 'Sloka text',
   emptyText: NO_WORDS_NOTE,
@@ -2701,6 +2723,7 @@ async function analyseAttempt() {
       mode: 'chant',
       learner: learnerSpeaker(), // who recites: a child's allowances when one is chosen
     };
+    practice.takeView = !practice.quiz && practice.selection.length > 1; // several slokas: the whole recital first; a card opens its sloka
     await runComparisons(0.6);
     const good = reportIds().filter((id) => isReport(practice.results.get(id)));
     if (!good.length) {
@@ -2973,16 +2996,29 @@ function renderTakeBoard(ids) {
   $('#take-sub').textContent = `${bits.join(' · ')} — the overall is the mean over the slokas recited`;
   const cards = $('#take-cards');
   cards.innerHTML = '';
+  if (practice.selection.length > 1) {
+    // the whole recital, a card of its own: no sloka chosen
+    const whole = document.createElement('button');
+    whole.type = 'button';
+    whole.setAttribute('role', 'tab');
+    whole.setAttribute('aria-selected', takeViewOn() ? 'true' : 'false');
+    whole.className = `take-card whole${takeViewOn() ? ' active' : ''}`;
+    whole.innerHTML = '<span class="tc-name">The whole recital</span><span class="tc-score">' + fmtTime(practice.take ? practice.take.duration : 0) + '</span><span class="tc-note">play it all · where it was cut</span>';
+    whole.title = takeViewOn() ? 'The whole recital is shown below' : 'Show the whole recital: play it all, and where it was cut';
+    whole.addEventListener('click', () => openTakeView());
+    cards.appendChild(whole);
+  }
   for (const id of ids) {
     const r = practice.results.get(id);
+    const open = !takeViewOn() && id === practice.activeId;
     const card = document.createElement('button');
     card.type = 'button';
     card.setAttribute('role', 'tab');
-    card.setAttribute('aria-selected', id === practice.activeId ? 'true' : 'false');
+    card.setAttribute('aria-selected', open ? 'true' : 'false');
     const { overall, grade: g } = isReport(r) ? reportOverall(id) : { overall: null, grade: null };
     const sc = reportScores(id);
     const bad = !!(r && (r.error || partialOf(id) || (isReport(r) && !sc.matched)));
-    card.className = `take-card${id === practice.activeId ? ' active' : ''}${bad ? ' bad' : ''}${!r ? ' pending' : ''}`;
+    card.className = `take-card${open ? ' active' : ''}${bad ? ' bad' : ''}${!r ? ' pending' : ''}`;
     card.innerHTML = '<span class="tc-name"></span><span class="tc-score"></span><span class="tc-grade"></span><span class="tc-note"></span><span class="tc-busy spinner" aria-hidden="true" hidden></span>';
     $('.tc-name', card).textContent = nameOf(id);
     $('.tc-name', card).title = nameOf(id);
@@ -3004,10 +3040,11 @@ function renderTakeBoard(ids) {
       noteEl.textContent = sl.length ? slipsLabel(sl) : flag && flag.level !== 'info' ? flag.text : practice.wordSims.has(id) ? '' : practice.listenStopped || !wordsWanted() ? (sc.fromHistory ? 'sound · words from your practice' : 'sound only') : 'words on their way';
       if (sl.length || (flag && flag.level === 'bad')) noteEl.classList.add('bad');
     }
-    card.title = busy ? 'Evaluating…' : id === practice.activeId ? 'This report is open below' : 'Open this sloka\'s report';
+    card.title = busy ? 'Evaluating…' : open ? 'This report is open below · click again for the whole recital' : 'Open this sloka\'s report';
     card.addEventListener('click', () => openReport(id));
     cards.appendChild(card);
   }
+  if (takeViewOn() && !$('#take-view').hidden) drawTakeWave(); // a comparison that just came in moves the teacher's marks
 }
 function renderReportBrowser() {
   const ids = reportIds();
@@ -3024,15 +3061,62 @@ function placeDuet() {
 }
 // The preview above the results changes height with the sloka, so keep the reports in view.
 async function openReport(id) {
-  if (id === practice.activeId) return;
+  if (!takeViewOn() && id === practice.activeId) { openTakeView(); return; } // the open card again: back to the whole recital
+  practice.takeView = false;
+  if (id === practice.activeId) { showActiveReport(); return; }
   await setActiveBase(id);
   $('#practice-results').scrollIntoView({ block: 'start' });
+}
+// No sloka chosen: the whole recital — play it all, and its wave with where the teacher's
+// slokas were matched, where the ear cut and where the second opinion cut. The first view of a
+// take of several slokas; a card opens its sloka, the open card again comes back here.
+const takeViewOn = () => !!practice.takeView && !practice.quiz && practice.selection.length > 1 && !!practice.take;
+function openTakeView() {
+  if (!practice.take || practice.quiz) return;
+  practice.takeView = true;
+  showActiveReport();
+}
+function renderTakeView() {
+  stopDuet();
+  practice.result = null;
+  practice.selected = null;
+  renderReportBrowser();
+  setHidden($('#report-error'), true);
+  setHidden($('#report-body'), true);
+  setHidden($('#stt-run'), true);
+  $('#res-play-both').disabled = true; // both together belongs to one sloka
+  resetTranscriptUI();
+  setEvaluating(false);
+  setHidden($('#take-view'), false);
+  drawTakeWave();
+}
+// The marks on the whole recital's wave, in the take's time: the teacher's slokas where the
+// comparison matched them (shaded, named), the ear's cuts (gold; thick when the student
+// turned the page), the second opinion's cuts (dashed; thick when pinned to the student's).
+function takeWaveMarks() {
+  const take = practice.take;
+  if (!take || !takeViewOn()) return {};
+  const duration = take.duration;
+  const spans = [];
+  const lines = [];
+  const teacher = cssVar('--base');
+  const ear = cssVar('--gold');
+  const second = cssVar('--chart-text');
+  for (const id of reportIds()) { const r = practice.results.get(id); if (isReport(r) && r.matched && r.matched.heard) spans.push({ from: r.matched.heard[0], to: r.matched.heard[1], color: teacher, label: nameOf(id) }); }
+  for (const seg of take.segments || []) if (seg.to < duration - 0.3) lines.push({ at: seg.to, color: ear, row: 1, width: seg.byHand ? 3 : 1.5, label: seg.byHand ? 'you' : 'ear' });
+  const so = take.earLog && take.earLog.secondOpinion;
+  const res = so && so.chosen && so.results ? so.results[so.chosen] : null;
+  for (const b of (res && res.boundaries) || []) lines.push({ at: (b.from + b.to) / 2, color: second, row: 0, dash: [4, 3], width: b.pinned ? 3 : 1.5, label: b.pinned ? '2nd · pinned' : '2nd' });
+  return { duration, spans, lines };
 }
 
 // Shows the report of the active sloka (or why there is none).
 function showActiveReport() {
   if (!practice.take || !reportIds().length) return;
   setHidden($('#practice-results'), false);
+  if (takeViewOn()) { renderTakeView(); return; }
+  setHidden($('#take-view'), true);
+  $('#res-play-both').disabled = false;
   const r = practice.results.get(practice.activeId);
   if (!isReport(r)) {
     practice.result = null;
@@ -3060,6 +3144,8 @@ function showActiveReport() {
   setHidden($('#report-body'), false);
   renderResult(r);
   renderQuizScore();
+  setHidden($('#stt-run'), practice.quiz && !practice.quizAttempt); // the open sloka's words on demand
+  $('#stt-run').textContent = 'Transcribe this sloka';
   if (wordsWanted() || practice.heardTranscripts.size) transcribeBoth(false);
   else $('#stt-summary').textContent = sttSettings.auto ? WORDS_MULTI_NOTE : WORDS_OFF_NOTE; // the sloka's words still shown; yours not heard
   // its words (or the quiz's score) still on their way: Evaluating… until they come (the
@@ -4820,6 +4906,8 @@ function hideResults() {
   stopDuet();
   practice.result = null;
   practice.selected = null;
+  practice.takeView = false;
+  setHidden($('#take-view'), true);
   setEvaluating(false);
   practice.results.clear();
   practice.pairContrast.clear();
@@ -5715,6 +5803,7 @@ function renderTranscriptDiff() {
     ? `${Math.round(sm.similarity * 100)}% of the sloka's ${sttPractice.base.typed ? 'typed text' : 'text'} heard (${sm.matched} of ${ai.length} words) · ${sm.missing} missing · ${sm.extra} extra or different · ${sttLanguageLabel(sttPractice.base.language)}`
     : 'Nothing was recognised in the sloka. Try again.';
   setHidden($('#stt-out'), false);
+  $('#stt-run').textContent = 'Transcribe again';
   settleEvaluating(); // the open report's words are on screen
 }
 

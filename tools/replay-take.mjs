@@ -95,9 +95,26 @@ try {
   }
   await pg(`document.querySelector('#practice-rec').click();`);
   log('stopped; waiting for the comparison');
-  await until(`!document.querySelector('#practice-results').hidden && document.querySelectorAll('#take-cards .take-card').length === ${NAMES.length}`, 'the cards', 120000);
-  await until(`!document.querySelector('#report-body').hidden`, 'the report body', 90000).catch((e) => log(e.message));
+  await until(`!document.querySelector('#practice-results').hidden && document.querySelectorAll('#take-cards .take-card:not(.whole)').length === ${NAMES.length}`, 'the cards', 120000);
+  await until(`!document.querySelector('#report-body').hidden || !document.querySelector('#take-view').hidden`, 'the report or the whole-recital view', 90000).catch((e) => log(e.message));
   await sleep(1500);
+  try { await pg(`document.querySelector('#practice-results').scrollIntoView({ block: 'start' })`); await sleep(400); const shot = await send('Page.captureScreenshot', { format: 'png' }); fs.writeFileSync(path.join(OUT, 'results.png'), Buffer.from(shot.data, 'base64')); log('screenshot of the results saved'); } catch (e) { log('no screenshot:', e.message); }
+  // the two views: a sloka's card opens its report (Yours plays its stretch alone), the card again comes back to the whole recital
+  try {
+    const whole = await evaluate(`!document.querySelector('#take-view').hidden`);
+    log('first view:', whole ? 'the whole recital' : 'a report', '· cards:', await evaluate(`[...document.querySelectorAll('#take-cards .take-card')].map(c => c.querySelector('.tc-name').textContent + (c.classList.contains('active') ? '*' : '')).join(', ')`));
+    if (whole) {
+      await pg(`document.querySelectorAll('#take-cards .take-card:not(.whole)')[0].click();`);
+      await until(`!document.querySelector('#report-body').hidden`, "the first sloka's report", 30000);
+      await sleep(600);
+      log('after a card click: report of', await evaluate(`document.querySelector('#report-name').textContent`), '· take view hidden:', await evaluate(`document.querySelector('#take-view').hidden`), '· Transcribe button:', await evaluate(`document.querySelector('#stt-run').hidden ? 'hidden' : document.querySelector('#stt-run').textContent`));
+      await pg(`document.querySelector('#analysis').open = true;`); await sleep(500);
+      const shot = await send('Page.captureScreenshot', { format: 'png' }); fs.writeFileSync(path.join(OUT, 'report.png'), Buffer.from(shot.data, 'base64'));
+      await pg(`document.querySelector('#take-cards .take-card.active').click();`);
+      await until(`!document.querySelector('#take-view').hidden`, 'the whole recital again', 30000);
+      log('the open card again: whole recital shown, report hidden:', await evaluate(`document.querySelector('#report-body').hidden`));
+    }
+  } catch (e) { log('view check failed:', e.message); }
   newSessions = (await (await fetch(`${APP}api/sessions`)).json()).filter((s) => !sessionsBefore.includes(s.id));
   if (!newSessions.length) throw new Error('no session was saved for the replay');
   const s0 = newSessions[0];

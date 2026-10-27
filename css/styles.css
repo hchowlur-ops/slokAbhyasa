@@ -898,6 +898,13 @@ textarea.locked { background: var(--surface-2); color: var(--muted); cursor: not
 .take-card.active { box-shadow: inset 0 0 0 2px var(--accent); border-color: var(--accent); }
 .take-card.bad { border-left: 4px solid var(--danger); }
 .take-card.pending { opacity: .75; }
+.take-card.whole { border-style: dashed; }
+.take-view { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.take-view-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.take-view .legend { margin-bottom: 0; }
+.sw-mark-teacher { background: color-mix(in srgb, var(--base) 45%, transparent); }
+.sw-mark-ear { background: var(--gold); }
+.sw-mark-second { background: var(--chart-text); }
 .tc-name { font-weight: 650; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.9rem; }
 .tc-score { font-family: var(--mono); font-weight: 700; font-size: 1.5rem; line-height: 1.1; }
 .tc-grade { font-size: 0.78rem; font-weight: 700; }

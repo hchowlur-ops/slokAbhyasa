@@ -299,7 +299,16 @@ slokas you had ticked there.
 **Several slokas at once.** With more than one sloka ticked, the scoreboard has a card per
 sloka — its score, grade and what went wrong, a spinner while it is being evaluated — and
 the report below is the open card's; click a card to open its report. The sloka panel
-above switches with the open report, so its play button and text always belong to it. Once the take is compared, the **words of every
+above switches with the open report, so its play button and text always belong to it. With
+several slokas the results open on the **whole recital** first, a card of its own before the
+slokas': its play button plays the whole take, and its wave shows where the teacher's slokas
+were matched (shaded, with their names), where the ear cut the recital (gold lines; a thick
+one is a page you turned) and where the second opinion cut it (dashed; thick when pinned to
+your turn); click the wave to play from there. Click a sloka's card to open its report — Yours
+then plays that sloka's stretch alone, and the words, scores, chart and deviations are its —
+and the open card again, or the whole-recital card, to come back. A **Transcribe this sloka**
+button in the Transcript block hears the open sloka's words on demand (the words of a take of
+several slokas are not heard unless asked); once they are in it reads Transcribe again. Once the take is compared, the **words of every
 report are transcribed in the background**, in turn, the open one first (each sloka's own
 stretch of the recording), and their word scores filled in as they arrive — so Next opens a
 report with its words ready, and the session's scores cover every sloka. Better still, turn
