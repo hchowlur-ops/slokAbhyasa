@@ -34,7 +34,7 @@ export const ROW_FIELDS = {
   calibrate: ['countRatio', 'nuclei', 'aksharasHeard'],
   relabel: ['assumed', 'heard', 'simAssumed', 'simHeard'],
   manual: ['pada', 'count'],
-  pageByHand: ['index'],
+  pageByHand: ['index', 'how', 'unused', 'note'],
   stop: ['name', 'pos', 'expected', 'judgement'],
 };
 

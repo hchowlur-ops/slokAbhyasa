@@ -79,6 +79,21 @@ test('fitCuts: a learner a quarter faster than the ear learnt is fitted by the s
   assert.ok(plain.cost > r.cost, 'the fitted cuts cost less than the unfitted');
 });
 
+test('cutsFor: a cut the student made by turning the page pins the boundary, whatever the lengths say', () => {
+  const { F, truth } = take([12, 9, 12]);
+  const items = [{ name: 'A', total: 32 }, { name: 'B', total: 24 }, { name: 'C', total: 32 }];
+  const exp = items.map((it) => it.total / 2.67);
+  // the student turned the page a line early into B: the pause at the first pāda breath of B
+  const early = truth[1].from + 9 / 4 + 0.2;
+  const r = cutsFor(F, items, exp, { pinned: [{ after: 1, at: truth[1].to + 0.3 }, { after: 0, at: early }] });
+  assert.ok(r.boundaries[0].pinned && r.boundaries[1].pinned);
+  assert.ok(near(r.segments[0].to, truth[1].from + 9 / 4, 0.45), `the first cut follows the student: ${r.segments[0].to}`);
+  assert.ok(near(r.segments[1].to, truth[1].to), `the second cut at the true end: ${r.segments[1].to}`);
+  // a pin far from any pause is ignored
+  const far = cutsFor(F, items, exp, { pinned: [{ after: 0, at: 100 }] });
+  assert.ok(!far.boundaries[0].pinned);
+});
+
 test('segmentTake: with no pace the take shares itself out by the akṣaras; with a pace the plan method is chosen', () => {
   const { F, truth } = take([12, 9, 12]);
   const items = [{ name: 'A', teacherSec: 8, total: 32 }, { name: 'B', teacherSec: 6, total: 24 }, { name: 'C', teacherSec: 8, total: 32 }];

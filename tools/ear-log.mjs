@@ -60,6 +60,12 @@ export function formatEarLog(log, session = null, { every = 0.5, ticks = false }
         continue;
       }
       out.push(`  ${pad(r2(r.recSec), 8)}${pad(r2(r.wallMs / 1000), 8)}${pad('', 43)}${describe(r)}`);
+      const byStudent = r.kind === 'segment' && typeof r.note === 'string' && r.note.startsWith('closed by the student');
+      if (byStudent) {
+        const turn = grp.rows.find((x) => x.kind === 'pageByHand' && !x.note && x.recSec >= r.recSec - 0.5);
+        const lastSound = lastTick && lastTick.pauseMs >= 120 && lastTick.pauseMs < 1e6 ? lastTick.recSec - lastTick.pauseMs / 1000 : lastTick ? lastTick.recSec : null;
+        summary.push({ name: r.name, kind: 'student', by: `student (${(r.note.match(/((w+))/) || [])[1] || 'key'})`, pos: r.count, expected: r.expected, nuclei: r.nuclei, closedAt: r.recSec, to: r.to, lastSound, shownAfter: turn && lastSound != null ? turn.recSec - lastSound : null, turnWall: null, sungSec: null, nucleiPerAks: r.expected && r.nuclei != null ? r.nuclei / r.expected : null, aksPerSec: null, window: item && item.diag && item.diag.matchedHeard ? item.diag.matchedHeard.map((x) => x + lead) : null, tempo: item && item.diag ? item.diag.tempoRatio : null, contrast: item && item.diag ? item.diag.contrast : null, matched: item ? item.matched : null, slips: item ? item.slips : null });
+      }
       if (r.kind === 'close' || r.kind === 'stop') {
         const turn = grp.rows.find((x) => x.kind === 'turn' && x.recSec >= r.recSec);
         const lastSound = r.kind === 'close' ? (r.by === 'head' ? null : r.recSec - (r.pauseMs || 0) / 1000) : (lastTick && lastTick.pauseMs >= 120 ? lastTick.recSec - lastTick.pauseMs / 1000 : lastTick ? lastTick.recSec : null);
@@ -78,9 +84,9 @@ export function formatEarLog(log, session = null, { every = 0.5, ticks = false }
   if (log.secondOpinion) out.push(...describeSecondOpinion(log));
   if (summary.length) {
     out.push('Summary');
-    out.push(`  ${pad('sloka', 10)}${pad('closed at', 11)}${pad('by', 9)}${pad('pos/plan', 10)}${pad('nuclei', 8)}${pad('page after', 12)}${pad('nuclei/akṣ', 12)}${pad('akṣ/s', 8)}${pad('window (rec s)', 16)}${pad('tempo', 7)}result`);
+    out.push(`  ${pad('sloka', 10)}${pad('closed at', 11)}${pad('by', 14)}${pad('pos/plan', 10)}${pad('nuclei', 8)}${pad('page after', 12)}${pad('nuclei/akṣ', 12)}${pad('akṣ/s', 8)}${pad('window (rec s)', 16)}${pad('tempo', 7)}result`);
     for (const s of summary) {
-      out.push(`  ${pad(s.name, 10)}${pad(r2(s.closedAt), 11)}${pad(s.by, 9)}${pad(`${r1(s.pos)}/${s.expected ?? '?'}`, 10)}${pad(s.nuclei ?? '—', 8)}${pad(s.shownAfter != null ? `${r2(s.shownAfter)} s` : s.kind === 'stop' ? 'stopped' : '—', 12)}${pad(s.nucleiPerAks != null ? `${r2(s.nucleiPerAks)}${pace.countRatio ? ` (${pace.countRatio})` : ''}` : '—', 12)}${pad(s.aksPerSec != null ? `${r2(s.aksPerSec)}${pace.aksPerSec ? ` (${pace.aksPerSec})` : ''}` : '—', 8)}${pad(s.window ? s.window.map(r2).join('–') : '—', 16)}${pad(s.tempo ?? '—', 7)}${s.matched == null ? '' : s.matched ? 'recited' : 'not recited'}${s.slips && s.slips.length ? ` · ${s.slips.map((x) => x.kind).join(', ')}` : ''}`);
+      out.push(`  ${pad(s.name, 10)}${pad(r2(s.closedAt), 11)}${pad(s.by, 14)}${pad(`${r1(s.pos)}/${s.expected ?? '?'}`, 10)}${pad(s.nuclei ?? '—', 8)}${pad(s.shownAfter != null ? `${r2(s.shownAfter)} s` : s.kind === 'stop' ? 'stopped' : '—', 12)}${pad(s.nucleiPerAks != null ? `${r2(s.nucleiPerAks)}${pace.countRatio ? ` (${pace.countRatio})` : ''}` : '—', 12)}${pad(s.aksPerSec != null ? `${r2(s.aksPerSec)}${pace.aksPerSec ? ` (${pace.aksPerSec})` : ''}` : '—', 8)}${pad(s.window ? s.window.map(r2).join('–') : '—', 16)}${pad(s.tempo ?? '—', 7)}${s.matched == null ? '' : s.matched ? 'recited' : 'not recited'}${s.slips && s.slips.length ? ` · ${s.slips.map((x) => x.kind).join(', ')}` : ''}`);
     }
     out.push('  (nuclei/akṣ and akṣ/s: this take, with what the ear expected in brackets; "page after": the page turned this long after the last sound before the close)');
   }
@@ -103,7 +109,7 @@ function describeSecondOpinion(log) {
       const e = ear.get(s.name);
       const dEnd = e && i < r.segments.length - 1 ? s.to - e.to : null;
       if (dEnd != null) ds.push(Math.abs(dEnd));
-      out.push(`    ${pad(s.name, 10)} ${r2(s.from)}–${r2(s.to)} s · sung ${r2(s.sungSec)} s for ${r2(s.expectedSec)} expected (×${r2(s.ratio)})${e ? ` · the ear's stretch ${r2(e.from)}–${r2(e.to)} s` : ''}${dEnd != null ? ` · the cut ${dEnd >= 0 ? '+' : ''}${r2(dEnd)} s from the ear's close` : ''}${r.boundaries[i] && r.boundaries[i].runnerUp ? ` · next-best pause +${r2(r.boundaries[i].runnerUp.extraCost)}` : ''}`);
+      out.push(`    ${pad(s.name, 10)} ${r2(s.from)}–${r2(s.to)} s · sung ${r2(s.sungSec)} s for ${r2(s.expectedSec)} expected (×${r2(s.ratio)})${e ? ` · the ear's stretch ${r2(e.from)}–${r2(e.to)} s` : ''}${dEnd != null ? ` · the cut ${dEnd >= 0 ? '+' : ''}${r2(dEnd)} s from the ear's close` : ''}${r.boundaries[i] && r.boundaries[i].pinned ? ' · pinned by the student' : r.boundaries[i] && r.boundaries[i].runnerUp ? ` · next-best pause +${r2(r.boundaries[i].runnerUp.extraCost)}` : ''}`);
     });
     if (ds.length) out.push(`    cuts against the ear's closes: mean |Δ| ${r2(ds.reduce((a, b) => a + b, 0) / ds.length)} s, max ${r2(Math.max(...ds))} s`);
   }
@@ -133,7 +139,7 @@ function describe(r) {
     case 'calibrate': return `count tuned by the words: ${r.countRatio} nuclei per akṣara`;
     case 'relabel': return `the words say ${r.heard}, not ${r.assumed} (${r.simHeard} vs ${r.simAssumed})`;
     case 'manual': return `tapped: from pāda ${r.pada} (count ${r.count})`;
-    case 'pageByHand': return `page turned by hand to ${r.index}`;
+    case 'pageByHand': return `page turned by the student (${r.how || 'button'}) to ${r.index}${r.note ? ` · ${r.note}` : ''}`;
     case 'stop': return `STOP on ${r.name}: ${r1(r.pos)} of ${r.expected} → ${r.judgement}`;
     default: return `${r.kind} ${JSON.stringify(r)}`;
   }

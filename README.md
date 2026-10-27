@@ -303,10 +303,16 @@ above switches with the open report, so its play button and text always belong t
 report are transcribed in the background**, in turn, the open one first (each sloka's own
 stretch of the recording), and their word scores filled in as they arrive — so Next opens a
 report with its words ready, and the session's scores cover every sloka. Better still, turn
-the pages **while recording**: with several slokas, Previous / Next in the sloka panel work
-during the take, and each turn sends the stretch recorded since the last one — the sloka
-that was in view — to the speech worker at once, as a background job that touches neither
-the recording nor the page ("Listening to CH12-03 in the background…" under the timer).
+the pages **while recording**: with several slokas, Next in the sloka panel — or the **space
+bar or →** on the keyboard — works during the take, and each turn is your word that the
+sloka in view is over: the stretch recorded since the last turn closes where your breath
+began and goes to the speech worker at once, as a background job that touches neither the
+recording nor the page ("Listening to CH12-03 in the background…" under the timer); the
+ear starts the next sloka's count without waiting for its own rules, and learns your pace
+from the sloka you confirmed. A key pressed in the moment after the ear turned the page by
+itself agrees with it rather than turning again. Previous (and ←) are off while you
+recite — the stretches close in order — and back on once the take stops; before and after
+a take, ← and → page as the buttons do.
 Afterwards each report's stretch of the take takes those words when the recorded stretch
 overlaps it well enough, so the words are there the moment the results open. A stretch
 whose hearing comes back with far fewer akṣaras than the ear counted in it (the speech
@@ -747,7 +753,7 @@ A memory test drawn from your library.
    in one recording, in any order. By default the step is titled **"Recite with the text
    shown"** and each sloka's text (the text typed in its details, else its transcript, in the
    script chosen under Settings) is shown in the panel above the record button, one sloka in view with
-   Previous / Next. Switch "Show the slokas' text while reciting a quiz" off in Settings and
+   Previous / Next (the space bar or → turns to the next while you recite, as in Self Evaluation). Switch "Show the slokas' text while reciting a quiz" off in Settings and
    the step becomes **"Recite from memory"** with only the names listed (four, the rest in
    a tooltip). A running quiz is the
    **Quiz** page: the sidebar keeps "Quiz" lit and the title reads Quiz; "Leave quiz" returns

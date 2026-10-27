@@ -2602,6 +2602,7 @@ $('#practice-rec').addEventListener('click', async () => {
     practiceUI.setRecording(false);
     setListBusy(false);
     updateRecLabel();
+    renderSlokaTexts(); // Previous works again
     basePlayer.pause();
     if (!raw || raw.duration < 0.5) { toast('That was too short. Try again.', 'error'); return; }
     const { take, info, changed, removedStart = 0 } = trimTake(raw, $('#practice-trim').checked);
@@ -2611,7 +2612,7 @@ $('#practice-rec').addEventListener('click', async () => {
     // the stretches transcribed while recording, in the take's time (the trimmed lead taken off)
     take.segments = segments && segments.parts.length ? segments.parts.map((p) => ({ ...p, from: p.from - removedStart, to: p.to - removedStart, audioFrom: p.from - removedStart, audioTo: p.to - removedStart })) : null; // audioFrom/audioTo: the stretch's own hearing, whatever the words do to its window
     take.earCounts = earCounts;
-    take.earLog = earLog ? earLog.finish({ removedStart: r2(removedStart), takeDuration: r2(take.duration), segments: (take.segments || []).map((p) => ({ name: p.name, from: r2(p.from), to: r2(p.to), skipped: !!p.skipped })) }) : null; // the ear's log, kept with the session (sessions/<id>/ear.json)
+    take.earLog = earLog ? earLog.finish({ removedStart: r2(removedStart), takeDuration: r2(take.duration), segments: (take.segments || []).map((p) => ({ name: p.name, from: r2(p.from), to: r2(p.to), skipped: !!p.skipped, byHand: p.byHand || null })) }) : null; // the ear's log, kept with the session (sessions/<id>/ear.json)
     for (const list of practice.slips.values()) for (const x of list) if (x.at != null) x.at = Math.max(0, Math.round((x.at - removedStart) * 100) / 100); // the slips in the take's time too
     practice.take = take;
     await heardPlayer.load(take.blob);
@@ -2756,7 +2757,10 @@ function secondOpinionOf(take) {
     const lastId = practice.selection[practice.selection.length - 1];
     const ec = take.earCounts && take.earCounts[lastId];
     const lastPos = ec && ec.expected > 0 ? ec.count / ec.expected : null;
-    return segmentTake(practice.heard, items, { pace, lastPos });
+    // the cuts the student made by turning the page are fixed: the second opinion keeps them
+    const names = items.map((it) => it.name);
+    const pinned = (take.segments || []).filter((p) => p.byHand && p.name).map((p) => ({ after: names.indexOf(p.name), at: p.to })).filter((p) => p.after >= 0 && p.after < items.length - 1);
+    return segmentTake(practice.heard, items, { pace, lastPos, pinned });
   } catch (err) { return { error: String((err && err.message) || err) }; }
 }
 // The stretch the ear closed for a sloka in the take (the longest, two seconds at least).
@@ -2804,7 +2808,7 @@ async function compareMissing(p0) {
         // but the ear closed with its count at the plan's end is taken as recited
         if (!wordsWanted() && practice.selection.length > 1) {
           const seg = earSegmentFor(id);
-          if (seg && confirmByEar(result, { count: seg.count, expected: seg.expected }) && seg.count < seg.expected - 3 && !slipsOf(id).some((x) => x.kind === 'dropped')) addSlip(id, { kind: 'dropped', count: Math.round(seg.count), expected: seg.expected, by: 'ear' }); // no words will say: the ear's count stands
+          if (seg && confirmByEar(result, { count: seg.count, expected: seg.expected }) && seg.count < seg.expected - 3 && !slipsOf(id).some((x) => x.kind === 'dropped')) addSlip(id, { kind: 'dropped', at: Math.round(seg.to * 100) / 100, count: Math.round(seg.count), expected: seg.expected, by: 'ear' }); // no words will say: the ear's count stands
         }
         if (practice.selection.includes(id)) practice.results.set(id, result);
       } catch (err) {
@@ -3242,7 +3246,7 @@ async function renderSlokaTexts() {
     return;
   }
   const it = items[i];
-  $('#practice-texts-prev').disabled = i <= 0;
+  $('#practice-texts-prev').disabled = i <= 0 || recordingNow(); // no going back while reciting: the stretches are closed in order
   $('#practice-texts-next').disabled = i >= items.length - 1;
   const linkOf = (b) => (b && b.record && b.record.meta && b.record.meta.verse ? b.record.meta.verse : null);
   const cachedLink = linkOf(practice.bases.get(it.id));
@@ -3290,21 +3294,33 @@ async function renderSlokaTexts() {
   if (token !== slokaTextsToken) return;
   if (base) show(base); else { body.textContent = 'This sloka could not be loaded.'; }
 }
-function stepText(delta) {
+const PAGE_TURN_SETTLE_MS = 1200; // a key or click this soon after the ear turned the page by itself agrees with it rather than turning again
+function stepText(delta, how = 'button') {
   const items = slokaTextItems();
   const i = currentTextIndex(items);
   const j = i + delta;
   if (j < 0 || j >= items.length) return;
   if (recordingNow()) {
-    // a page turned while recording: the stretch since the last turn is the sloka that was in
-    // view — off to the speech worker it goes; the page itself turns without touching the
-    // active sloka or the recording
-    const partial = !!(liveEar && liveEar.item && liveEar.item.id === items[i].id && liveEar.expected && liveEar.pos < liveEar.expected * 0.5 && liveEar.counter.state_().elapsedMs >= 2000);
-    if (partial) addSlip(items[i].id, { kind: 'partial', count: Math.round(liveEar.pos), expected: liveEar.expected, by: 'ear' });
-    markSegment(items[i], null, { transcribe: !partial, ...earCountFor(items[i]) });
+    if (delta < 0) return; // no going back while reciting
+    const ear = liveEar;
+    if (ear && ear.turnedAt && performance.now() - ear.turnedAt < PAGE_TURN_SETTLE_MS) { if (ear.log) ear.log.push('pageByHand', ear.samplesRead / ear.rec.ctx.sampleRate, i, how, null, 'ignored: the ear had just turned'); return; }
+    // a page turned while recording is the student's word that the sloka in view is over: the
+    // stretch since the last turn closes where the breath began (or now), goes to the speech
+    // worker, and the ear starts the next sloka's count — a cue it need not wait for. A sloka
+    // the student confirms whole teaches the ear their pace, as a sloka the ear closed does.
+    if (ear && ear.pendingClose) { const c = ear.pendingClose; ear.pendingClose = null; clearTimeout(c.timer); markSegment(c.item, c.to, { transcribe: !c.partial, count: c.count, expected: c.expected, nuclei: c.nuclei }); } // the ear had closed it a moment ago: its close stands
+    else {
+      const st = ear ? ear.counter.state_() : null;
+      const nowSec = ear ? ear.samplesRead / ear.rec.ctx.sampleRate : null;
+      const to = st && st.pauseMs >= 120 ? Math.max(0, nowSec - st.pauseMs / 1000) + 0.3 : null;
+      const partial = !!(ear && ear.item && ear.item.id === items[i].id && ear.expected && ear.pos < ear.expected * 0.5 && st.elapsedMs >= 2000);
+      if (partial) addSlip(items[i].id, { kind: 'partial', count: Math.round(ear.pos), expected: ear.expected, by: 'ear' });
+      else if (ear && ear.item && ear.item.id === items[i].id && ear.expected && ear.learn) ear.learn(st, st.elapsedMs - st.pauseMs, 0, nowSec);
+      markSegment(items[i], to, { transcribe: !partial, ...earCountFor(items[i]), byHand: how });
+    }
     if (practice.quiz) quizTextIndex = j; else recTextIndex = j;
     renderSlokaTexts();
-    earPageTurned();
+    earPageTurned(how);
     return;
   }
   if (practice.quiz && !practice.take) { quizTextIndex = j; renderSlokaTexts(); return; }
@@ -3319,7 +3335,7 @@ function stepText(delta) {
 // the words of the recorded stretch that overlaps it well enough (transcribeTakePart), and is
 // transcribed afresh otherwise.
 let recSegments = null; // { from, parts: [{ from, to, name, promise, transcript }] } in recording time
-function markSegment(item, toSec = null, { transcribe = true, count = null, expected = null, nuclei = null } = {}) {
+function markSegment(item, toSec = null, { transcribe = true, count = null, expected = null, nuclei = null, byHand = null } = {}) {
   const rec = practiceRecorder;
   if (!rec || !rec.active || !recSegments) return;
   const snap = rec.snapshot();
@@ -3327,9 +3343,9 @@ function markSegment(item, toSec = null, { transcribe = true, count = null, expe
   const to = toSec != null ? Math.max(from, Math.min(snap.duration, toSec)) : snap.duration;
   recSegments.from = to;
   if (to - from < 2) { if (liveEar && liveEar.log) liveEar.log.push('segment', to, item ? item.name : '', r2(from), r2(to), 0, null, null, null, 'under 2 s: dropped'); return; } // a page turned back and forth: nothing to hear
-  const seg = { from, to, id: item ? item.id : null, name: item ? item.name : '', promise: null, transcript: null, done: true, ctrl: null, count, expected, nuclei }; // count: the ear's akṣaras for this stretch; nuclei: the counter's raw count
+  const seg = { from, to, id: item ? item.id : null, name: item ? item.name : '', promise: null, transcript: null, done: true, ctrl: null, count, expected, nuclei, byHand: byHand || null }; // count: the ear's akṣaras for this stretch; nuclei: the counter's raw count; byHand: the page turned by the student ('key' | 'button')
   recSegments.parts.push(seg);
-  if (liveEar && liveEar.log) liveEar.log.push('segment', to, seg.name, r2(from), r2(to), transcribe && !recSegments.stopped && wordsWanted() ? 1 : 0, r2(count), expected, nuclei, null);
+  if (liveEar && liveEar.log) liveEar.log.push('segment', to, seg.name, r2(from), r2(to), transcribe && !recSegments.stopped && wordsWanted() ? 1 : 0, r2(count), expected, nuclei, byHand ? `closed by the student (${byHand})` : null);
   // less than half recited, the listening stopped, or the words not wanted: the stretch is kept apart, its words never asked for
   if (!transcribe || recSegments.stopped || !wordsWanted()) { seg.skipped = true; seg.promise = Promise.resolve(null); return; }
   const sr = snap.sampleRate;
@@ -3749,6 +3765,21 @@ function startEar(rec) {
   };
   ear.retarget = target; // the page turned on by the words: the count goes on, the sloka changes
   ear.begin = begin;
+  // a sloka recited whole — closed by the ear, or confirmed by the student turning the page —
+  // teaches the ear this learner: their speed, how their voice counts, and their pace against
+  // the teacher's. sungMs: the time from the sloka's start to the pause; dropMs: sound past the
+  // end that belongs to the next sloka (a run-on)
+  ear.learn = (st, sungMs, dropMs, nowSec) => {
+    const exp = ear.expected;
+    if (!exp) return;
+    const mean = (old, n, v) => (n ? (old * n + v) / (n + 1) : v);
+    const secs = (ear.activeMs - (dropMs || 0)) / 1000;
+    if (secs > 1) { const v = Math.max(0.5, Math.min(15, exp / secs)); ear.aksPerSec = ear.aksPerSec ? mean(ear.aksPerSec, ear.speedN, v) : v; ear.speedN++; }
+    const cr = st.count / exp;
+    if (cr >= 0.6 && cr <= 1.6) { ear.countRatio = mean(ear.countRatio, ear.countRatioN, cr); ear.countRatioN++; }
+    if (ear.teacherMs > 0 && sungMs > 0) { const r = Math.max(0.5, Math.min(2.5, sungMs / ear.teacherMs)); ear.tempo = mean(ear.tempo, ear.tempoN, r); ear.tempoN++; } // against this teacher: kept for the reports, not for the ear
+    if (ear.log) ear.log.push('learn', nowSec, r2(ear.aksPerSec), ear.speedN, r2(ear.countRatio), ear.countRatioN, r2(ear.tempo), ear.tempoN, r2(secs), st.count);
+  };
   begin();
   ear.listener = (ev) => {
     if (!rec.active || liveEar !== ear) return;
@@ -3818,17 +3849,7 @@ function startEar(rec) {
     const partial = !!(ear.item && exp && d.partial); // less than half: not transcribed, not scored
     if (partial) addSlip(ear.item.id, { kind: 'partial', at: Math.round(pauseBegan * 100) / 100, count: Math.round(pos), expected: exp, by: 'ear' });
     else if (ear.item && exp && d.dropped) addSlip(ear.item.id, { kind: 'dropped', at: Math.round(pauseBegan * 100) / 100, count: Math.round(pos), expected: exp, unsure: true, by: 'ear' }); // the words will say
-    else if (exp) {
-      // a sloka recited whole teaches the ear this learner: their speed, how their voice
-      // counts, and their pace against the teacher's
-      const mean = (old, n, v) => (n ? (old * n + v) / (n + 1) : v);
-      const secs = (ear.activeMs - (runOn ? runOnMs : 0)) / 1000; // the sound past the end on a run-on is the next sloka's
-      if (secs > 1) { const v = Math.max(0.5, Math.min(15, exp / secs)); ear.aksPerSec = ear.aksPerSec ? mean(ear.aksPerSec, ear.speedN, v) : v; ear.speedN++; }
-      const cr = st.count / exp;
-      if (cr >= 0.6 && cr <= 1.6) { ear.countRatio = mean(ear.countRatio, ear.countRatioN, cr); ear.countRatioN++; }
-      if (ear.teacherMs > 0) { const r = Math.max(0.5, Math.min(2.5, sung / ear.teacherMs)); ear.tempo = mean(ear.tempo, ear.tempoN, r); ear.tempoN++; } // against this teacher: kept for the reports, not for the ear
-      if (ear.log) ear.log.push('learn', nowSec, r2(ear.aksPerSec), ear.speedN, r2(ear.countRatio), ear.countRatioN, r2(ear.tempo), ear.tempoN, r2(secs), st.count);
-    }
+    else if (exp) ear.learn(st, sung, runOn ? runOnMs : 0, nowSec);
     const now = earItems();
     const i = practice.teach ? 0 : currentTextIndex(now);
     // the page turns now; the stretch is closed a moment later — where the pause began, or a
@@ -3847,6 +3868,7 @@ function startEar(rec) {
     ear.pendingClose = closing;
     if (i + 1 < now.length) {
       if (practice.quiz) quizTextIndex = i + 1; else recTextIndex = i + 1;
+      ear.turnedAt = performance.now(); // a key pressed in the next moment agrees with this turn
       renderSlokaTexts();
       if (ear.log) ear.log.push('turn', ear.samplesRead / sr, i + 1, now[i + 1] ? now[i + 1].name : null);
       begin();
@@ -3860,13 +3882,15 @@ function startEar(rec) {
   rec.addEventListener('level', ear.listener);
   liveEar = ear;
 }
+// For the probes and the replay tool: the ear's own clock (seconds of audio read), null when it is not listening.
+window.__slokabhyasa = Object.assign(window.__slokabhyasa || {}, { earClock: () => (liveEar ? liveEar.samplesRead / liveEar.rec.ctx.sampleRate : null) });
 function stopEar() {
   if (liveEar) { liveEar.rec.removeEventListener('level', liveEar.listener); const ear = liveEar; liveEar = null; savePace(ear); }
   $('#practice-rec-count').textContent = '';
   for (const el of $$('#practice-text-body .sloka-line.current')) el.classList.remove('current');
 }
 // a page turned by hand while the ear listens: the count starts again for the sloka now in view
-function earPageTurned() { if (liveEar) { if (liveEar.log) liveEar.log.push('pageByHand', liveEar.samplesRead / liveEar.rec.ctx.sampleRate, currentTextIndex(slokaTextItems())); liveEar.begin(); } }
+function earPageTurned(how = 'button') { if (liveEar) { if (liveEar.log) liveEar.log.push('pageByHand', liveEar.samplesRead / liveEar.rec.ctx.sampleRate, currentTextIndex(slokaTextItems()), how); liveEar.begin(); } }
 function renderEar(ear, st) {
   const el = $('#practice-rec-count');
   if (ear.done) { el.textContent = `every sloka heard · tap to stop`; return; }
@@ -3947,6 +3971,20 @@ function segmentFor(win) {
 }
 $('#practice-texts-prev').addEventListener('click', () => stepText(-1));
 $('#practice-texts-next').addEventListener('click', () => stepText(1));
+// The keys: Space or → turns to the next sloka, ← to the previous (not while reciting), when
+// the sloka panel shows several slokas and nothing else has the keyboard. While recording the
+// turn is the student's cue that the sloka is over (stepText).
+document.addEventListener('keydown', (e) => {
+  if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+  const t = e.target instanceof Element ? e.target : null; // a key lands on an element; the document itself when sent by a tool
+  if (t && (t.closest('input, textarea, select, [contenteditable="true"]') || (t.closest('[role="dialog"]') && !t.closest('#practice-texts')))) return;
+  if (!(e.key === ' ' || e.key === 'Spacebar' || e.key === 'ArrowRight' || e.key === 'ArrowLeft')) return;
+  const host = $('#practice-texts');
+  if (!host || host.hidden || host.closest('.view')?.classList.contains('active') === false || $('#practice-texts-next').hidden) return;
+  if (slokaTextItems().length < 2) return;
+  e.preventDefault();
+  stepText(e.key === 'ArrowLeft' ? -1 : 1, 'key');
+});
 bindPlayButton($('#practice-texts-play'), basePlayer);
 const textTime = () => { $('#practice-text-time').textContent = basePlayer.loaded && basePlayer.duration ? `${fmtTime(basePlayer.currentTime)} / ${fmtTime(basePlayer.duration)}` : ''; };
 basePlayer.addEventListener('tick', textTime);

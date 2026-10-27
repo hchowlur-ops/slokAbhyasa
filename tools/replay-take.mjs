@@ -10,7 +10,8 @@
 //   environment or arguments: TAKE (the session id's last letters) · NAMES · FOLDER (the
 //   picker folder(s), comma-separated) · LEARNER (profile id) · STT=on|off (hear the words;
 //   off) · MULTI=on|off (the words in a take of several; off) · HEAD=on|off (the next
-//   sloka's opening by sound; on) · KEEP=1 · APP (http://127.0.0.1:8787/) · CHROME (path)
+//   sloka's opening by sound; on) · KEYS=17.2,37.4 (seconds into the recording at which Space
+//   is pressed, the student turning the page) · KEEP=1 · APP (http://127.0.0.1:8787/) · CHROME (path)
 import { spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
@@ -28,6 +29,7 @@ const STT = (process.env.STT || 'off') === 'on';
 const MULTI = (process.env.MULTI || 'off') === 'on';
 const HEAD = (process.env.HEAD || 'on') === 'on';
 const KEEP = process.env.KEEP === '1';
+const KEYS = (process.env.KEYS || '').split(',').map((s) => Number(s.trim())).filter((x) => Number.isFinite(x) && x > 0).sort((a, b) => a - b); // seconds into the recording at which Space is pressed (the student turning the page)
 const LEARNER = process.env.LEARNER || 'p-20261008195044-8m0l';
 const CHROME = process.env.CHROME || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const DEBUG = 9431;
@@ -84,7 +86,13 @@ try {
   await until(`document.querySelector('#practice-rec-count').textContent.length > 0`, 'the recording to begin', 120000);
   log('recording began', ((Date.now() - clicked) / 1000).toFixed(1), 's after the click');
   const t0 = Date.now();
-  while (Date.now() - t0 < (SECONDS + 0.8) * 1000) await sleep(250);
+  let nextKey = 0;
+  // the keys go by the recording's own clock (the timer under the record button), not the wall: the fake microphone can lag
+  const timerSec = async () => { const clock = await evaluate(`window.__slokabhyasa && window.__slokabhyasa.earClock ? window.__slokabhyasa.earClock() : null`); if (clock != null) return clock; const t = await evaluate(`document.querySelector('#practice-timer').textContent`); const m = String(t).match(/(d+):(d+)(?:.(d+))?/); return m ? Number(m[1]) * 60 + Number(m[2]) + (m[3] ? Number(`0.${m[3]}`) : 0) : null; }; // the ear's clock first (the timer runs on animation frames, which headless Chrome may not give)
+  while (Date.now() - t0 < (SECONDS + 0.8) * 1000) {
+    await sleep(KEYS.length ? 60 : 250);
+    if (nextKey < KEYS.length) { const rec = await timerSec(); if (rec != null && rec >= KEYS[nextKey]) { await evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true }))`); log('Space pressed at', rec.toFixed(1), 's of the recording (wall', ((Date.now() - t0) / 1000).toFixed(1), 's)'); nextKey++; } }
+  }
   await pg(`document.querySelector('#practice-rec').click();`);
   log('stopped; waiting for the comparison');
   await until(`!document.querySelector('#practice-results').hidden && document.querySelectorAll('#take-cards .take-card').length === ${NAMES.length}`, 'the cards', 120000);

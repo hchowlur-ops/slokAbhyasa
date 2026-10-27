@@ -6,6 +6,15 @@ last package. The README describes every feature as it stands; this file says wh
 
 ## Unreleased — since 1.6.0 (branch `AcousticAssessment`, 9–22 October 2026)
 
+### 27 October 2026
+
+- **Turn the page from the keyboard, and tell the ear.** In Self Evaluation and a quiz the
+  space bar or → turns to the next sloka and ← to the previous; while you recite, a turn
+  is your word that the sloka is over: the stretch closes where your breath began, the
+  ear starts the next count at once and learns your pace from the sloka you confirmed, and
+  the second opinion keeps your cut. A key pressed just as the ear turns by itself agrees
+  with it rather than turning twice. Previous and ← are off while you recite.
+
 ### 24 October 2026
 
 - **A second opinion on the sloka boundaries.** After a take of several slokas the app

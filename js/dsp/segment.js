@@ -96,7 +96,8 @@ export function expectations(items, pace, sungTotal) {
 // sound). `soundCost(i, fromSec, toSec)`, when given, adds a cost per candidate segment from
 // the sound itself (how unlike the teacher's recording it is), weighted by `soundWeight`.
 // Returns null when the take has fewer pauses than cuts needed.
-export function cutsFor(F, items, expected, { measure = 'sung', minGapSec = MIN_GAP_SEC, lastShortWeight = LAST_SHORT_WEIGHT, gapCost = GAP_COST, gapFreeSec = GAP_FREE_SEC, mask = null, soundCost = null, soundWeight = 1 } = {}) {
+export const PIN_REACH_SEC = 1.5; // a cut the student made by turning the page pins the boundary to the nearest pause within this
+export function cutsFor(F, items, expected, { measure = 'sung', minGapSec = MIN_GAP_SEC, lastShortWeight = LAST_SHORT_WEIGHT, gapCost = GAP_COST, gapFreeSec = GAP_FREE_SEC, mask = null, soundCost = null, soundWeight = 1, pinned = null } = {}) {
   const N = items.length;
   const hop = F.hopSec;
   const m = mask || soundMaskOf(F).mask;
@@ -106,6 +107,16 @@ export function cutsFor(F, items, expected, { measure = 'sung', minGapSec = MIN_
   // the boundaries: the first sound, every pause, the end of the last sound
   const B = [{ from: first, to: first, len: 0 }, ...gaps, { from: last, to: last, len: 0 }];
   const G = B.length - 1; // the index of the end boundary
+  // the boundaries pinned by the student's page turns: boundary i (after sloka i−1) must be the pause nearest `at`
+  const pin = new Int32Array(N + 1).fill(-1);
+  for (const p of pinned || []) {
+    const i = Number(p.after) + 1;
+    if (!(i >= 1 && i <= N - 1) || !Number.isFinite(p.at)) continue;
+    let best = -1; let d = PIN_REACH_SEC;
+    for (let b = 1; b < G; b++) { const dist = p.at < B[b].from ? B[b].from - p.at : p.at > B[b].to ? p.at - B[b].to : 0; if (dist < d) { d = dist; best = b; } }
+    if (best >= 0) pin[i] = best;
+  }
+  const allowed = (i, b) => pin[i] < 0 || pin[i] === b;
   const sm = fillShortGaps(m, Math.round(SUNG_FILL_SEC / hop)); // the sung time counts the short quiet inside a line as sound
   const pre = new Float64Array(sm.length + 1); // frames of sound before frame k
   for (let k = 0; k < sm.length; k++) pre[k + 1] = pre[k] + (sm[k] ? 1 : 0);
@@ -137,6 +148,7 @@ export function cutsFor(F, items, expected, { measure = 'sung', minGapSec = MIN_
   for (let i = 1; i <= N; i++) {
     for (let b = i; b <= G; b++) {
       if ((i === N) !== (b === G)) continue; // only the last sloka ends at the end
+      if (!allowed(i, b)) continue;
       let best = INF; let at = -1;
       for (let a = i - 1; a < b; a++) {
         const f = fwd[i - 1][a];
@@ -156,6 +168,7 @@ export function cutsFor(F, items, expected, { measure = 'sung', minGapSec = MIN_
       let best = INF;
       for (let b = a + 1; b <= G; b++) {
         if ((i === N - 1) !== (b === G)) continue;
+        if (!allowed(i + 1, b)) continue;
         const w = bwd[i + 1][b];
         if (w === INF) continue;
         const c = cost(i, a, b) + cutCost(b) + w;
@@ -183,7 +196,7 @@ export function cutsFor(F, items, expected, { measure = 'sung', minGapSec = MIN_
       const c = fwd[i][b] + bwd[i][b];
       if (c < runnerCost) { runnerCost = c; runner = b; }
     }
-    boundaries.push({ after: items[i - 1].name, before: items[i].name, from: r3(B[chosen].from), to: r3(B[chosen].to), len: r3(B[chosen].len), runnerUp: runner == null || runnerCost === INF ? null : { from: r3(B[runner].from), to: r3(B[runner].to), len: r3(B[runner].len), extraCost: r3(runnerCost - fwd[N][G]) } });
+    boundaries.push({ after: items[i - 1].name, before: items[i].name, from: r3(B[chosen].from), to: r3(B[chosen].to), len: r3(B[chosen].len), pinned: pin[i] >= 0, runnerUp: runner == null || runnerCost === INF ? null : { from: r3(B[runner].from), to: r3(B[runner].to), len: r3(B[runner].len), extraCost: r3(runnerCost - fwd[N][G]) } });
   }
   return { measure, cost: r3(fwd[N][G]), pauses: gaps.length, first: r3(first), last: r3(last), segments, boundaries };
 }
@@ -197,7 +210,7 @@ export function cutsFor(F, items, expected, { measure = 'sung', minGapSec = MIN_
 // stop as a share of the last sloka's plan, when known — settles it: from LAST_WHOLE_FROM
 // only 'whole' is tried, under LAST_PARTIAL_TO only 'partialLast'. Returns cutsFor's result
 // with `scale`, `hypothesis` ('whole' | 'partialLast') and `hint`.
-export function fitCuts(F, items, expected, { sungTotal = null, scalePrior = SCALE_PRIOR, lastPos = null, ...opts } = {}) {
+export function fitCuts(F, items, expected, { sungTotal = null, scalePrior = SCALE_PRIOR, lastPos = null, ...opts } = {}) { // opts: cutsFor's, `pinned` among them
   const hint = lastPos == null || !Number.isFinite(Number(lastPos)) ? 'none' : Number(lastPos) >= LAST_WHOLE_FROM ? 'whole' : Number(lastPos) < LAST_PARTIAL_TO ? 'partialLast' : 'open';
   const N = items.length;
   if (!expected || expected.length !== N) return null;
@@ -224,7 +237,7 @@ export function fitCuts(F, items, expected, { sungTotal = null, scalePrior = SCA
 // All three methods on a take's features (dsp/features.js: `rmsDb`, `hopSec`), and the one
 // to go by: the plan at the learner's speed when known, else the teacher at their tempo,
 // else the take's own shares. `soundCost(i, fromSec, toSec)` is optional (see cutsFor).
-export function segmentTake(F, items, { pace = null, minGapSec = MIN_GAP_SEC, soundCost = null, soundWeight = 1, lastPos = null } = {}) {
+export function segmentTake(F, items, { pace = null, minGapSec = MIN_GAP_SEC, soundCost = null, soundWeight = 1, lastPos = null, pinned = null } = {}) {
   if (!F || !F.hopSec || !(F.rmsDb || F.active) || !items || !items.length) return { error: 'no features or no slokas' };
   const { mask, thresholdDb, floorDb, peakDb } = soundMaskOf(F);
   const { first, last, gaps } = pausesOf(mask, F.hopSec, { minGapSec });
@@ -233,13 +246,13 @@ export function segmentTake(F, items, { pace = null, minGapSec = MIN_GAP_SEC, so
   for (let k = 0; k < sm.length; k++) if (sm[k]) sungTotal++;
   sungTotal *= F.hopSec;
   const exp = expectations(items, pace, sungTotal);
-  const opts = { minGapSec, mask, soundCost, soundWeight, lastPos };
+  const opts = { minGapSec, mask, soundCost, soundWeight, lastPos, pinned };
   const results = {};
   if (exp.teacher) results.teacher = fitCuts(F, items, exp.teacher, { ...opts, measure: 'span', sungTotal });
   if (exp.plan) results.plan = fitCuts(F, items, exp.plan, { ...opts, measure: 'sung', sungTotal });
   if (exp.share) results.share = cutsFor(F, items, exp.share, { ...opts, measure: 'sung', lastShortWeight: 1 });
   const chosen = results.plan ? 'plan' : results.teacher ? 'teacher' : results.share ? 'share' : null;
-  return { version: 1, items: items.map((it) => ({ name: it.name, teacherSec: r3(it.teacherSec), total: it.total })), pace: pace ? { tempoRatio: pace.tempoRatio || null, aksPerSec: pace.aksPerSec || null } : null, quiet: { thresholdDb, floorDb, peakDb }, sungTotal: r3(sungTotal), spanTotal: r3(last - first), pauses: gaps.length, sound: !!soundCost, lastPos: r3(lastPos), chosen, results };
+  return { version: 1, items: items.map((it) => ({ name: it.name, teacherSec: r3(it.teacherSec), total: it.total })), pace: pace ? { tempoRatio: pace.tempoRatio || null, aksPerSec: pace.aksPerSec || null } : null, quiet: { thresholdDb, floorDb, peakDb }, sungTotal: r3(sungTotal), spanTotal: r3(last - first), pauses: gaps.length, sound: !!soundCost, lastPos: r3(lastPos), pinned: (pinned || []).map((p) => ({ after: p.after, at: r3(p.at) })), chosen, results };
 }
 
 const r3 = (x) => (x == null || !Number.isFinite(x) ? null : Math.round(x * 1000) / 1000);
