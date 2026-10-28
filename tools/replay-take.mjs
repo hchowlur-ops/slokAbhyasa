@@ -107,7 +107,12 @@ try {
       await pg(`document.querySelectorAll('#take-cards .take-card:not(.whole)')[0].click();`);
       await until(`!document.querySelector('#report-body').hidden`, "the first sloka's report", 30000);
       await sleep(600);
-      log('after a card click: report of', await evaluate(`document.querySelector('#report-name').textContent`), '· take view hidden:', await evaluate(`document.querySelector('#take-view').hidden`), '· Transcribe button:', await evaluate(`document.querySelector('#stt-run').hidden ? 'hidden' : document.querySelector('#stt-run').textContent`));
+      log('after a card click: report of', await evaluate(`document.querySelector('#report-name').textContent`), '· take view hidden:', await evaluate(`document.querySelector('#take-view').hidden`), '· transcript block hidden:', await evaluate(`document.querySelector('#transcript').hidden`), '· card buttons:', await evaluate(`[...document.querySelectorAll('#take-cards .take-card')].map(c => c.querySelector('.tc-name').textContent + ':' + (c.querySelector('.tc-play').hidden ? '-' : 'play') + '/' + (c.querySelector('.tc-words').hidden ? '-' : 'words')).join(' ')`));
+      // a card's play button: the sloka alone; the same button again pauses
+      await pg(`document.querySelector('#take-cards .take-card .tc-play').click();`); await sleep(700);
+      log('card play:', await evaluate(`document.querySelector('#take-cards .take-card .tc-play').classList.contains('playing') ? 'playing' : 'not playing'`));
+      await pg(`document.querySelector('#take-cards .take-card .tc-play').click();`); await sleep(300);
+      log('card play again:', await evaluate(`document.querySelector('#take-cards .take-card .tc-play').classList.contains('playing') ? 'still playing' : 'paused'`));
       await pg(`document.querySelector('#analysis').open = true;`); await sleep(500);
       const shot = await send('Page.captureScreenshot', { format: 'png' }); fs.writeFileSync(path.join(OUT, 'report.png'), Buffer.from(shot.data, 'base64'));
       await pg(`document.querySelector('#take-cards .take-card.active').click();`);

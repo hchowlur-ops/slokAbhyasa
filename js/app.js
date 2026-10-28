@@ -1795,6 +1795,10 @@ const bestBeforeOf = (id) => (practice.progress && practice.progress.slokas && p
 // comparison finds a pause the sloka does not have. Until then neither is shown or graded.
 // Less than half of the sloka was recited (or none of it): not transcribed, not scored.
 const partialOf = (id) => isPartial(practice.slips.get(id) || []);
+// The ear's count alone says akṣaras were dropped only at the bar the words use — four or
+// more of the sloka's, a tenth of it at least: a count two or three short is within the
+// counter's error on a voice it has not learnt (the ear's log of 22–28 October).
+const earShortfallCounts = (slip) => slip.expected > 0 && slip.count != null && slip.expected - slip.count >= 4 && slip.count <= 0.9 * slip.expected;
 function slipsOf(id) {
   const raw = practice.slips.get(id) || [];
   const ph = practice.phonology.get(id);
@@ -1810,7 +1814,7 @@ function slipsOf(id) {
   for (const slip of raw) {
     if (!slip.unsure) { out.push(slip); continue; }
     const { unsure, ...sure } = slip;
-    if (slip.kind === 'dropped') { if (ph && ph.counts && ph.counts.missing >= 2) out.push({ ...sure, by: 'words' }); else if (!wordsWanted() && !ph) out.push({ ...sure, by: 'ear' }); continue; } // no words will say: the ear's count stands
+    if (slip.kind === 'dropped') { if (ph && ph.counts && ph.counts.missing >= 2) out.push({ ...sure, by: 'words' }); else if (!wordsWanted() && !ph && earShortfallCounts(slip)) out.push({ ...sure, by: 'ear' }); continue; } // no words will say: the ear's count stands, at the words' own bar
     if (slip.kind === 'stall') { // a pause the sloka does not have, found by the comparison at that very moment
       const devs = res && Array.isArray(res.deviations) ? res.deviations : [];
       const near = slip.at != null && devs.some((d) => d.tHeard && (d.types || [d.type]).includes('timing') && slip.at >= d.tHeard[0] - 0.75 && slip.at <= d.tHeard[1] + 0.75);
@@ -1954,7 +1958,7 @@ const drawBaseWave = bindWave($('#practice-base-wave'), basePlayer, () => practi
 const drawTakeWave = bindWave($('#take-wave'), heardPlayer, () => (practice.take ? practice.take.samples : null), $('#take-view-time'), $('#take-view-dur'), takeWaveMarks); // the whole recital, with the cuts
 bindPlayButton($('#practice-base-play'), basePlayer);
 bindPlayButton($('#res-play-base'), basePlayer);
-bindRangePlayButton($('#res-play-heard'), heardPlayer, () => (practice.result && !takeViewOn() ? heardPlayRange(practice.result) : null)); // the open sloka's own sound, not the whole take
+bindRangePlayButton($('#res-play-heard'), heardPlayer, () => { cardPlayingId = practice.activeId; return practice.result && !takeViewOn() ? heardPlayRange(practice.result) : null; }); // the open sloka's own sound, not the whole take
 // What Yours plays for the open sloka: the stretch it was compared on, from its first sound
 // after the breath to the end of its last (dsp/segment.js playRangeOf) — the window itself is
 // loose and begins inside the previous sloka's tail.
@@ -2841,7 +2845,7 @@ async function compareMissing(p0) {
         // but the ear closed with its count at the plan's end is taken as recited
         if (!wordsWanted() && practice.selection.length > 1) {
           const seg = earSegmentFor(id);
-          if (seg && confirmByEar(result, { count: seg.count, expected: seg.expected }) && seg.count < seg.expected - 3 && !slipsOf(id).some((x) => x.kind === 'dropped')) addSlip(id, { kind: 'dropped', at: Math.round(seg.to * 100) / 100, count: Math.round(seg.count), expected: seg.expected, by: 'ear' }); // no words will say: the ear's count stands
+          if (seg && confirmByEar(result, { count: seg.count, expected: seg.expected }) && seg.count < seg.expected - 3 && !slipsOf(id).some((x) => x.kind === 'dropped')) addSlip(id, { kind: 'dropped', at: Math.round(seg.to * 100) / 100, count: Math.round(seg.count), expected: seg.expected, unsure: true, by: 'ear' }); // settled by slipsOf: the words, or the ear at the words' bar
         }
         if (practice.selection.includes(id)) practice.results.set(id, result);
       } catch (err) {
@@ -3006,30 +3010,20 @@ function renderTakeBoard(ids) {
   $('#take-sub').textContent = `${bits.join(' · ')} — the overall is the mean over the slokas recited`;
   const cards = $('#take-cards');
   cards.innerHTML = '';
-  if (practice.selection.length > 1) {
-    // the whole recital, a card of its own: no sloka chosen
-    const whole = document.createElement('button');
-    whole.type = 'button';
-    whole.setAttribute('role', 'tab');
-    whole.setAttribute('aria-selected', takeViewOn() ? 'true' : 'false');
-    whole.className = `take-card whole${takeViewOn() ? ' active' : ''}`;
-    whole.innerHTML = '<span class="tc-name">The whole recital</span><span class="tc-score">' + fmtTime(practice.take ? practice.take.duration : 0) + '</span><span class="tc-note">play it all · where it was cut</span>';
-    whole.title = takeViewOn() ? 'The whole recital is shown below' : 'Show the whole recital: play it all, and where it was cut';
-    whole.addEventListener('click', () => openTakeView());
-    cards.appendChild(whole);
-  }
+  setHidden($('#take-whole'), practice.selection.length < 2 || !practice.take);
   for (const id of ids) {
     const r = practice.results.get(id);
     const open = !takeViewOn() && id === practice.activeId;
-    const card = document.createElement('button');
-    card.type = 'button';
+    const card = document.createElement('div'); // a div, not a button: it holds buttons of its own
+    card.dataset.id = id;
     card.setAttribute('role', 'tab');
+    card.tabIndex = 0;
     card.setAttribute('aria-selected', open ? 'true' : 'false');
     const { overall, grade: g } = isReport(r) ? reportOverall(id) : { overall: null, grade: null };
     const sc = reportScores(id);
     const bad = !!(r && (r.error || partialOf(id) || (isReport(r) && !sc.matched)));
     card.className = `take-card${open ? ' active' : ''}${bad ? ' bad' : ''}${!r ? ' pending' : ''}`;
-    card.innerHTML = '<span class="tc-name"></span><span class="tc-score"></span><span class="tc-grade"></span><span class="tc-note"></span><span class="tc-busy spinner" aria-hidden="true" hidden></span>';
+    card.innerHTML = '<span class="tc-name"></span><span class="tc-score"></span><span class="tc-grade"></span><span class="tc-note"></span><span class="tc-actions"><button class="btn-play tiny play-heard tc-play" type="button" aria-label="Play this sloka" title="Play this sloka — your recitation of it alone"><svg class="ico-play" viewBox="0 0 24 24"><path fill="currentColor" d="M8 5v14l11-7z"/></svg><svg class="ico-pause" viewBox="0 0 24 24"><path fill="currentColor" d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg></button><button class="tc-btn tc-words" type="button" aria-label="Hear the words of this sloka" title="Hear the words of this sloka with the speech model (a download the first time), then open its report with them"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 6h16v2H4zm0 5h16v2H4zm0 5h10v2H4z"/></svg><span class="spinner tc-spin" aria-hidden="true" hidden></span></button></span><span class="tc-busy spinner" aria-hidden="true" hidden></span>';
     $('.tc-name', card).textContent = nameOf(id);
     $('.tc-name', card).title = nameOf(id);
     const noteEl = $('.tc-note', card);
@@ -3052,9 +3046,56 @@ function renderTakeBoard(ids) {
     }
     card.title = busy ? 'Evaluating…' : open ? 'This report is open below · click again for the whole recital' : 'Open this sloka\'s report';
     card.addEventListener('click', () => openReport(id));
+    card.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); openReport(id); } });
+    // its own sound, and its words on demand
+    const ready = isReport(r) && !partialOf(id) && !!(sc && sc.matched) && !!practice.take;
+    const playBtn = $('.tc-play', card);
+    const wordsBtn = $('.tc-words', card);
+    setHidden(playBtn, !ready);
+    setHidden(wordsBtn, !ready);
+    playBtn.classList.toggle('playing', ready && cardPlayingId === id && heardPlayer.playing);
+    const transcribing = cardBusy.has(id);
+    setHidden($('.tc-spin', wordsBtn), !transcribing);
+    $('svg', wordsBtn).style.display = transcribing ? 'none' : '';
+    wordsBtn.classList.toggle('done', !transcribing && practice.wordSims.has(id));
+    wordsBtn.title = transcribing ? 'Hearing the words…' : practice.wordSims.has(id) ? 'The words are in: hear them again' : wordsBtn.title;
+    playBtn.addEventListener('click', (e) => { e.stopPropagation(); cardPlay(id); });
+    wordsBtn.addEventListener('click', (e) => { e.stopPropagation(); cardTranscribe(id); });
     cards.appendChild(card);
   }
   if (takeViewOn() && !$('#take-view').hidden) drawTakeWave(); // a comparison that just came in moves the teacher's marks
+}
+// A card's play button: the sloka's own sound (heardPlayRange); the same button again pauses.
+let cardPlayingId = null;
+function cardPlay(id) {
+  const r = practice.results.get(id);
+  if (!isReport(r) || !heardPlayer.loaded) return;
+  getCtx();
+  if (heardPlayer.playing && cardPlayingId === id) { heardPlayer.pause(); return; }
+  const range = heardPlayRange(r) || (r.matched ? r.matched.heard : null);
+  if (!range) return;
+  stopDuet();
+  cardPlayingId = id;
+  heardPlayer.playRange(range[0], range[1]);
+}
+function syncCardPlay() { for (const el of $$('#take-cards .tc-play')) { const card = el.closest('.take-card'); el.classList.toggle('playing', heardPlayer.playing && !!card && card.dataset.id === cardPlayingId); } }
+for (const ev of ['play', 'pause', 'ended', 'rangeend']) heardPlayer.addEventListener(ev, syncCardPlay);
+$('#take-play-heard').addEventListener('click', () => { cardPlayingId = null; });
+// A card's transcribe icon: the sloka's words heard now (whatever the Settings say), the
+// icon busy meanwhile; then its report opens on the Analysis fold with the words shown.
+const cardBusy = new Set();
+async function cardTranscribe(id) {
+  if (cardBusy.has(id) || !practice.take) return;
+  cardBusy.add(id);
+  renderTakeBoard(reportIds());
+  try { getCtx(); await transcribeSloka(id, true); } catch (err) { toast(err.message, 'error', 8000); } finally { cardBusy.delete(id); }
+  if (!practice.take || !practice.results.has(id)) return;
+  practice.takeView = false;
+  if (practice.activeId === id) showActiveReport(); else await openReport(id);
+  const fold = $('#analysis');
+  if (!fold.open) fold.open = true;
+  redrawAll();
+  $('#transcript').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 function renderReportBrowser() {
   const ids = reportIds();
@@ -3093,7 +3134,6 @@ function renderTakeView() {
   renderReportBrowser();
   setHidden($('#report-error'), true);
   setHidden($('#report-body'), true);
-  setHidden($('#stt-run'), true);
   $('#res-play-both').disabled = true; // both together belongs to one sloka
   resetTranscriptUI();
   setEvaluating(false);
@@ -3154,8 +3194,6 @@ function showActiveReport() {
   setHidden($('#report-body'), false);
   renderResult(r);
   renderQuizScore();
-  setHidden($('#stt-run'), practice.quiz && !practice.quizAttempt); // the open sloka's words on demand
-  $('#stt-run').textContent = 'Transcribe this sloka';
   if (wordsWanted() || practice.heardTranscripts.size) transcribeBoth(false);
   else $('#stt-summary').textContent = sttSettings.auto ? WORDS_MULTI_NOTE : WORDS_OFF_NOTE; // the sloka's words still shown; yours not heard
   // its words (or the quiz's score) still on their way: Evaluating… until they come (the
@@ -4979,12 +5017,15 @@ $('#dev-filters').addEventListener('click', (e) => {
   applyDevFilter();
 });
 
+// Whether the Transcript block shows for a report: the words are heard automatically, or
+// were asked for from the sloka's card (and are in the take's cache).
+const transcriptWanted = (res) => !!res && (wordsWanted() || practice.heardTranscripts.has(partKey(heardPartOf(res))));
 function renderResult(res) {
   practice.result = res;
   practice.selected = null;
   setHidden($('#practice-results'), false);
   placeDuet(); // "Play both together": beside the scoreboard's ring, or at the top of a quiz's report
-  setHidden($('#transcript'), hideTranscript); // the words, when wanted on screen
+  setHidden($('#transcript'), hideTranscript || !transcriptWanted(res)); // the words, when wanted on screen and in (or on their way)
   renderTiles(res, practice.activeId);
   const notes = $('#result-notes');
   notes.innerHTML = '';
@@ -5461,7 +5502,6 @@ const sttProgress = mirrored(progressUI('stt-progress'), 'words'); // the take's
   }
   sttAutoBoxes.add(cb);
 }
-$('#stt-run').addEventListener('click', () => transcribeBoth(true));
 
 function resetTranscriptUI() {
   sttPractice.base = null;
@@ -5576,31 +5616,35 @@ async function transcribeAllParts() {
     if (practice.take !== take) return;
     if (practice.wordSims.has(id) || partialOf(id)) continue; // less than half recited: no words asked for
     if (practice.listenStopped && id !== practice.activeId) continue; // the listening was stopped: only the open report's words
-    const res = practice.results.get(id);
-    try {
-      const heardT = await transcribeTakePart(heardPartOf(res), false);
-      if (practice.take !== take || !heardT) return;
-      const base = await ensureBase(id);
-      const ref = referenceWords(base, res);
-      if (!ref) continue; // the sloka has no words: nothing to compare the words with
-      const { ws } = await hearAgainIfPoor(res, ref, heardT, base.duration, false, planOf({ id }));
-      if (practice.take !== take || !ws) continue;
-      if (!practice.wordSims.has(id)) {
-        practice.wordSims.set(id, ws.similarity);
-        if (ws.phonology) practice.phonology.set(id, ws.phonology);
-        setWordSlips(id, ws.corrections);
-      }
-      // a "not this sloka" verdict from the timbre is overturned when the words say otherwise —
-      // for these reports as for the open one, else a take whose sound sits far from the
-      // recording's (another pace, another microphone) scores 0 on every sloka but the open one
-      if (confirmByWords(res, ws.similarity, tokenizeTranscript(ref).length, { wordShare: ws.wordShare }) && practice.activeId === id) showActiveReport();
-      refreshVerdicts();
-      syncSession();
-    } catch (err) {
-      if (isStopped(err)) return;
-      // the report says why when it is opened
-    }
+    try { await transcribeSloka(id, false); } catch (err) { if (isStopped(err)) return; /* the report says why when it is opened */ }
   }
+}
+// One sloka's words from its stretch of the take, and what they say: its similarity, its
+// phonology and its word slips kept, a "not this sloka" verdict from the timbre overturned
+// when the words say otherwise. The background pass and the card's icon (`force`: heard now,
+// whatever the Settings say). Returns the hearing, or null when nothing came.
+async function transcribeSloka(id, force = false) {
+  const take = practice.take;
+  const res = practice.results.get(id);
+  if (!take || !isReport(res) || partialOf(id)) return null;
+  const heardT = await transcribeTakePart(heardPartOf(res), force);
+  if (practice.take !== take || !heardT) return null;
+  const base = await ensureBase(id);
+  const ref = referenceWords(base, res);
+  if (!ref) return heardT; // the sloka has no words: nothing to compare the words with
+  const { ws } = await hearAgainIfPoor(res, ref, heardT, base.duration, force, planOf({ id }));
+  if (practice.take !== take || !ws) return heardT;
+  if (force || !practice.wordSims.has(id)) {
+    practice.wordSims.set(id, ws.similarity);
+    if (ws.phonology) practice.phonology.set(id, ws.phonology);
+    setWordSlips(id, ws.corrections);
+  }
+  // for these reports as for the open one, else a take whose sound sits far from the
+  // recording's (another pace, another microphone) scores 0 on every sloka but the open one
+  if (confirmByWords(res, ws.similarity, tokenizeTranscript(ref).length, { wordShare: ws.wordShare }) && practice.activeId === id) showActiveReport();
+  refreshVerdicts();
+  syncSession();
+  return heardT;
 }
 function stopTakeTranscriptions() {
   for (const job of practice.heardJobs.values()) job.ctrl.abort();
@@ -5638,7 +5682,7 @@ let sttBothInflight = null;
 function transcribeBoth(force) {
   if (!practice.base || !practice.take || !practice.result) { if (force) toast('Record an attempt first.', 'info'); return Promise.resolve(); }
   if (sttBothInflight) return sttBothInflight;
-  const btn = $('#stt-run');
+  const btn = { disabled: false }; // the words are asked for from the sloka's card now
   const id = practice.activeId;
   const take = practice.take;
   const current = () => practice.activeId === id && practice.take === take && !!practice.result;
@@ -5813,7 +5857,7 @@ function renderTranscriptDiff() {
     ? `${Math.round(sm.similarity * 100)}% of the sloka's ${sttPractice.base.typed ? 'typed text' : 'text'} heard (${sm.matched} of ${ai.length} words) · ${sm.missing} missing · ${sm.extra} extra or different · ${sttLanguageLabel(sttPractice.base.language)}`
     : 'Nothing was recognised in the sloka. Try again.';
   setHidden($('#stt-out'), false);
-  $('#stt-run').textContent = 'Transcribe again';
+  setHidden($('#transcript'), hideTranscript); // the words are on screen
   settleEvaluating(); // the open report's words are on screen
 }
 

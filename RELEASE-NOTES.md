@@ -8,6 +8,16 @@ last package. The README describes every feature as it stands; this file says wh
 
 ### 28 October 2026
 
+- **Every sloka's card plays and transcribes.** A play button on each card hears that
+  sloka alone; a words icon hears its words now, whatever the Settings say, and opens its
+  report on the Analysis fold with the words shown. The whole recital's play button sits
+  under the overall score; its card is gone (the wave still shows when no card is chosen).
+  The report's Transcript block shows only once the words are in, and its own Transcribe
+  button is gone.
+- **"Akṣaras dropped" by the count alone needs a real shortfall.** When the words are not
+  heard, the ear's count marks a sloka dropped only at the bar the words use: four or more
+  akṣaras short and a tenth of the plan. A take of 92 was graded Needs practice for two
+  slokas counted two and three short.
 - **Yours plays the sloka's own sound.** In a sloka's report, Yours and Play both together
   start at the sloka's first sound after the breath and end after its last, instead of at
   the looser edges of the stretch it was compared on, which began inside the previous

@@ -300,17 +300,19 @@ slokas you had ticked there.
 sloka — its score, grade and what went wrong, a spinner while it is being evaluated — and
 the report below is the open card's; click a card to open its report. The sloka panel
 above switches with the open report, so its play button and text always belong to it. With
-several slokas the results open on the **whole recital** first, a card of its own before the
-slokas': its play button plays the whole take, and its wave shows where the teacher's slokas
-were matched (shaded, with their names), where the ear cut the recital (gold lines; a thick
-one is a page you turned) and where the second opinion cut it (dashed; thick when pinned to
-your turn); click the wave to play from there. Click a sloka's card to open its report — Yours
-then plays that sloka alone, from its first sound after the breath to the end of its last
-(the stretch it was compared on is looser at both ends, and would begin inside the previous
-sloka's tail), and the words, scores, chart and deviations are its —
-and the open card again, or the whole-recital card, to come back. A **Transcribe this sloka**
-button in the Transcript block hears the open sloka's words on demand (the words of a take of
-several slokas are not heard unless asked); once they are in it reads Transcribe again. Once the take is compared, the **words of every
+several slokas, a play button under the overall score, **Yours — the whole recital**, plays
+the whole take, and the results open with no card chosen: the take's wave, showing where the
+teacher's slokas were matched (shaded, with their names), where the ear cut the recital (gold
+lines; a thick one is a page you turned) and where the second opinion cut it (dashed; thick
+when pinned to your turn); click the wave to play from there. Every sloka's card carries two
+buttons of its own: **play** hears that sloka alone, from its first sound after the breath to
+the end of its last (the stretch it was compared on is looser at both ends, and would begin
+inside the previous sloka's tail); **the words icon** hears its words now, whatever the
+Settings say, the icon busy meanwhile, and then opens its report on the Analysis fold with
+the words shown. Click a card to open its report — Yours there plays that sloka alone too,
+and the words, scores, chart and deviations are its — and the open card again to come back
+to the wave. The report's Transcript block shows only once the sloka's words are in (or on
+their way, when the words are heard automatically). Once the take is compared, the **words of every
 report are transcribed in the background**, in turn, the open one first (each sloka's own
 stretch of the recording), and their word scores filled in as they arrive — so Next opens a
 report with its words ready, and the session's scores cover every sloka. Better still, turn
@@ -403,7 +405,9 @@ A sloka the take stops short of by three akṣaras or more is marked "akṣaras 
 the ear at the stop (unsure until the words confirm akṣaras missing), as it would be at a
 close — one sloka or several alike; and the words alone raise it when four or more of
 the sloka's akṣaras (a tenth of it at least) are missing from what was heard, since the
-ear's count cannot be trusted for a voice it has not learnt. Its grade is then Needs
+ear's count cannot be trusted for a voice it has not learnt. When the words are not heard,
+the ear's count stands only at that same bar — four or more short, and a tenth of the
+plan: a count two or three short is within its error. Its grade is then Needs
 practice at the full score: a dropped pāda is not a self-correction, so nothing is
 deducted.
 

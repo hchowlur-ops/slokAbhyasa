@@ -413,6 +413,14 @@
                 <ul class="score-moments" id="score-moments" hidden></ul>
               </div>
             </div>
+            <!-- the whole recital, under the overall: play it all -->
+            <div class="take-whole" id="take-whole">
+              <button class="btn-play small play-heard" id="take-play-heard" type="button" aria-label="Play the whole recital" title="Play the whole recital">
+                <svg class="ico-play" viewBox="0 0 24 24"><path fill="currentColor" d="M8 5v14l11-7z"/></svg><svg class="ico-pause" viewBox="0 0 24 24"><path fill="currentColor" d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>
+              </button>
+              <span>Yours — the whole recital</span>
+              <span class="mono muted small"><span id="take-view-time">0:00.0</span> / <span id="take-view-dur"></span></span>
+            </div>
             <div class="take-cards" id="take-cards" role="tablist" aria-label="The slokas of this take"></div>
             <div class="progress take-progress" id="take-progress" hidden>
               <div class="progress-bar"><div class="progress-fill" id="take-progress-fill"></div></div>
@@ -423,13 +431,6 @@
                  teacher's slokas were matched, where the ear cut, where the second opinion cut -->
             <div class="take-view" id="take-view" hidden>
               <div class="take-view-head">
-                <button class="btn-play small play-heard" id="take-play-heard" type="button" aria-label="Play the whole recital" title="Play the whole recital">
-                  <svg class="ico-play" viewBox="0 0 24 24"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
-                  <svg class="ico-pause" viewBox="0 0 24 24"><path fill="currentColor" d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>
-                </button>
-                <span>Yours — the whole recital</span>
-                <span class="mono muted small"><span id="take-view-time">0:00.0</span> / <span id="take-view-dur"></span></span>
-                <div class="grow"></div>
                 <div class="legend take-legend">
                   <span class="legend-item"><i class="sw sw-mark-teacher"></i>the teacher's slokas, where they matched</span>
                   <span class="legend-item"><i class="sw sw-mark-ear"></i>where the ear cut (thick: a page you turned)</span>
@@ -437,7 +438,7 @@
                 </div>
               </div>
               <canvas class="wave wave-clickable" id="take-wave" height="120"></canvas>
-              <p class="muted small">Click the wave to play from there. Click a sloka's card to open its report — Yours then plays that sloka alone — and the open card again, or this one, to come back.</p>
+              <p class="muted small">Click the wave to play from there. Click a sloka's card to open its report, and the open card again to come back to this view.</p>
             </div>
           </div>
           <p class="report-error" id="report-error" hidden></p>
@@ -471,7 +472,6 @@
           <div class="transcript" id="transcript">
             <div class="dev-head-row">
               <h3>Transcript</h3>
-              <button class="btn btn-sm btn-primary" id="stt-run" type="button" hidden title="Hear the words of this sloka with the speech model (a download the first time); the words of a take of several slokas are not heard unless you ask">Transcribe this sloka</button>
             </div>
             <div class="progress" id="stt-progress" hidden>
               <div class="progress-bar"><div class="progress-fill" id="stt-progress-fill"></div></div>

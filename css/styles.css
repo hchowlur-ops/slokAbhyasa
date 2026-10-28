@@ -898,7 +898,16 @@ textarea.locked { background: var(--surface-2); color: var(--muted); cursor: not
 .take-card.active { box-shadow: inset 0 0 0 2px var(--accent); border-color: var(--accent); }
 .take-card.bad { border-left: 4px solid var(--danger); }
 .take-card.pending { opacity: .75; }
-.take-card.whole { border-style: dashed; }
+.take-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tc-actions { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.btn-play.tiny { width: 30px; height: 30px; box-shadow: none; }
+.btn-play.tiny svg { width: 14px; height: 14px; filter: none; }
+.tc-btn { width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; }
+.tc-btn:hover { border-color: var(--accent); color: var(--accent-strong); }
+.tc-btn svg { width: 15px; height: 15px; }
+.tc-btn .tc-spin { width: 14px; height: 14px; }
+.tc-btn.done { border-color: var(--accent); color: var(--accent-strong); }
+.take-whole { display: flex; align-items: center; gap: 10px; margin: 6px 0 10px; }
 .take-view { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
 .take-view-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .take-view .legend { margin-bottom: 0; }
