@@ -908,6 +908,16 @@ textarea.locked { background: var(--surface-2); color: var(--muted); cursor: not
 .tc-btn .tc-spin { width: 14px; height: 14px; }
 .tc-btn.done { border-color: var(--accent); color: var(--accent-strong); }
 .take-whole { display: flex; align-items: center; gap: 10px; margin: 6px 0 10px; }
+.grade-row { position: relative; display: flex; align-items: center; gap: 6px; }
+.grade-row .info-pop { top: calc(100% + 10px); }
+.info-pop ul { margin: 6px 0 6px 18px; padding: 0; }
+.info-pop li { margin: 0 0 4px; }
+.info-pop .btn { margin-top: 6px; }
+.tc-note-row { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; }
+.take-card .info-pop { left: 0; top: auto; bottom: calc(100% + 8px); width: min(340px, 78vw); } /* above the card: the results card clips below it */
+.take-card .info-pop::before { left: 24px; top: auto; bottom: -6px; border-left: 0; border-top: 0; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.stt-missing { margin: 4px 0 0; font-size: 0.92rem; }
+.stt-missing b { color: var(--danger); }
 .take-view { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
 .take-view-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .take-view .legend { margin-bottom: 0; }

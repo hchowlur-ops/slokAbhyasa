@@ -407,7 +407,7 @@
                 </div>
               </div>
               <div class="take-overall-text">
-                <div class="score-grade" id="take-grade"></div>
+                <div class="grade-row"><div class="score-grade" id="take-grade"></div><button class="info-btn" id="take-grade-info" type="button" aria-label="Why this grade" aria-expanded="false" aria-controls="take-grade-pop" hidden>i</button><div class="info-pop" id="take-grade-pop" role="tooltip" hidden></div></div>
                 <div class="take-sub muted small" id="take-sub"></div>
                 <div class="score-words" id="take-words" hidden></div>
                 <ul class="score-moments" id="score-moments" hidden></ul>
@@ -509,6 +509,7 @@
             </div>
             <!-- the summary sentence (empty, so hidden, until the words are in) -->
             <p class="stt-summary" id="stt-summary"></p>
+            <p class="stt-missing" id="stt-missing" hidden></p>
             <div id="stt-out" hidden>
               <details class="phon-report" id="stt-phon" hidden></details>
               <div class="stt-corrections" id="stt-corrections" hidden></div>

@@ -2082,6 +2082,40 @@ $('#analysis').addEventListener('toggle', () => { if ($('#analysis').open) redra
   document.addEventListener('click', (e) => { if (!pop.hidden && !pop.contains(e.target)) open(false); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !pop.hidden) { open(false); btn.focus(); } });
 }
+// Any small "i" with an overlay beside it: `build(pop)` fills the overlay as it opens; a click
+// elsewhere or Escape closes every open one.
+function attachInfoPop(btn, pop, build = null) {
+  pop._btn = btn;
+  btn.addEventListener('click', (e) => { e.stopPropagation(); const on = pop.hidden; if (on) closeInfoPops(pop); if (on && build) build(pop); setHidden(pop, !on); btn.setAttribute('aria-expanded', on ? 'true' : 'false'); });
+  pop.addEventListener('click', (e) => e.stopPropagation());
+}
+function closeInfoPops(except = null) {
+  for (const pop of $$('.info-pop')) { if (pop.hidden || !pop._btn || pop === except) continue; setHidden(pop, true); pop._btn.setAttribute('aria-expanded', 'false'); }
+}
+document.addEventListener('click', (e) => { for (const pop of $$('.info-pop')) { if (pop.hidden || !pop._btn || pop.contains(e.target) || pop._btn.contains(e.target)) continue; setHidden(pop, true); pop._btn.setAttribute('aria-expanded', 'false'); } });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeInfoPops(); });
+// Why the take is Needs practice: it takes the lowest of its slokas' grades, and a sloka is
+// Needs practice for a slip (whatever its score), for being under half recited or not found,
+// or for a score under the Fair line.
+const BY_LABEL = { ear: 'the ear\'s count', words: 'the words', sound: 'the sound', manual: 'you' };
+function gradeReasons(items) {
+  const fairMin = (gradeById('fair') || { min: 65 }).min;
+  const out = [];
+  for (const it of items) {
+    const id = it.id;
+    if (partialOf(id)) { out.push({ name: it.name, why: `${slipsLabel(slipsOf(id))} — not scored`, by: 'the ear' }); continue; }
+    if (!it.matched) { if (!it.missing) out.push({ name: it.name, why: 'not recited: its sound was not found in the take' }); continue; }
+    const sl = slipsOf(id);
+    if (sl.length) { out.push({ name: it.name, why: slipsLabel(sl), by: sl.map((s) => s.by).filter(Boolean).filter((b, i, a) => a.indexOf(b) === i).map((b) => BY_LABEL[b] || b).join(' and ') }); continue; }
+    const { overall, grade: g } = reportOverall(id);
+    if (g && g.id === 'practice') out.push({ name: it.name, why: `scored ${overall}, under the Fair line of ${fairMin}` });
+  }
+  return out;
+}
+attachInfoPop($('#take-grade-info'), $('#take-grade-pop'), (pop) => {
+  const rs = pop._reasons || [];
+  pop.innerHTML = `<p><b>Needs practice</b> — the take takes the lowest of its slokas' grades, and ${rs.length === 1 ? 'one sloka needs' : `${rs.length} slokas need`} practice:</p><ul>${rs.map((r) => `<li><b>${escapeHtml(r.name)}</b>: ${escapeHtml(r.why)}${r.by ? ` <span class="muted">(by ${escapeHtml(r.by)})</span>` : ''}</li>`).join('')}</ul><p class="muted small">A slip — akṣaras dropped, a restart, a stall, under half recited — makes a sloka Needs practice whatever its score. A count alone says akṣaras were dropped only when four or more, and a tenth of the sloka, are short; the words say so from what was heard.</p>`;
+});
 
 // ---------- tolerance: how much variation is acceptable per category ----------
 
@@ -2999,6 +3033,10 @@ function renderTakeBoard(ids) {
   const grade = gradeById(sum.grade);
   const takeSlips = recited.flatMap((it) => it.slips || []);
   setGrade($('#take-grade'), grade, $('#take-words'), { seed: practice.session && practice.session.id ? `session:${practice.session.id}` : 'take', slips: takeSlips, score: sum.overall });
+  const reasons = grade && grade.id === 'practice' && !pending.length ? gradeReasons(items) : [];
+  $('#take-grade-pop')._reasons = reasons;
+  setHidden($('#take-grade-info'), !reasons.length);
+  if (!reasons.length) setHidden($('#take-grade-pop'), true);
   const bits = [`${ids.length} sloka${ids.length === 1 ? '' : 's'}`, `${recited.length} recited and scored`];
   if (partial.length) bits.push(`${partial.length} less than half recited (not scored)`);
   if (notFound.length) bits.push(`${notFound.length} not recited`);
@@ -3023,7 +3061,7 @@ function renderTakeBoard(ids) {
     const sc = reportScores(id);
     const bad = !!(r && (r.error || partialOf(id) || (isReport(r) && !sc.matched)));
     card.className = `take-card${open ? ' active' : ''}${bad ? ' bad' : ''}${!r ? ' pending' : ''}`;
-    card.innerHTML = '<span class="tc-name"></span><span class="tc-score"></span><span class="tc-grade"></span><span class="tc-note"></span><span class="tc-actions"><button class="btn-play tiny play-heard tc-play" type="button" aria-label="Play this sloka" title="Play this sloka — your recitation of it alone"><svg class="ico-play" viewBox="0 0 24 24"><path fill="currentColor" d="M8 5v14l11-7z"/></svg><svg class="ico-pause" viewBox="0 0 24 24"><path fill="currentColor" d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg></button><button class="tc-btn tc-words" type="button" aria-label="Hear the words of this sloka" title="Hear the words of this sloka with the speech model (a download the first time), then open its report with them"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 6h16v2H4zm0 5h16v2H4zm0 5h10v2H4z"/></svg><span class="spinner tc-spin" aria-hidden="true" hidden></span></button></span><span class="tc-busy spinner" aria-hidden="true" hidden></span>';
+    card.innerHTML = '<span class="tc-name"></span><span class="tc-score"></span><span class="tc-grade"></span><span class="tc-note-row"><span class="tc-note"></span><button class="info-btn tc-info" type="button" aria-label="What was missing" aria-expanded="false" hidden>i</button></span><div class="info-pop tc-pop" role="tooltip" hidden></div><span class="tc-actions"><button class="btn-play tiny play-heard tc-play" type="button" aria-label="Play this sloka" title="Play this sloka — your recitation of it alone"><svg class="ico-play" viewBox="0 0 24 24"><path fill="currentColor" d="M8 5v14l11-7z"/></svg><svg class="ico-pause" viewBox="0 0 24 24"><path fill="currentColor" d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg></button><button class="tc-btn tc-words" type="button" aria-label="Hear the words of this sloka" title="Hear the words of this sloka with the speech model (a download the first time), then open its report with them"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 6h16v2H4zm0 5h16v2H4zm0 5h10v2H4z"/></svg><span class="spinner tc-spin" aria-hidden="true" hidden></span></button></span><span class="tc-busy spinner" aria-hidden="true" hidden></span>';
     $('.tc-name', card).textContent = nameOf(id);
     $('.tc-name', card).title = nameOf(id);
     const noteEl = $('.tc-note', card);
@@ -3061,9 +3099,48 @@ function renderTakeBoard(ids) {
     wordsBtn.title = transcribing ? 'Hearing the words…' : practice.wordSims.has(id) ? 'The words are in: hear them again' : wordsBtn.title;
     playBtn.addEventListener('click', (e) => { e.stopPropagation(); cardPlay(id); });
     wordsBtn.addEventListener('click', (e) => { e.stopPropagation(); cardTranscribe(id); });
+    wireCardInfo(card, id, ready);
     cards.appendChild(card);
   }
   if (takeViewOn() && !$('#take-view').hidden) drawTakeWave(); // a comparison that just came in moves the teacher's marks
+}
+// The "i" on a card whose note speaks of akṣaras dropped or words missing: the missing
+// akṣaras when the words are in, with a way to the analysis; else what the count said, with a
+// way to hear the words.
+function wireCardInfo(card, id, ready) {
+  const btn = $('.tc-info', card);
+  const pop = $('.tc-pop', card);
+  const sl = slipsOf(id);
+  const dropped = sl.find((s) => s.kind === 'dropped') || null;
+  const ph = practice.phonology.get(id);
+  const missing = ph && Array.isArray(ph.aligned) ? ph.aligned.filter((a) => a.kind === 'missing' && a.ref).map((a) => a.ref) : [];
+  const show = ready && (!!dropped || missing.length > 0);
+  setHidden(btn, !show);
+  if (!show) return;
+  const lang = displayLanguage();
+  const written = (s) => { try { return inScript(s, lang); } catch { return s; } };
+  pop.innerHTML = missing.length
+    ? `<p><b>Missing from what was heard</b> (${missing.length} akṣara${missing.length === 1 ? '' : 's'}${dropped ? `; the ear counted ${dropped.count} of ${dropped.expected}` : ''}):</p><p lang="${sttLanguageTag(lang)}">${missing.map((m) => escapeHtml(written(m))).join(' · ')}</p><button class="btn btn-sm" type="button" data-act="open">See them in the analysis</button>`
+    : `<p><b>Akṣaras dropped</b> — by the ear's count: ${dropped.count} of ${dropped.expected} counted, ${dropped.expected - dropped.count} short. Which ones, only the words can say.</p><button class="btn btn-sm btn-primary" type="button" data-act="hear">Hear the words</button>`;
+  attachInfoPop(btn, pop);
+  pop.addEventListener('click', (e) => {
+    const act = e.target.closest('[data-act]');
+    if (!act) return;
+    setHidden(pop, true);
+    btn.setAttribute('aria-expanded', 'false');
+    if (act.dataset.act === 'hear') cardTranscribe(id); else showReportAnalysis(id, '#stt-missing');
+  });
+}
+// A sloka's report, its Analysis fold open, scrolled to `sel` (or the Transcript block).
+async function showReportAnalysis(id, sel = '#transcript') {
+  if (!practice.take || !practice.results.has(id)) return;
+  practice.takeView = false;
+  if (practice.activeId === id) showActiveReport(); else await openReport(id);
+  const fold = $('#analysis');
+  if (!fold.open) fold.open = true;
+  redrawAll();
+  const el = $(sel);
+  (el && !el.hidden ? el : $('#transcript')).scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 // A card's play button: the sloka's own sound (heardPlayRange); the same button again pauses.
 let cardPlayingId = null;
@@ -3089,13 +3166,7 @@ async function cardTranscribe(id) {
   cardBusy.add(id);
   renderTakeBoard(reportIds());
   try { getCtx(); await transcribeSloka(id, true); } catch (err) { toast(err.message, 'error', 8000); } finally { cardBusy.delete(id); }
-  if (!practice.take || !practice.results.has(id)) return;
-  practice.takeView = false;
-  if (practice.activeId === id) showActiveReport(); else await openReport(id);
-  const fold = $('#analysis');
-  if (!fold.open) fold.open = true;
-  redrawAll();
-  $('#transcript').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  await showReportAnalysis(id, '#transcript');
 }
 function renderReportBrowser() {
   const ids = reportIds();
@@ -5510,6 +5581,8 @@ function resetTranscriptUI() {
   $('#stt-base').innerHTML = '';
   $('#stt-heard').innerHTML = '';
   $('#stt-summary').textContent = '';
+  $('#stt-missing').innerHTML = '';
+  setHidden($('#stt-missing'), true);
   setHidden($('#stt-phon'), true);
   practicePanel.highlight(new Set());
 }
@@ -5856,6 +5929,13 @@ function renderTranscriptDiff() {
   $('#stt-summary').textContent = ai.length
     ? `${Math.round(sm.similarity * 100)}% of the sloka's ${sttPractice.base.typed ? 'typed text' : 'text'} heard (${sm.matched} of ${ai.length} words) · ${sm.missing} missing · ${sm.extra} extra or different · ${sttLanguageLabel(sttPractice.base.language)}`
     : 'Nothing was recognised in the sloka. Try again.';
+  // the words of the sloka not heard, named — the ones the Sloka row highlights
+  const del = delA instanceof Set ? [...delA] : Array.isArray(delA) ? delA : [];
+  const missingWords = del.filter((i) => A.inside[i] && A.toks[i]).sort((x, y) => x - y).map((i) => { try { return inScript(A.toks[i].word, displayLanguage()); } catch { return A.toks[i].word; } });
+  const missEl = $('#stt-missing');
+  missEl.lang = sttLanguageTag(displayLanguage());
+  missEl.innerHTML = missingWords.length ? `<b>Missing from what was heard:</b> ${missingWords.map(escapeHtml).join(' · ')}` : '';
+  setHidden(missEl, !missingWords.length);
   setHidden($('#stt-out'), false);
   setHidden($('#transcript'), hideTranscript); // the words are on screen
   settleEvaluating(); // the open report's words are on screen

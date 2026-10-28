@@ -312,7 +312,13 @@ Settings say, the icon busy meanwhile, and then opens its report on the Analysis
 the words shown. Click a card to open its report — Yours there plays that sloka alone too,
 and the words, scores, chart and deviations are its — and the open card again to come back
 to the wave. The report's Transcript block shows only once the sloka's words are in (or on
-their way, when the words are heard automatically). Once the take is compared, the **words of every
+their way, when the words are heard automatically), and names the words missing from what
+was heard under the summary line. A small **i** beside the take's Needs practice lists why:
+which slokas need practice and for what (a slip, under half recited, not found, or a score
+under the Fair line — the take takes the lowest of its slokas' grades). A card whose note
+speaks of akṣaras dropped or words missing carries an **i** of its own: the missing akṣaras
+when the words are in, with a way to the analysis, or what the count said, with a way to hear
+the words. Once the take is compared, the **words of every
 report are transcribed in the background**, in turn, the open one first (each sloka's own
 stretch of the recording), and their word scores filled in as they arrive — so Next opens a
 report with its words ready, and the session's scores cover every sloka. Better still, turn

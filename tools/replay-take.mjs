@@ -113,6 +113,12 @@ try {
       log('card play:', await evaluate(`document.querySelector('#take-cards .take-card .tc-play').classList.contains('playing') ? 'playing' : 'not playing'`));
       await pg(`document.querySelector('#take-cards .take-card .tc-play').click();`); await sleep(300);
       log('card play again:', await evaluate(`document.querySelector('#take-cards .take-card .tc-play').classList.contains('playing') ? 'still playing' : 'paused'`));
+      // the "i" by the take's grade, and a card's "i" on akṣaras dropped
+      if (await evaluate(`!document.querySelector('#take-grade-info').hidden`)) { await pg(`document.querySelector('#take-grade-info').click();`); await sleep(300); log('grade info:', await evaluate(`document.querySelector('#take-grade-pop').innerText.replace(/\\s+/g, ' ').slice(0, 300)`)); }
+      else log('grade info: no icon (the take is not Needs practice)');
+      const infoCard = await evaluate(`[...document.querySelectorAll('#take-cards .take-card')].findIndex(c => !c.querySelector('.tc-info').hidden)`);
+      if (infoCard >= 0) { await pg(`document.querySelectorAll('#take-cards .take-card')[${infoCard}].querySelector('.tc-info').click();`); await sleep(300); log('card info:', await evaluate(`document.querySelectorAll('#take-cards .take-card')[${infoCard}].querySelector('.tc-pop').innerText.replace(/\\s+/g, ' ').slice(0, 300)`)); const shot = await send('Page.captureScreenshot', { format: 'png' }); fs.writeFileSync(path.join(OUT, 'info.png'), Buffer.from(shot.data, 'base64')); await pg(`document.body.click();`); }
+      else log('card info: no card carries the icon');
       await pg(`document.querySelector('#analysis').open = true;`); await sleep(500);
       const shot = await send('Page.captureScreenshot', { format: 'png' }); fs.writeFileSync(path.join(OUT, 'report.png'), Buffer.from(shot.data, 'base64'));
       await pg(`document.querySelector('#take-cards .take-card.active').click();`);

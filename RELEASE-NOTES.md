@@ -8,6 +8,10 @@ last package. The README describes every feature as it stands; this file says wh
 
 ### 28 October 2026
 
+- **Why Needs practice.** An i beside the take's grade lists which slokas need practice
+  and for what; an i on a card that speaks of akṣaras dropped or words missing names the
+  missing akṣaras, with a way to the analysis, or offers to hear the words. The analysis
+  names the words missing from what was heard.
 - **Every sloka's card plays and transcribes.** A play button on each card hears that
   sloka alone; a words icon hears its words now, whatever the Settings say, and opens its
   report on the Analysis fold with the words shown. The whole recital's play button sits
