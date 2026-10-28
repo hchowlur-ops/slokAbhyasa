@@ -425,7 +425,10 @@ with what is expected of it — the plan's akṣaras at your speed, the teacher'
 tempo, or each sloka's share of the take's sound — with a longer breath preferred as a cut;
 your pace on the day is fitted within a range around the learnt one, and whether the take
 stopped inside its last sloka is taken from the ear's count at the stop, since the lengths
-alone cannot tell a faster reciter from an unfinished sloka. Nothing is decided by it yet; it is written beside the ear's own stretches so the two can be
+alone cannot tell a faster reciter from an unfinished sloka. Where no breath lies near where
+the lengths want a cut (you went straight on), the cut may go through the sound at a dip of
+the level, at a cost; and the slokas the take never reached (the ear's word at the stop) are
+left unplaced. Nothing is decided by it yet; it is written beside the ear's own stretches so the two can be
 compared on every take (`node tools/second-opinion.mjs <session id>`, or `--all` for a table
 over every kept take of several slokas).
 

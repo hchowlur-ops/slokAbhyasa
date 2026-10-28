@@ -19,7 +19,12 @@ export const SCALE_STEP = 1.05;
 export const SCALE_PRIOR = 0.5; // the cost of a scale s: SCALE_PRIOR · ln(s)², against the lengths' ln(ratio)²
 export const PARTIAL_LAST_MIN = 0.15; // the stop inside the last sloka: what remains of the take's sound must be at least this share of the sloka
 export const LAST_WHOLE_FROM = 0.6; // the ear's position at the stop, as a share of the last sloka's plan, from which the take is taken to hold the last sloka whole
-export const LAST_PARTIAL_TO = 0.4; // and under which it is taken to have stopped inside it; between, both hypotheses compete by cost
+export const LAST_PARTIAL_TO = 0.5; // and under which it is taken to have stopped inside it; between, both hypotheses compete by cost
+export const LENGTH_WEIGHT = 1; // a sloka's length cost, LENGTH_WEIGHT · ln(sung / expected)², against the cut costs: a fifth too long costs about as much as a cut through sound
+export const THROUGH_COST = 0.2; // a cut through sound, at a valley of the level, where no breath lies (a learner who goes straight on): the most it costs, halved at a valley as quiet as a pause
+export const VALLEY_MIN_RUN_SEC = 3; // sound runs this long or longer offer their valleys as cuts
+export const VALLEY_SPACING_SEC = 0.8; // at least this far apart
+export const VALLEY_SMOOTH_SEC = 0.15; // the level smoothed over this before its valleys are read
 export const QUIET_SHARE = 0.4; // the pause threshold sits this far up from the take's floor towards its peak
 export const QUIET_MIN_DB = 6; // and at least this far above the floor
 export const SUNG_FILL_SEC = 0.2; // quiet shorter than this counts as sound when a segment's sung time is measured — as the ear's own time sung does, which the learner's speed was learnt on
@@ -91,7 +96,36 @@ export function expectations(items, pace, sungTotal) {
   return out;
 }
 
-// The cuts for one set of expectations: a dynamic programme over the pauses. `measure` is
+// The valleys of the level inside the runs of sound between the boundaries given: where a cut
+// may go through sound when no breath lies where the lengths want one. Returns boundaries
+// { from, to, len: 0, virtual: true, level } for valleys at least spacingSec apart, in runs of
+// at least minRunSec, half a second clear of the run's ends.
+export function valleysOf(F, bounds, { minRunSec = VALLEY_MIN_RUN_SEC, spacingSec = VALLEY_SPACING_SEC, smoothSec = VALLEY_SMOOTH_SEC } = {}) {
+  const db = F && F.rmsDb;
+  if (!db || !db.length || !bounds || bounds.length < 2) return [];
+  const hop = F.hopSec;
+  const half = Math.max(1, Math.round(smoothSec / hop / 2));
+  const sm = new Float32Array(db.length);
+  for (let k = 0; k < db.length; k++) { let s = 0; let n = 0; for (let j = Math.max(0, k - half); j <= Math.min(db.length - 1, k + half); j++) { s += db[j]; n++; } sm[k] = s / n; }
+  const out = [];
+  const spacing = Math.round(spacingSec / hop);
+  const clear = Math.round(0.5 / hop);
+  for (let i = 0; i + 1 < bounds.length; i++) {
+    const a = Math.round(bounds[i].to / hop) + clear;
+    const b = Math.round(bounds[i + 1].from / hop) - clear;
+    if ((b - a) * hop < minRunSec - 1) continue;
+    const mins = [];
+    for (let k = a + 1; k < b - 1; k++) if (sm[k] <= sm[k - 1] && sm[k] < sm[k + 1]) mins.push(k);
+    mins.sort((x, y) => sm[x] - sm[y]);
+    const taken = [];
+    for (const k of mins) { if (taken.some((t) => Math.abs(t - k) < spacing)) continue; taken.push(k); }
+    for (const k of taken.sort((x, y) => x - y)) out.push({ from: k * hop, to: k * hop, len: 0, virtual: true, level: Math.round(sm[k] * 10) / 10 });
+  }
+  return out;
+}
+
+// The cuts for one set of expectations: a dynamic programme over the pauses and, at a cost,
+// the valleys of the sound between them. `measure` is
 // 'span' (first to last sound of the segment; the teacher method) or 'sung' (its seconds of
 // sound). `soundCost(i, fromSec, toSec)`, when given, adds a cost per candidate segment from
 // the sound itself (how unlike the teacher's recording it is), weighted by `soundWeight`.
@@ -100,12 +134,16 @@ export const PIN_REACH_SEC = 1.5; // a cut the student made by turning the page 
 export function cutsFor(F, items, expected, { measure = 'sung', minGapSec = MIN_GAP_SEC, lastShortWeight = LAST_SHORT_WEIGHT, gapCost = GAP_COST, gapFreeSec = GAP_FREE_SEC, mask = null, soundCost = null, soundWeight = 1, pinned = null } = {}) {
   const N = items.length;
   const hop = F.hopSec;
-  const m = mask || soundMaskOf(F).mask;
+  const q = soundMaskOf(F);
+  const m = mask || q.mask;
+  const thr = q.thresholdDb;
   const { first, last, gaps } = pausesOf(m, hop, { minGapSec });
   if (!N || !expected || expected.length !== N || last <= first) return null;
-  if (gaps.length < N - 1) return null;
-  // the boundaries: the first sound, every pause, the end of the last sound
-  const B = [{ from: first, to: first, len: 0 }, ...gaps, { from: last, to: last, len: 0 }];
+  // the boundaries: the first sound, every pause, the valleys of the sound between (cuts through
+  // sound, at a cost), the end of the last sound
+  const anchors = [{ from: first, to: first, len: 0 }, ...gaps, { from: last, to: last, len: 0 }];
+  const B = [...anchors, ...valleysOf(F, anchors)].sort((x, y) => x.from - y.from);
+  if (B.length - 2 < N - 1) return null;
   const G = B.length - 1; // the index of the end boundary
   // the boundaries pinned by the student's page turns: boundary i (after sloka i−1) must be the pause nearest `at`
   const pin = new Int32Array(N + 1).fill(-1);
@@ -124,7 +162,7 @@ export function cutsFor(F, items, expected, { measure = 'sung', minGapSec = MIN_
   const sungOf = (a, b) => (pre[frame(B[b].from)] - pre[frame(B[a].to)]) * hop;
   const spanOf = (a, b) => Math.max(0, B[b].from - B[a].to);
   const lengthOf = measure === 'span' ? spanOf : sungOf;
-  const cutCost = (b) => (b === G ? 0 : gapCost * (1 - Math.min(1, B[b].len / gapFreeSec)));
+  const cutCost = (b) => (b === G ? 0 : B[b].virtual ? THROUGH_COST * (0.5 + 0.5 * Math.max(0, Math.min(1, ((B[b].level ?? 0) - (thr ?? -40)) / 12))) : gapCost * (1 - Math.min(1, B[b].len / gapFreeSec)));
   const soundMemo = new Map();
   const sound = (i, a, b) => {
     if (!soundCost) return 0;
@@ -137,8 +175,9 @@ export function cutsFor(F, items, expected, { measure = 'sung', minGapSec = MIN_
     if (!(L > 0) || !(expected[i] > 0)) return Infinity;
     const r = L / expected[i];
     if (r < 0.3 || r > 3) return Infinity; // never a third or thrice the sloka
-    const c = Math.log(r) ** 2;
-    return (i === N - 1 && r < 1 ? c * lastShortWeight : c) + sound(i, a, b);
+    let c = LENGTH_WEIGHT * Math.log(r) ** 2;
+    if (i === N - 1 && r < 1) c *= lastShortWeight;
+    return c + sound(i, a, b);
   };
   // forward: fwd[i][b] = the least cost of slokas 0..i−1 with sloka i−1 ending at boundary b
   const INF = Infinity;
@@ -196,9 +235,9 @@ export function cutsFor(F, items, expected, { measure = 'sung', minGapSec = MIN_
       const c = fwd[i][b] + bwd[i][b];
       if (c < runnerCost) { runnerCost = c; runner = b; }
     }
-    boundaries.push({ after: items[i - 1].name, before: items[i].name, from: r3(B[chosen].from), to: r3(B[chosen].to), len: r3(B[chosen].len), pinned: pin[i] >= 0, runnerUp: runner == null || runnerCost === INF ? null : { from: r3(B[runner].from), to: r3(B[runner].to), len: r3(B[runner].len), extraCost: r3(runnerCost - fwd[N][G]) } });
+    boundaries.push({ after: items[i - 1].name, before: items[i].name, from: r3(B[chosen].from), to: r3(B[chosen].to), len: r3(B[chosen].len), pinned: pin[i] >= 0, virtual: !!B[chosen].virtual, runnerUp: runner == null || runnerCost === INF ? null : { from: r3(B[runner].from), to: r3(B[runner].to), len: r3(B[runner].len), extraCost: r3(runnerCost - fwd[N][G]) } });
   }
-  return { measure, cost: r3(fwd[N][G]), pauses: gaps.length, first: r3(first), last: r3(last), segments, boundaries };
+  return { measure, cost: r3(fwd[N][G]), pauses: gaps.length, valleys: B.length - anchors.length, first: r3(first), last: r3(last), segments, boundaries };
 }
 
 // The cuts with the learner's pace this take fitted: the expectations are scaled by a common
@@ -210,7 +249,7 @@ export function cutsFor(F, items, expected, { measure = 'sung', minGapSec = MIN_
 // stop as a share of the last sloka's plan, when known — settles it: from LAST_WHOLE_FROM
 // only 'whole' is tried, under LAST_PARTIAL_TO only 'partialLast'. Returns cutsFor's result
 // with `scale`, `hypothesis` ('whole' | 'partialLast') and `hint`.
-export function fitCuts(F, items, expected, { sungTotal = null, scalePrior = SCALE_PRIOR, lastPos = null, ...opts } = {}) { // opts: cutsFor's, `pinned` among them
+export function fitCuts(F, items, expected, { sungTotal = null, scalePrior = SCALE_PRIOR * LENGTH_WEIGHT, lastPos = null, ...opts } = {}) { // opts: cutsFor's, `pinned` among them
   const hint = lastPos == null || !Number.isFinite(Number(lastPos)) ? 'none' : Number(lastPos) >= LAST_WHOLE_FROM ? 'whole' : Number(lastPos) < LAST_PARTIAL_TO ? 'partialLast' : 'open';
   const N = items.length;
   if (!expected || expected.length !== N) return null;
@@ -237,8 +276,12 @@ export function fitCuts(F, items, expected, { sungTotal = null, scalePrior = SCA
 // All three methods on a take's features (dsp/features.js: `rmsDb`, `hopSec`), and the one
 // to go by: the plan at the learner's speed when known, else the teacher at their tempo,
 // else the take's own shares. `soundCost(i, fromSec, toSec)` is optional (see cutsFor).
-export function segmentTake(F, items, { pace = null, minGapSec = MIN_GAP_SEC, soundCost = null, soundWeight = 1, lastPos = null, pinned = null } = {}) {
-  if (!F || !F.hopSec || !(F.rmsDb || F.active) || !items || !items.length) return { error: 'no features or no slokas' };
+// `recited`: how many of the slokas, in order, the take reached (the ear's word at the stop);
+// the rest are reported as not recited and not placed.
+export function segmentTake(F, allItems, { pace = null, minGapSec = MIN_GAP_SEC, soundCost = null, soundWeight = 1, lastPos = null, pinned = null, recited = null } = {}) {
+  if (!F || !F.hopSec || !(F.rmsDb || F.active) || !allItems || !allItems.length) return { error: 'no features or no slokas' };
+  const items = Number.isInteger(recited) && recited > 0 && recited < allItems.length ? allItems.slice(0, recited) : allItems;
+  const rest = allItems.slice(items.length).map((it, k) => ({ index: items.length + k, name: it.name, from: null, to: null, notRecited: true }));
   const { mask, thresholdDb, floorDb, peakDb } = soundMaskOf(F);
   const { first, last, gaps } = pausesOf(mask, F.hopSec, { minGapSec });
   const sm = fillShortGaps(mask, Math.round(SUNG_FILL_SEC / F.hopSec));
@@ -251,8 +294,9 @@ export function segmentTake(F, items, { pace = null, minGapSec = MIN_GAP_SEC, so
   if (exp.teacher) results.teacher = fitCuts(F, items, exp.teacher, { ...opts, measure: 'span', sungTotal });
   if (exp.plan) results.plan = fitCuts(F, items, exp.plan, { ...opts, measure: 'sung', sungTotal });
   if (exp.share) results.share = cutsFor(F, items, exp.share, { ...opts, measure: 'sung', lastShortWeight: 1 });
+  if (rest.length) for (const r of Object.values(results)) if (r) r.segments.push(...rest);
   const chosen = results.plan ? 'plan' : results.teacher ? 'teacher' : results.share ? 'share' : null;
-  return { version: 1, items: items.map((it) => ({ name: it.name, teacherSec: r3(it.teacherSec), total: it.total })), pace: pace ? { tempoRatio: pace.tempoRatio || null, aksPerSec: pace.aksPerSec || null } : null, quiet: { thresholdDb, floorDb, peakDb }, sungTotal: r3(sungTotal), spanTotal: r3(last - first), pauses: gaps.length, sound: !!soundCost, lastPos: r3(lastPos), pinned: (pinned || []).map((p) => ({ after: p.after, at: r3(p.at) })), chosen, results };
+  return { version: 1, recited: items.length, items: allItems.map((it) => ({ name: it.name, teacherSec: r3(it.teacherSec), total: it.total, speakerLine: it.speakerLine || 0 })), pace: pace ? { tempoRatio: pace.tempoRatio || null, aksPerSec: pace.aksPerSec || null } : null, quiet: { thresholdDb, floorDb, peakDb }, sungTotal: r3(sungTotal), spanTotal: r3(last - first), pauses: gaps.length, sound: !!soundCost, lastPos: r3(lastPos), pinned: (pinned || []).map((p) => ({ after: p.after, at: r3(p.at) })), chosen, results };
 }
 
 const r3 = (x) => (x == null || !Number.isFinite(x) ? null : Math.round(x * 1000) / 1000);

@@ -2773,17 +2773,20 @@ const EAR_WINDOW_PAD_SEC = 0.5;
 // the ear's own stretches, so the two can be compared on every take. Nothing is decided by it.
 function secondOpinionOf(take) {
   try {
-    const items = practice.selection.map((id) => { const it = { id, name: nameOf(id) }; const plan = planOf(it); return { name: it.name, teacherSec: expectedSecOf(it) || null, total: plan ? plan.total : null }; });
+    const items = practice.selection.map((id) => { const it = { id, name: nameOf(id) }; const plan = planOf(it); return { name: it.name, teacherSec: expectedSecOf(it) || null, total: plan ? plan.total : null, speakerLine: plan ? plan.speakerLine || 0 : 0 }; });
     const p = profileById(learnerId);
     const pace = p && p.pace && typeof p.pace === 'object' ? { tempoRatio: Number(p.pace.tempoRatio) > 0 ? Number(p.pace.tempoRatio) : null, aksPerSec: Number(p.pace.aksPerSec) > 0 ? Number(p.pace.aksPerSec) : null } : null;
-    // the ear's position at the stop, as a share of the last sloka's plan: whether the take ended inside its last sloka, which the lengths alone cannot tell from a faster learner
-    const lastId = practice.selection[practice.selection.length - 1];
-    const ec = take.earCounts && take.earCounts[lastId];
-    const lastPos = ec && ec.expected > 0 ? ec.count / ec.expected : null;
-    // the cuts the student made by turning the page are fixed: the second opinion keeps them
+    // the ear's word at the stop: which sloka was in view (the ones after it were not recited) and
+    // how far into it the position was — whether the take ended inside its last sloka, which the
+    // lengths alone cannot tell from a faster learner
+    const stop = (take.earLog.rows || []).find((r) => r[0] === 'stop');
     const names = items.map((it) => it.name);
+    const stopIdx = stop ? names.indexOf(stop[3]) : -1;
+    const recited = stop && stop[6] === 'done' ? items.length : stopIdx >= 0 ? stopIdx + 1 : items.length;
+    const lastPos = stop && stop[6] === 'done' ? 1 : stop && stop[5] > 0 && stop[4] != null ? stop[4] / stop[5] : null;
+    // the cuts the student made by turning the page are fixed: the second opinion keeps them
     const pinned = (take.segments || []).filter((p) => p.byHand && p.name).map((p) => ({ after: names.indexOf(p.name), at: p.to })).filter((p) => p.after >= 0 && p.after < items.length - 1);
-    return segmentTake(practice.heard, items, { pace, lastPos, pinned });
+    return segmentTake(practice.heard, items, { pace, lastPos, pinned, recited });
   } catch (err) { return { error: String((err && err.message) || err) }; }
 }
 // The stretch the ear closed for a sloka in the take (the longest, two seconds at least).
@@ -3106,7 +3109,7 @@ function takeWaveMarks() {
   for (const seg of take.segments || []) if (seg.to < duration - 0.3) lines.push({ at: seg.to, color: ear, row: 1, width: seg.byHand ? 3 : 1.5, label: seg.byHand ? 'you' : 'ear' });
   const so = take.earLog && take.earLog.secondOpinion;
   const res = so && so.chosen && so.results ? so.results[so.chosen] : null;
-  for (const b of (res && res.boundaries) || []) lines.push({ at: (b.from + b.to) / 2, color: second, row: 0, dash: [4, 3], width: b.pinned ? 3 : 1.5, label: b.pinned ? '2nd · pinned' : '2nd' });
+  for (const b of (res && res.boundaries) || []) lines.push({ at: (b.from + b.to) / 2, color: second, row: 0, dash: [4, 3], width: b.pinned ? 3 : 1.5, label: b.pinned ? '2nd · pinned' : b.virtual ? '2nd · no breath' : '2nd' });
   return { duration, spans, lines };
 }
 

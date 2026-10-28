@@ -6,6 +6,15 @@ last package. The README describes every feature as it stands; this file says wh
 
 ## Unreleased — since 1.6.0 (branch `AcousticAssessment`, 9–22 October 2026)
 
+### 28 October 2026
+
+- **The second opinion cuts through sound where there is no breath**, at a dip of the
+  level and at a cost, so a learner who goes straight on into the next sloka no longer
+  sends its cut to the next pause; the slokas a take never reached are left unplaced
+  instead of being squeezed in. A session's file is re-read before the
+  recording and the ear's log are written into it, so one no longer loses the other's
+  mark.
+
 ### 27 October 2026
 
 - **The whole recital, then each sloka.** With several slokas the results open on the

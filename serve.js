@@ -557,8 +557,9 @@ async function handleSessions(req, res, parts) {
       if (!isWav(body)) return sendJson(res, 400, { error: 'Body must be a RIFF/WAVE file' });
       await fsp.mkdir(path.dirname(p), { recursive: true });
       await fsp.writeFile(p, body);
-      s.audio = 'take.wav';
-      await writeSession(s);
+      const fresh = (await readSession(id)) || s; // the session as it is now: the ear's log may have been written meanwhile
+      fresh.audio = 'take.wav';
+      await writeSession(fresh);
       return sendJson(res, 200, { ok: true });
     }
     if (req.method === 'GET' || req.method === 'HEAD') {
@@ -578,8 +579,9 @@ async function handleSessions(req, res, parts) {
       if (!body || typeof body !== 'object' || !Array.isArray(body.rows)) return sendJson(res, 400, { error: 'Body must be an ear log' });
       await fsp.mkdir(path.dirname(p), { recursive: true });
       await fsp.writeFile(p, JSON.stringify(body));
-      s.earLog = 'ear.json';
-      await writeSession(s);
+      const fresh = (await readSession(id)) || s; // the recording may have been written meanwhile
+      fresh.earLog = 'ear.json';
+      await writeSession(fresh);
       return sendJson(res, 200, { ok: true });
     }
     if (req.method === 'GET') {

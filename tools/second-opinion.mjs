@@ -36,8 +36,9 @@ function slokaOf(item) {
   try { meta = JSON.parse(fs.readFileSync(path.join(LIB, ...rec.file.replace(/\.wav$/i, '.json').split('/')), 'utf8')); } catch { meta = null; }
   const teacherSec = meta && meta.voice && meta.voice.activeSec > 0 ? meta.voice.activeSec : rec.duration || null;
   let total = meta && meta.text && Number.isInteger(meta.text.aksharaCount) ? meta.text.aksharaCount : null;
-  if (!total && meta && meta.text && meta.text.body) { try { total = aksharaPlan(meta.text.body).total || null; } catch { total = null; } }
-  return { name: rec.name, teacherSec, total };
+  let speakerLine = 0;
+  if (meta && meta.text && meta.text.body) { try { const plan = aksharaPlan(meta.text.body); if (!total) total = plan.total || null; speakerLine = plan.speakerLine || 0; } catch { /* no plan */ } }
+  return { name: rec.name, teacherSec, total, speakerLine };
 }
 function featuresOf(wavPath) {
   const d = decodeWav(new Uint8Array(fs.readFileSync(wavPath)));
@@ -63,10 +64,13 @@ function analyse(id) {
   const { F, duration } = featuresOf(wav);
   // the ear's position at the stop, as a share of the last sloka's plan: from the log's stop row, else the session's last item
   let lastPos = null;
+  let recited = null;
   const stopRow = earLog && Array.isArray(earLog.rows) ? earLog.rows.find((r) => r[0] === 'stop') : null;
-  if (stopRow && stopRow[5] > 0 && stopRow[4] != null) lastPos = stopRow[4] / stopRow[5];
+  if (stopRow) { const idx = items.findIndex((it) => it.name === stopRow[3]); recited = stopRow[6] === 'done' ? items.length : idx >= 0 ? idx + 1 : null; }
+  if (stopRow && stopRow[6] === 'done') lastPos = 1;
+  else if (stopRow && stopRow[5] > 0 && stopRow[4] != null) lastPos = stopRow[4] / stopRow[5];
   else { const lastItem = (session.items || [])[(session.items || []).length - 1]; if (lastItem) { const sl = (lastItem.slips || []).find((x) => (x.kind === 'partial' || x.kind === 'dropped') && x.expected > 0); lastPos = sl ? sl.count / sl.expected : lastItem.partial ? 0.3 : lastItem.matched ? 1 : null; } }
-  const second = segmentTake(F, items, { pace, lastPos });
+  const second = segmentTake(F, items, { pace, lastPos, recited });
   const ear = earStretches(session, earLog);
   return { session, items, pace, duration, second, ear, earLog };
 }
@@ -74,23 +78,23 @@ function analyse(id) {
 function compareMethod(res, method) {
   const r = res.second.results[method];
   if (!r) return null;
-  const rows = r.segments.map((s) => { const e = res.ear.by.get(s.name) || null; return { ...s, ear: e, dFrom: e ? s.from - e.from : null, dTo: e ? s.to - e.to : null }; });
+  const rows = r.segments.map((s) => { const e = s.notRecited ? null : res.ear.by.get(s.name) || null; return { ...s, ear: e, dFrom: e ? s.from - e.from : null, dTo: e ? s.to - e.to : null }; });
   // the inner boundaries: the second opinion's cut (the pause) against the ear's close (the stretch's end)
-  const inner = rows.slice(0, -1).map((row, i) => { const b = r.boundaries[i]; const earEnd = row.ear ? row.ear.to : null; return { after: row.name, pause: [b.from, b.to], earEnd, d: earEnd != null ? b.from - earEnd : null, margin: b.runnerUp ? b.runnerUp.extraCost : null }; });
+  const inner = r.boundaries.map((b, i) => { const row = rows[i]; const earEnd = row && row.ear ? row.ear.to : null; return { after: row ? row.name : b.after, pause: [b.from, b.to], virtual: !!b.virtual, earEnd, d: earEnd != null ? b.from - earEnd : null, margin: b.runnerUp ? b.runnerUp.extraCost : null }; });
   const ds = inner.map((x) => x.d).filter((x) => x != null).map(Math.abs);
   return { rows, inner, maxAbs: ds.length ? Math.max(...ds) : null, meanAbs: ds.length ? ds.reduce((a, b) => a + b, 0) / ds.length : null };
 }
 function printOne(res) {
   const { session, second, ear } = res;
   console.log(`Take ${session.id} · ${(session.items || []).map((it) => it.name).join(', ')} · ${r2(res.duration)} s · learner pace ${res.pace ? `tempo ${res.pace.tempoRatio ?? '—'}, ${res.pace.aksPerSec ?? '—'} akṣaras/s` : 'unknown'} · ${second.pauses} pauses · sound ${r2(second.sungTotal)} s of ${r2(second.spanTotal)} s · the ear at the stop: ${second.lastPos == null ? 'unknown' : `${Math.round(second.lastPos * 100)} % of the last sloka`} · the ear's stretches from ${ear.source}`);
-  console.log(`  slokas: ${second.items.map((it) => `${it.name} (${it.total ?? '?'} akṣaras, teacher ${r2(it.teacherSec)} s)`).join(' · ')}`);
+  console.log(`  slokas: ${second.items.map((it) => `${it.name} (${it.total ?? '?'} akṣaras${it.speakerLine ? `, speaker line ${it.speakerLine}` : ''}, teacher ${r2(it.teacherSec)} s)`).join(' · ')}`);
   for (const method of ['plan', 'teacher', 'share']) {
     const c = compareMethod(res, method);
     if (!c) { console.log(`  ${method}: not available${method === 'share' ? '' : ' (no learnt pace)'}${second.results[method] === null ? ' — too few pauses' : ''}`); continue; }
     const rr = second.results[method];
     console.log(`  ${method}${second.chosen === method ? ' (chosen)' : ''} · cost ${rr.cost}${rr.scale != null ? ` · pace scale ×${rr.scale} · ${rr.hypothesis}${rr.hint && rr.hint !== 'none' ? ` (the stop says ${rr.hint})` : ''}` : ''} · boundaries vs the ear: mean |Δ| ${r2(c.meanAbs)} s, max ${r2(c.maxAbs)} s`);
-    for (const row of c.rows) console.log(`    ${row.name.padEnd(10)} ${r2(row.from)}–${r2(row.to)} s · sung ${r2(row.sungSec)} s for ${r2(row.expectedSec)} expected (×${r2(row.ratio)})${row.ear ? ` · ear ${r2(row.ear.from)}–${r2(row.ear.to)} s · Δstart ${sgn(row.dFrom)} Δend ${sgn(row.dTo)}` : ' · the ear has no stretch'}`);
-    for (const b of c.inner) console.log(`      cut after ${b.after}: the pause ${r2(b.pause[0])}–${r2(b.pause[1])} s${b.earEnd != null ? ` · the ear closed at ${r2(b.earEnd)} s (Δ ${sgn(b.d)})` : ''} · next-best pause would cost +${r2(b.margin)}`);
+    for (const row of c.rows) console.log(row.notRecited ? `    ${row.name.padEnd(10)} not recited (the take stopped before it)` : `    ${row.name.padEnd(10)} ${r2(row.from)}–${r2(row.to)} s · sung ${r2(row.sungSec)} s for ${r2(row.expectedSec)} expected (×${r2(row.ratio)})${row.ear ? ` · ear ${r2(row.ear.from)}–${r2(row.ear.to)} s · Δstart ${sgn(row.dFrom)} Δend ${sgn(row.dTo)}` : ' · the ear has no stretch'}`);
+    for (const b of c.inner) console.log(`      cut after ${b.after}: ${b.virtual ? 'through the sound at' : 'the pause'} ${r2(b.pause[0])}–${r2(b.pause[1])} s${b.earEnd != null ? ` · the ear closed at ${r2(b.earEnd)} s (Δ ${sgn(b.d)})` : ''} · next-best pause would cost +${r2(b.margin)}`);
   }
   for (const it of session.items || []) if (it.slips && it.slips.length) console.log(`  the session's slips on ${it.name}: ${it.slips.map((s) => `${s.kind}${s.count != null ? ` ${s.count}/${s.expected}` : ''}`).join(', ')}`);
   if (res.earLog && res.earLog.secondOpinion) {

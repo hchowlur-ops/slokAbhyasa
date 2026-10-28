@@ -6,19 +6,25 @@ const HOP = 0.02;
 // A take: slokas of the given sung seconds, each in four pādas with a breath of `padaGap`
 // between them, `slokaGap` between slokas, and a lead and tail of silence. Returns the
 // activity mask and the true boundaries (where each sloka's sound begins and ends).
-function take(slokaSecs, { padaGap = 0.4, slokaGap = 0.8, lead = 0.5, tail = 0.5 } = {}) {
+// `slokaGaps` may give the breath before each sloka from the second on (0: no breath — the
+// learner goes straight on). The level: chant at −30 dB with a dip every 0.35 s (the syllables),
+// silence at −60 dB.
+// `speakers` gives, per sloka, the seconds of a speaker line sung before its pādas, with a breath after it.
+function take(slokaSecs, { padaGap = 0.4, slokaGap = 0.8, slokaGaps = null, speakers = null, lead = 0.5, tail = 0.5 } = {}) {
   const frames = [];
   const truth = [];
   const push = (on, sec) => { for (let k = 0; k < Math.round(sec / HOP); k++) frames.push(on ? 1 : 0); };
   push(false, lead);
   slokaSecs.forEach((s, i) => {
-    if (i) push(false, slokaGap);
+    if (i) push(false, slokaGaps ? slokaGaps[i - 1] : slokaGap);
     const from = frames.length * HOP;
+    if (speakers && speakers[i]) { push(true, speakers[i]); push(false, padaGap); }
     for (let p = 0; p < 4; p++) { if (p) push(false, padaGap); push(true, s / 4); }
     truth.push({ from, to: frames.length * HOP });
   });
   push(false, tail);
-  return { F: { active: Uint8Array.from(frames), hopSec: HOP }, truth };
+  const rmsDb = Float32Array.from(frames, (on, k) => (on ? -30 + 5 * Math.sin((2 * Math.PI * k * HOP) / 0.35) - 5 : -60));
+  return { F: { active: Uint8Array.from(frames), rmsDb, hopSec: HOP }, truth };
 }
 const near = (a, b, tol = 0.05) => Math.abs(a - b) <= tol;
 
@@ -92,6 +98,27 @@ test('cutsFor: a cut the student made by turning the page pins the boundary, wha
   // a pin far from any pause is ignored
   const far = cutsFor(F, items, exp, { pinned: [{ after: 0, at: 100 }] });
   assert.ok(!far.boundaries[0].pinned);
+});
+
+test('cutsFor: no breath between the first two slokas — the cut goes through the sound near where the lengths put it', () => {
+  const { F, truth } = take([12, 9, 12], { slokaGaps: [0, 0.8] });
+  const items = [{ name: 'A', total: 32 }, { name: 'B', total: 24 }, { name: 'C', total: 32 }];
+  const r = cutsFor(F, items, items.map((it) => it.total / 2.67));
+  assert.ok(r.valleys > 0, 'the runs of sound offered their valleys');
+  assert.ok(r.boundaries[0].virtual, 'the first cut went through the sound');
+  assert.ok(Math.abs(r.segments[0].to - truth[0].to) < 0.7, `the first cut near the truth: ${r.segments[0].to} vs ${truth[0].to}`);
+  assert.ok(!r.boundaries[1].virtual && near(r.segments[1].to, truth[1].to), 'the second cut at the breath');
+});
+
+test('segmentTake: a take stopped before its last sloka places only the slokas it reached', () => {
+  const { F, truth } = take([12, 9]);
+  const items = [{ name: 'A', total: 32 }, { name: 'B', total: 24 }, { name: 'C', total: 32 }];
+  const r = segmentTake(F, items, { pace: { aksPerSec: 2.67 }, recited: 2, lastPos: 1 });
+  assert.equal(r.recited, 2);
+  const segs = r.results.plan.segments;
+  assert.equal(segs.length, 3);
+  assert.ok(near(segs[0].to, truth[0].to) && near(segs[1].to, truth[1].to));
+  assert.ok(segs[2].notRecited && segs[2].from == null);
 });
 
 test('segmentTake: with no pace the take shares itself out by the akṣaras; with a pace the plan method is chosen', () => {

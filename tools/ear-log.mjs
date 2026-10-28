@@ -106,10 +106,11 @@ function describeSecondOpinion(log) {
     const ds = [];
     out.push(`  ${method}${so.chosen === method ? ' (chosen)' : ''} · cost ${r.cost}${r.scale != null ? ` · pace scale ×${r.scale} · ${r.hypothesis}${r.hint && r.hint !== 'none' ? ` (the stop says ${r.hint})` : ''}` : ''}`);
     r.segments.forEach((s, i) => {
+      if (s.notRecited) { out.push(`    ${pad(s.name, 10)} not recited (the take stopped before it)`); return; }
       const e = ear.get(s.name);
       const dEnd = e && i < r.segments.length - 1 ? s.to - e.to : null;
       if (dEnd != null) ds.push(Math.abs(dEnd));
-      out.push(`    ${pad(s.name, 10)} ${r2(s.from)}–${r2(s.to)} s · sung ${r2(s.sungSec)} s for ${r2(s.expectedSec)} expected (×${r2(s.ratio)})${e ? ` · the ear's stretch ${r2(e.from)}–${r2(e.to)} s` : ''}${dEnd != null ? ` · the cut ${dEnd >= 0 ? '+' : ''}${r2(dEnd)} s from the ear's close` : ''}${r.boundaries[i] && r.boundaries[i].pinned ? ' · pinned by the student' : r.boundaries[i] && r.boundaries[i].runnerUp ? ` · next-best pause +${r2(r.boundaries[i].runnerUp.extraCost)}` : ''}`);
+      out.push(`    ${pad(s.name, 10)} ${r2(s.from)}–${r2(s.to)} s · sung ${r2(s.sungSec)} s for ${r2(s.expectedSec)} expected (×${r2(s.ratio)})${e ? ` · the ear's stretch ${r2(e.from)}–${r2(e.to)} s` : ''}${dEnd != null ? ` · the cut ${dEnd >= 0 ? '+' : ''}${r2(dEnd)} s from the ear's close` : ''}${r.boundaries[i] && r.boundaries[i].pinned ? ' · pinned by the student' : r.boundaries[i] && r.boundaries[i].runnerUp ? ` · next-best pause +${r2(r.boundaries[i].runnerUp.extraCost)}` : ''}${r.boundaries[i] && r.boundaries[i].virtual ? ' · through the sound (no breath there)' : ''}`);
     });
     if (ds.length) out.push(`    cuts against the ear's closes: mean |Δ| ${r2(ds.reduce((a, b) => a + b, 0) / ds.length)} s, max ${r2(Math.max(...ds))} s`);
   }
