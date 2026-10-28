@@ -5788,6 +5788,18 @@ function transcribeBoth(force) {
 }
 
 // The word diff of a sloka and the take, over the parts of each that were compared.
+// The first words of the sloka after `id` in the take (its speaker line and first pāda): a
+// sloka that ends with the word the next begins with ("…kim akurvata sañjaya | sañjaya
+// uvāca") must not read as a word said twice when the window runs a little into the next.
+function nextOpeningOf(id) {
+  const items = practice.quiz ? practice.quiz.items.map((it) => it.id) : practice.selection;
+  const k = id ? items.indexOf(id) : -1;
+  if (k < 0 || k + 1 >= items.length) return null;
+  const base = practice.bases.get(items[k + 1]);
+  const text = base ? slokaTextOf(base) : '';
+  return text ? tokenize(text).slice(0, 8) : null;
+}
+const idOfResult = (res) => { for (const [id, r] of practice.results) if (r === res) return id; return null; };
 function windowedDiff(res, baseT, heardT, baseDuration, takeDuration, plan = null) {
   const A = windowedTokens(baseT, res.matched.base, baseDuration);
   const B = windowedTokens(heardT, res.matched.heard, takeDuration);
@@ -5828,7 +5840,7 @@ function windowedDiff(res, baseT, heardT, baseDuration, takeDuration, plan = nul
       const ends = []; let e = sp; for (const n of usePlan.padas) { e += n; ends.push(e); }
       for (const t of refToks) { let u = 0; while (u < ends.length && acc >= ends[u]) u++; refPada.push(acc < sp ? 0 : 1 + u); acc += syllabify(t.word).length; }
     } else if (perPada) { refPada = []; let acc = 0; for (const t of refToks) { refPada.push(acc < offset ? 0 : 1 + Math.floor((acc - offset) / perPada)); acc += syllabify(t.word).length; } }
-    corrections = findSelfCorrections(refToks, heardToks, { refPada }).map((c) => { const tok = heardToks[c.at]; const ch = tok && heardT.chunks && heardT.chunks[tok.chunk]; return { ...c, at: ch && typeof ch.start === 'number' ? ch.start : undefined }; });
+    corrections = findSelfCorrections(refToks, heardToks, { refPada, nextOpening: nextOpeningOf(idOfResult(res)) }).map((c) => { const tok = heardToks[c.at]; const ch = tok && heardT.chunks && heardT.chunks[tok.chunk]; return { ...c, at: ch && typeof ch.start === 'number' ? ch.start : undefined }; });
   }
   return { A, B, ai, bi, delA, insB, dimA, dimB, summary: cmp.summary, phonology, corrections };
 }

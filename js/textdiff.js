@@ -308,10 +308,14 @@ function editDistance(a, b) {
   }
   return prev[m];
 }
-export function findSelfCorrections(refToks, heardToks, { refPada = null } = {}) {
+// `nextOpening`: the first words of the sloka that follows in the take — a sloka that ends
+// with the word the next begins with ("…kim akurvata sañjaya | sañjaya uvāca") is the recital
+// going on, not a word said twice.
+export function findSelfCorrections(refToks, heardToks, { refPada = null, nextOpening = null } = {}) {
   const stream = (toks) => { let s = ''; const tokAt = []; const starts = []; for (let i = 0; i < toks.length; i++) { const k = phoneticKey(toks[i].norm || toks[i].word || ''); starts.push(s.length); for (let c = 0; c < k.length; c++) tokAt.push(i); s += k; } return { s, tokAt, starts }; };
   const H = stream(heardToks || []);
   const R = stream(refToks || []);
+  const N = nextOpening && nextOpening.length ? stream(nextOpening) : null;
   const out = [];
   if (H.s.length < 2 * SELF_CORR_MIN_SOUNDS) return out;
   // where each pāda of the sloka starts in its stream, and how long it runs
@@ -332,6 +336,15 @@ export function findSelfCorrections(refToks, heardToks, { refPada = null } = {})
       }
     }
     if (!hit) { i++; continue; }
+    // the second saying is the next sloka's opening: the recital going on, not a slip
+    // (the unit the detector matched may sit a sound or two off the word boundary — "a sanjay"
+    // twice with the a of kimakurvata — so the opening is looked for a little either way)
+    if (N && N.s.length >= 3) {
+      const n = N.s.slice(0, Math.min(hit.L, N.s.length));
+      let opening = false;
+      for (let shift = -2; shift <= 2 && !opening; shift++) { const at = i + hit.L + hit.gap + shift; if (at < 0) continue; const b = H.s.substr(at, n.length); if (b.length >= 3 && editDistance(b, n.slice(0, b.length)) <= slack(b.length)) opening = true; }
+      if (opening) { i += hit.L; continue; }
+    }
     // both sayings inside one heard word ("…somāśarasomayā" for śrutau vistaraśo mayā): the
     // recogniser's echo, not the learner's — a word said twice is written as two words
     if (H.tokAt[i] === H.tokAt[Math.min(H.tokAt.length - 1, i + 2 * hit.L + hit.gap - 1)]) { i += hit.L; continue; }

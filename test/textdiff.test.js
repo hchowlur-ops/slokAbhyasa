@@ -138,6 +138,15 @@ test('"arjuna uvāca" opening a śloka is recognised in any script and spelling'
   assert.equal(withDandas('अर्जुन उवाच\nक\nख\nग\nघ'), 'अर्जुन उवाच\nक\nख ।\nग\nघ ॥');
 });
 
+test('self-corrections: a sloka ending with the word the next sloka begins with is the recital going on, not a repeat', () => {
+  const T = (s) => s.split(' ').map((w) => ({ word: w, norm: w }));
+  const ref = T('धर्मक्षेत्रे कुरुक्षेत्रे समवेता युयुत्सवः मामकाः पाण्डवाश्चैव किमकुर्वत सञ्जय');
+  const heard = T('धर्मक्षेत्रे कुरुक्षेत्रे समवेता युयुत्सवः मामकाः पाण्डवाश्चैव किमकुर्वत सञ्जय सञ्जय उवाच दृष्ट्वा');
+  assert.deepEqual(findSelfCorrections(ref, heard).map((c) => c.kind), ['repeat'], 'blind to the next sloka, a repeat');
+  assert.deepEqual(findSelfCorrections(ref, heard, { nextOpening: T('सञ्जय उवाच दृष्ट्वा तु पाण्डवानीकं') }), [], 'the next sloka begins with that word');
+  assert.deepEqual(findSelfCorrections(ref, heard, { nextOpening: T('अर्जुन उवाच') }).map((c) => c.kind), ['repeat'], 'a next sloka beginning otherwise: still a repeat');
+});
+
 test('self-corrections from the words: a word said twice, a pāda started again, the sloka started again', () => {
   const T = (s) => s.split(' ').map((w) => ({ word: w, norm: w }));
   const ref = T('ये त्वक्षरमनिर्देश्यमव्यक्तं पर्युपासते सर्वत्रगमचिन्त्यञ्च कूटस्थमचलन्ध्रुवम्');

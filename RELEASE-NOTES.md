@@ -8,6 +8,10 @@ last package. The README describes every feature as it stands; this file says wh
 
 ### 28 October 2026
 
+- **A sloka ending with the word the next begins with is not a repeat.** 1.1 ends with
+  "sañjaya" and 1.2 opens with "sañjaya uvāca"; when a sloka's window ran a little into
+  the next, the words read the word said twice. The self-correction detector now knows the
+  next sloka's opening.
 - **Why Needs practice.** An i beside the take's grade lists which slokas need practice
   and for what; an i on a card that speaks of akṣaras dropped or words missing names the
   missing akṣaras, with a way to the analysis, or offers to hear the words. The analysis
