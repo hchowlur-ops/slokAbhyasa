@@ -8,6 +8,10 @@ last package. The README describes every feature as it stands; this file says wh
 
 ### 28 October 2026
 
+- **Yours plays the sloka's own sound.** In a sloka's report, Yours and Play both together
+  start at the sloka's first sound after the breath and end after its last, instead of at
+  the looser edges of the stretch it was compared on, which began inside the previous
+  sloka's tail.
 - **The second opinion cuts through sound where there is no breath**, at a dip of the
   level and at a cost, so a learner who goes straight on into the next sloka no longer
   sends its cut to the next pause; the slokas a take never reached are left unplaced

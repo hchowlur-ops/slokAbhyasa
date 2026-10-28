@@ -10,7 +10,7 @@ import { drawWaveform, drawLiveWave, ComparisonChart, cssVar } from './visualize
 import { serializeFeatures, deserializeFeatures, isValidFeatures, SR as FEAT_SR, HOP_SEC as FEAT_HOP } from './dsp/features.js';
 import { earExpectedMs, earPositionOf, earDecision, calibrateCountRatio, padaStartsFromPauses } from './dsp/ear.js';
 import { EarLog } from './earlog.js';
-import { segmentTake } from './dsp/segment.js';
+import { segmentTake, playRangeOf } from './dsp/segment.js';
 import { padaStarts, startTemplates, calibrate, matchStart, mfccRows, meanOf, TEMPLATE_SEC, TEMPLATE_FRAMES, MIN_TEMPLATE_FRAMES } from './dsp/starts.js';
 import { MISMATCH_CONTRAST, confirmByWords, confirmByEar } from './dsp/compare.js';
 import { QUIZ_CATEGORIES, LEGACY_CATEGORIES, DEFAULT_QUIZ_CATEGORIES, DEFAULT_TOLERANCE, CATEGORY_WEIGHTS, categoryLabel, normalizeWeights, itemScores, attemptSummary, scoreFor, normalizeCategories, normalizeTolerance, recordTolerance, withinTolerance, itemVerdict, correctness, pickBaselines, overallScore, attemptOverall, itemOverall, applySlipPenalty, selfCorrections, SLIP_PENALTY, isPartial, droppedByWords, gradeOf, gradeById, gradeWithSlips, gradeWords, slipsLabel, anySlips, modernCategories } from './quizscore.js';
@@ -1954,7 +1954,14 @@ const drawBaseWave = bindWave($('#practice-base-wave'), basePlayer, () => practi
 const drawTakeWave = bindWave($('#take-wave'), heardPlayer, () => (practice.take ? practice.take.samples : null), $('#take-view-time'), $('#take-view-dur'), takeWaveMarks); // the whole recital, with the cuts
 bindPlayButton($('#practice-base-play'), basePlayer);
 bindPlayButton($('#res-play-base'), basePlayer);
-bindRangePlayButton($('#res-play-heard'), heardPlayer, () => (practice.result && practice.result.matched && !takeViewOn() ? practice.result.matched.heard : null)); // the open sloka's stretch of the take, not the whole
+bindRangePlayButton($('#res-play-heard'), heardPlayer, () => (practice.result && !takeViewOn() ? heardPlayRange(practice.result) : null)); // the open sloka's own sound, not the whole take
+// What Yours plays for the open sloka: the stretch it was compared on, from its first sound
+// after the breath to the end of its last (dsp/segment.js playRangeOf) — the window itself is
+// loose and begins inside the previous sloka's tail.
+function heardPlayRange(res) {
+  if (!res || !res.matched || !res.matched.heard) return null;
+  return playRangeOf(practice.heard, res.matched.heard);
+}
 bindPlayButton($('#take-play-heard'), heardPlayer); // the whole recital
 const practicePanel = createTranscriptPanel($('#practice-transcript'), {
   title: 'Sloka text',
@@ -2043,7 +2050,7 @@ async function playBoth() {
   duet = true;
   $('#res-play-both').classList.add('playing');
   const [b0, b1] = res.matched ? res.matched.base : [0, basePlayer.duration];
-  const [h0, h1] = res.matched ? res.matched.heard : [0, heardPlayer.duration];
+  const [h0, h1] = res.matched ? heardPlayRange(res) : [0, heardPlayer.duration];
   await Promise.all([basePlayer.playRange(b0, b1), heardPlayer.playRange(h0, h1)]);
 }
 function stopDuet() {

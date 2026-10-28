@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { pausesOf, expectations, cutsFor, fitCuts, segmentTake, MIN_GAP_SEC } from '../js/dsp/segment.js';
+import { pausesOf, expectations, cutsFor, fitCuts, segmentTake, playRangeOf, MIN_GAP_SEC } from '../js/dsp/segment.js';
 
 const HOP = 0.02;
 // A take: slokas of the given sung seconds, each in four pādas with a breath of `padaGap`
@@ -119,6 +119,20 @@ test('segmentTake: a take stopped before its last sloka places only the slokas i
   assert.equal(segs.length, 3);
   assert.ok(near(segs[0].to, truth[0].to) && near(segs[1].to, truth[1].to));
   assert.ok(segs[2].notRecited && segs[2].from == null);
+});
+
+test('playRangeOf: a sloka plays from its first sound after the breath to the end of its last, whatever the window', () => {
+  const { F, truth } = take([12, 9, 12]);
+  // the comparison's window for the second sloka: half a second early (inside the first sloka's tail) and ending in its own trailing quiet
+  const win = [truth[1].from - 0.5, truth[1].to + 0.4];
+  const r = playRangeOf(F, win);
+  assert.ok(near(r[0], truth[1].from, 0.03), `starts at its first sound: ${r[0]} vs ${truth[1].from}`);
+  assert.ok(near(r[1], truth[1].to + 0.15, 0.03), `ends after its last sound: ${r[1]} vs ${truth[1].to + 0.15}`);
+  // a window that ends inside the sloka's last line: the sound runs on, so the end follows it (at most a second)
+  const short = playRangeOf(F, [truth[1].from, truth[1].to - 0.6]);
+  assert.ok(near(short[1], truth[1].to + 0.15, 0.03), `runs on to the sound's end: ${short[1]}`);
+  // no features: the window as it is
+  assert.deepEqual(playRangeOf(null, [1, 2]), [1, 2]);
 });
 
 test('segmentTake: with no pace the take shares itself out by the akṣaras; with a pace the plan method is chosen', () => {

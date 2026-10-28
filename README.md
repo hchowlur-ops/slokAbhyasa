@@ -305,7 +305,9 @@ slokas': its play button plays the whole take, and its wave shows where the teac
 were matched (shaded, with their names), where the ear cut the recital (gold lines; a thick
 one is a page you turned) and where the second opinion cut it (dashed; thick when pinned to
 your turn); click the wave to play from there. Click a sloka's card to open its report — Yours
-then plays that sloka's stretch alone, and the words, scores, chart and deviations are its —
+then plays that sloka alone, from its first sound after the breath to the end of its last
+(the stretch it was compared on is looser at both ends, and would begin inside the previous
+sloka's tail), and the words, scores, chart and deviations are its —
 and the open card again, or the whole-recital card, to come back. A **Transcribe this sloka**
 button in the Transcript block hears the open sloka's words on demand (the words of a take of
 several slokas are not heard unless asked); once they are in it reads Transcribe again. Once the take is compared, the **words of every

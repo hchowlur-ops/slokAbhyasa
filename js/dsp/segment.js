@@ -299,4 +299,62 @@ export function segmentTake(F, allItems, { pace = null, minGapSec = MIN_GAP_SEC,
   return { version: 1, recited: items.length, items: allItems.map((it) => ({ name: it.name, teacherSec: r3(it.teacherSec), total: it.total, speakerLine: it.speakerLine || 0 })), pace: pace ? { tempoRatio: pace.tempoRatio || null, aksPerSec: pace.aksPerSec || null } : null, quiet: { thresholdDb, floorDb, peakDb }, sungTotal: r3(sungTotal), spanTotal: r3(last - first), pauses: gaps.length, sound: !!soundCost, lastPos: r3(lastPos), pinned: (pinned || []).map((p) => ({ after: p.after, at: r3(p.at) })), chosen, results };
 }
 
+// The stretch of a take to play for one sloka, from the window it was compared on: the window
+// is loose at both ends (half a second of padding, the alignment's slack), so it begins inside
+// the previous sloka's tail and may end before this sloka's last sound has died away. The start
+// moves to the sloka's first sound after the last breath (a quiet gap of at least gapSec) found
+// within headSec of the window's start (two seconds: less than a speaker line, so one is never
+// skipped); the end moves to the end of this sloka's last sound — on past the window when the
+// sound runs on (at most tailSec), back to where the breath began when the next sloka has
+// already started by the window's end, back to the last sound when the window ends in quiet —
+// plus a short tail. `F`: the take's features (rmsDb,
+// hopSec), its sound mask cached on it. Returns [from, to] in seconds.
+export function playRangeOf(F, window, { headSec = 2.0, tailSec = 1.0, nextSec = 0.8, gapSec = 0.12, breathSec = 0.25, lineSec = 0.6, lineSpanSec = 1.5, keepSec = 0.15 } = {}) {
+  if (!window || !(window[1] > window[0])) return window || null;
+  if (!F || !F.hopSec || !F.rmsDb) return [window[0], window[1]];
+  if (!F.playMask) F.playMask = soundMaskOf(F).mask;
+  const mask = F.playMask;
+  const hop = F.hopSec;
+  const n = mask.length;
+  const minGap = Math.max(1, Math.round(gapSec / hop));
+  const a = Math.max(0, Math.round(window[0] / hop));
+  const b = Math.max(a, Math.min(n, Math.round(window[1] / hop)));
+  // the start: the end of the first breath (a quiet gap of breathSec or more) beginning within
+  // headSec of the window's start that is followed by a line — at least lineSec of sound in the
+  // next lineSpanSec (the syllables come as short bursts at this threshold, so a run will not
+  // do) — not a stray sound, which is skipped with the quiet after it; none: the window's start
+  let start = a;
+  const aMax = Math.min(b, Math.round((window[0] + headSec) / hop));
+  const minBreath = Math.max(1, Math.round(breathSec / hop));
+  const lineFrames = Math.max(1, Math.round(lineSec / hop));
+  const spanFrames = Math.max(1, Math.round(lineSpanSec / hop));
+  const soundIn = (from, to) => { let c = 0; for (let k = from; k < Math.min(n, to); k++) if (mask[k]) c++; return c; };
+  for (let k = a; k < aMax; k++) {
+    if (mask[k]) continue;
+    let j = k;
+    while (j < b && !mask[j]) j++;
+    if (j - k >= minBreath && soundIn(j, j + spanFrames) >= lineFrames) { start = j; break; }
+    k = j;
+  }
+  // the end: sound at the window's end is this sloka's last sound running past it, or the next
+  // sloka already begun — a breath ending within nextSec before the window's end says the latter,
+  // and the sloka ends where that breath began; a window ending in quiet ends at the last sound
+  let end = b;
+  const runOn = () => { let k = b; while (k < n && mask[k] && (k - b) * hop < tailSec) k++; end = k; };
+  if (b < n && mask[b]) {
+    let breath = -1; // where the last breath (quiet of gapSec or more) ending within nextSec before the window's end began; a shorter quiet is a closure, skipped
+    for (let k = b; k > start && (b - k) * hop <= nextSec; k--) {
+      if (mask[k - 1]) continue;
+      let j = k;
+      while (j > start && !mask[j - 1]) j--;
+      if (k - j >= minGap) { breath = j; break; }
+      k = j;
+    }
+    if (breath >= 0) end = breath; else runOn();
+  } else { let k = b; while (k > start && !mask[k - 1]) k--; end = k; }
+  end = Math.min(n, end + Math.round(keepSec / hop));
+  if (end <= start) return [window[0], window[1]];
+  return [Math.round(start * hop * 1000) / 1000, Math.round(end * hop * 1000) / 1000];
+}
+
 const r3 = (x) => (x == null || !Number.isFinite(x) ? null : Math.round(x * 1000) / 1000);
