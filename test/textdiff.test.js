@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { tokenize, diffWords, diffSummary, compareWords, phoneticKey, tokenizeTranscript, windowedTokens, dandaMarks, withDandas, uvacaWords, isUvacaLine, splitUvaca } from '../js/textdiff.js';
 import { findSelfCorrections, tokenMoments, refineBoundary } from '../js/textdiff.js';
+import fs from 'node:fs';
 
 test('phoneticKey: Devanagari, Kannada and Latin spellings of one sound share a key', () => {
   assert.equal(phoneticKey('नमः'), 'namah');
@@ -174,6 +175,42 @@ test('self-corrections from the words: a word said twice, a pāda started again,
   const kn = findSelfCorrections(ref, T('ಯೇ ತ್ವಕ್ಷರಮನಿರ್ದೇಶ್ಯಮವ್ಯಕ್ತಂ ಪರ್ಯುಪಾಸತೇ ಪರ್ಯುಪಾಸತೇ ಸರ್ವತ್ರಗಮಚಿಂತ್ಯಞ್ಚ ಕೂಟಸ್ಥಮಚಲಂಧ್ರುವಮ್'));
   assert.equal(kn.length, 1);
   assert.equal(kn[0].kind, 'repeat');
+});
+
+test('self-corrections: a sloka that echoes itself is not a repeat, and a real one in it still is', () => {
+  const T = (s) => s.split(' ').map((w) => ({ word: w, norm: w }));
+  // 18.2: kāmyānāṁ karmaṇāṁ rhyme, and nyāsaṁ is said again at once inside saṁnyāsaṁ
+  const ref = T('श्रीभगवानुवाच काम्यानां कर्मणां न्यासं संन्यासं कवयो विदुः सर्वकर्मफलत्यागं प्राहुस्त्यागं विचक्षणाः');
+  assert.deepEqual(findSelfCorrections(ref, ref), [], 'the text against itself');
+  assert.deepEqual(findSelfCorrections(ref, T('श्रीभगवानुवाच काम्यानां कर्मानां ञासं सञासं कवयो विदुः सर्वकर्मफलत्यागं प्राहुस्त्यागं विचक्षणाः')), [], "as the recogniser wrote it on 31 October: ñāsaṁ sañāsaṁ, karmānāṁ");
+  const refPada = [1, 2, 2, 2, 2, 2, 2, 3, 3, 3];
+  const again = findSelfCorrections(ref, T('श्रीभगवानुवाच काम्यानां कर्मणां न्यासं संन्यासं काम्यानां कर्मणां न्यासं संन्यासं कवयो विदुः सर्वकर्मफलत्यागं प्राहुस्त्यागं विचक्षणाः'), { refPada });
+  assert.equal(again.length, 1, 'the half-line started again is still heard');
+  assert.equal(again[0].kind, 'restart');
+  assert.equal(again[0].pada, 2);
+  // 4.25: yajñaṁ said twice before yoginaḥ, in a sloka whose second line goes yajñaṁ yajñena
+  const ref2 = T('दैवमेवापरे यज्ञं योगिनः पर्युपासते ब्रह्माग्नावपरे यज्ञं यज्ञेनैवोपजुह्वति');
+  assert.deepEqual(findSelfCorrections(ref2, ref2), []);
+  assert.deepEqual(findSelfCorrections(ref2, T('दैवमेवापरे यज्ञं यज्ञं योगिनः पर्युपासते ब्रह्माग्नावपरे यज्ञं यज्ञेनैवोपजुह्वति')).map((c) => c.kind), ['repeat']);
+});
+
+test('self-corrections: no sloka of the Gītā reads as a repeat against its own text', () => {
+  const verses = JSON.parse(fs.readFileSync(new URL('../reference/gita/verses.json', import.meta.url), 'utf8'));
+  const arr = Array.isArray(verses) ? verses : verses.verses || Object.values(verses);
+  const T = (s) => tokenize(String(s).replace(/[।॥\n]+/g, ' '));
+  const echoes = [];
+  let n = 0;
+  for (const v of arr) {
+    const lines = Array.isArray(v.deva) ? v.deva : [v.deva];
+    const text = [(v.speaker && v.speaker.deva) || '', ...lines].join(' ').trim();
+    if (!text) continue;
+    n++;
+    const toks = T(text);
+    const out = findSelfCorrections(toks, toks);
+    if (out.length) echoes.push(`${v.id}: ${out.map((o) => `${o.kind} ${o.word}`).join(' · ')}`);
+  }
+  assert.ok(n > 700, `the dataset is read (${n} slokas)`);
+  assert.deepEqual(echoes, []);
 });
 
 test('self-corrections survive the words as Whisper writes them: compounds split, nasals changed', () => {

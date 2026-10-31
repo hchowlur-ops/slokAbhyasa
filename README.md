@@ -256,8 +256,10 @@ slokas you had ticked there.
      slips that are the learner correcting themself — a word said twice, a pāda or the
      sloka started again, found in the words heard — read as one stream of sounds, blind
      to word breaks, since Whisper writes a compound as two or three words and alters a
-     nasal or two (and a restart heard by the ear while
-     recording several slokas) — also cost **15 % of the sloka's score**, once, whatever
+     nasal or two; a second saying that is simply where the sloka's own text goes on —
+     nyāsaṁ saṁnyāsaṁ, kāmyānāṁ karmaṇāṁ, jāyate mriyate: 161 of the Gītā's 719 slokas echo
+     themselves within a few sounds — is the language, not a slip (and a restart heard by
+     the ear while recording several slokas) — also cost **15 % of the sloka's score**, once, whatever
      their number; the line under the grade says what was lost and why ("Lost 14 points
      (15 %) for self-correction: repeated "पर्युपासते""), and the Analysis names each one
      with the word said twice or the word the pāda or the sloka was started again at.

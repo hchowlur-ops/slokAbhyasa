@@ -8,6 +8,11 @@ last package. The README describes every feature as it stands; this file says wh
 
 ### 31 October 2026
 
+- **A sloka that echoes itself is no longer a repeat.** The self-correction detector
+  took CH18-02's kāmyānāṁ karmaṇāṁ nyāsaṁ saṁnyāsaṁ for words said twice and cost the
+  take 15 % and Needs practice; 161 of the Gītā's 719 slokas echo themselves so. A second
+  saying that is where the sloka's own text goes on is now the language, not a slip; a
+  real restart in such a sloka is still heard.
 - **A sloka practised on its own places itself in a recital.** A clean evaluation of a
   sloka alone keeps its first and last two seconds in your voice; in a recital the second
   opinion matches every sloka's beginning, then confirms each with its ending, and pins

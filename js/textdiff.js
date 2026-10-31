@@ -311,7 +311,9 @@ function editDistance(a, b) {
 // `nextOpening`: the first words of the sloka that follows in the take — a sloka that ends
 // with the word the next begins with ("…kim akurvata sañjaya | sañjaya uvāca") is the recital
 // going on, not a word said twice. `prevEnding`: the last words of the sloka before, for a
-// window that begins with its tail — the mirror case.
+// window that begins with its tail — the mirror case. And a second saying that is where the
+// sloka's own text goes on — nyāsaṁ saṁnyāsaṁ, kāmyānāṁ karmaṇāṁ, jāyate mriyate: 161 of the
+// Gītā's 719 slokas echo themselves within a few sounds — is the language, not a slip.
 export function findSelfCorrections(refToks, heardToks, { refPada = null, nextOpening = null, prevEnding = null } = {}) {
   const stream = (toks) => { let s = ''; const tokAt = []; const starts = []; for (let i = 0; i < toks.length; i++) { const k = phoneticKey(toks[i].norm || toks[i].word || ''); starts.push(s.length); for (let c = 0; c < k.length; c++) tokAt.push(i); s += k; } return { s, tokAt, starts }; };
   const H = stream(heardToks || []);
@@ -325,6 +327,20 @@ export function findSelfCorrections(refToks, heardToks, { refPada = null, nextOp
   if (refPada) for (let i = 0; i < refPada.length && i < R.starts.length; i++) if (refPada[i] != null && !padaStart.has(refPada[i])) padaStart.set(refPada[i], R.starts[i]);
   const padaOrder = [...padaStart.entries()].sort((x, y) => x[1] - y[1]);
   const slack = (L) => Math.max(1, Math.round(L * 0.15));
+  // the places in the sloka's stream that read like a saying (the nearest, ties kept), when
+  // it reads like the sloka at all — three sounds in ten may differ, since the recogniser's
+  // spelling drifts from the text (ñāsaṁ for nyāsaṁ)
+  const placesOf = (x) => { let best = Infinity; let ps = []; for (let p = 0; p + Math.min(x.length, 4) <= R.s.length; p++) { const d = editDistance(x, R.s.substr(p, x.length)); if (d < best) { best = d; ps = [p]; } else if (d === best && ps.length < 8) ps.push(p); } return best <= Math.max(1, Math.round(x.length * 0.3)) ? ps : []; };
+  // the sloka's text, read at the first saying's place, goes on within four sounds with what
+  // was heard as the second (the text's saṁ heard as sa widens the gap by one); or, read at
+  // the second's place, came from the first — the text itself says it twice
+  const goesOn = (a, b) => {
+    const L = a.length;
+    const tol = Math.max(1, Math.round(L * 0.2));
+    for (const p of placesOf(a)) for (let g = 0; g <= 4; g++) { const t = R.s.substr(p + L + g, L); if (t.length >= Math.max(4, L - 2) && editDistance(b.slice(0, t.length), t) <= tol) return true; }
+    for (const p of placesOf(b)) for (let g = 0; g <= 4; g++) { const q = p - L - g; if (q < 0) break; if (editDistance(a, R.s.substr(q, L)) <= tol) return true; }
+    return false;
+  };
   let i = 0;
   while (i + 2 * SELF_CORR_MIN_SOUNDS <= H.s.length) {
     let hit = null;
@@ -362,10 +378,11 @@ export function findSelfCorrections(refToks, heardToks, { refPada = null, nextOp
     const { L, gap } = hit;
     const run = H.s.substr(i, L);
     // the sloka's stretch this is, when it is one: the position in the sloka's stream that reads most like it
-    let bestP = -1;
-    let bestD = Infinity;
-    for (let p = 0; p + Math.min(L, 4) <= R.s.length; p++) { const d = editDistance(run, R.s.substr(p, L)); if (d < bestD) { bestD = d; bestP = p; } }
-    const inSloka = bestP >= 0 && bestD <= Math.max(1, Math.round(L * 0.3));
+    const places = placesOf(run);
+    const inSloka = places.length > 0;
+    const bestP = inSloka ? places[0] : -1;
+    // the second saying is where the sloka goes on: the sloka's own echo, not a slip
+    if (inSloka && goesOn(run, H.s.substr(i + L + gap, L))) { i += L; continue; }
     // a pāda started again: the run begins where a pāda begins and holds most of one (six akṣaras or more — one vowel per akṣara in the key); a shorter echo at a pāda's start is a word said twice
     const aksharas = (run.match(/[aeiou]/g) || []).length;
     let restart = null;
