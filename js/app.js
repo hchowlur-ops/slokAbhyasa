@@ -11,7 +11,7 @@ import { serializeFeatures, deserializeFeatures, isValidFeatures, SR as FEAT_SR,
 import { earExpectedMs, earPositionOf, earDecision, calibrateCountRatio, padaStartsFromPauses } from './dsp/ear.js';
 import { EarLog } from './earlog.js';
 import { segmentTake, playRangeOf } from './dsp/segment.js';
-import { phraseOfText, attributionSpan, templateFrom, packTemplate, addTemplate, emptyStore, findSpeakerLines, assignSpeakerLines, templateCount, phraseLabel } from './dsp/speakerlines.js';
+import { phraseOfText, attributionSpan, templateFrom, packTemplate, addTemplate, emptyStore, findSpeakerLines, assignSpeakerLines, templateCount, phraseLabel, signatureKeys, signatureCount, twoPassMarkers, SIGNATURE_SEC } from './dsp/speakerlines.js';
 import { padaStarts, startTemplates, calibrate, matchStart, mfccRows, meanOf, TEMPLATE_SEC, TEMPLATE_FRAMES, MIN_TEMPLATE_FRAMES } from './dsp/starts.js';
 import { MISMATCH_CONTRAST, confirmByWords, confirmByEar } from './dsp/compare.js';
 import { QUIZ_CATEGORIES, LEGACY_CATEGORIES, DEFAULT_QUIZ_CATEGORIES, DEFAULT_TOLERANCE, CATEGORY_WEIGHTS, categoryLabel, normalizeWeights, itemScores, attemptSummary, scoreFor, normalizeCategories, normalizeTolerance, recordTolerance, withinTolerance, itemVerdict, correctness, pickBaselines, overallScore, attemptOverall, itemOverall, applySlipPenalty, selfCorrections, SLIP_PENALTY, isPartial, droppedByWords, gradeOf, gradeById, gradeWithSlips, gradeWords, slipsLabel, anySlips, modernCategories } from './quizscore.js';
@@ -1861,11 +1861,19 @@ function earPosition(ear, st) {
 // hardwareConcurrency may replace the constant.
 // How many slokas one take may hold in Self Evaluation and a quiz: the Settings number (2 to
 // 20, 10 unless changed). Memory and the time to hear the words grow with it.
+// A sloka joins a recital only after it is practised on its own (Settings): a soft rule by
+// default — the picker shows how often each sloka was, the note under it says which were not —
+// and a hard one when the switch is on.
+const SOLO_FIRST_KEY = 'tutor-solo-first';
+let soloFirst = (() => { try { return localStorage.getItem(SOLO_FIRST_KEY) === '1'; } catch { return false; } })();
 const SLOKAS_PER_TAKE_KEY = 'tutor-slokas-per-take';
 const SLOKAS_PER_TAKE_CAP = 20;
 const clampPerTake = (n) => Math.max(2, Math.min(SLOKAS_PER_TAKE_CAP, Math.round(Number(n) || 10)));
 let slokasPerTake = (() => { try { return clampPerTake(localStorage.getItem(SLOKAS_PER_TAKE_KEY) || 10); } catch { return 10; } })();
 {
+  const solo = $('#settings-solo-first');
+  solo.checked = soloFirst;
+  solo.addEventListener('change', () => { soloFirst = solo.checked; try { if (soloFirst) localStorage.setItem(SOLO_FIRST_KEY, '1'); else localStorage.removeItem(SOLO_FIRST_KEY); } catch { /* ignore */ } renderSoloNote(); updateRecLabel(); });
   const inp = $('#settings-slokas-per-take');
   inp.value = String(slokasPerTake);
   $('#quiz-max').max = String(slokasPerTake);
@@ -2277,7 +2285,7 @@ function savedSelection() {
 //   onChange(ids, activated)  the selection changed; `activated` is the sloka to preview
 //   onActivate(id)            a ticked sloka's chip or name was clicked: preview it
 //   openKey  localStorage key remembering which folders are open
-function createSlokaPicker(host, { mode = 'multi', max = null, onChange, onActivate = null, openKey = null, pickLabel = 'Tick', activeId = () => null } = {}) {
+function createSlokaPicker(host, { mode = 'multi', max = null, onChange, onActivate = null, openKey = null, pickLabel = 'Tick', activeId = () => null, badgeOf = null } = {}) {
   host.innerHTML = `
     <div class="picker-toolbar">
       <input type="search" class="picker-search" data-role="search" placeholder="Find a sloka…" aria-label="Find a sloka" />
@@ -2397,6 +2405,8 @@ function createSlokaPicker(host, { mode = 'multi', max = null, onChange, onActiv
         nm.title = on ? 'Preview this sloka' : `${pickLabel} this sloka`;
         nm.addEventListener('click', () => { if (on) { if (onActivate) onActivate(r.id); } else toggle(r.id); });
         $('.idur', row).textContent = fmtTime(r.duration);
+        const badge = badgeOf ? badgeOf(r) : null;
+        if (badge) { const el = document.createElement('span'); el.className = `ibadge${badge.cls ? ` ${badge.cls}` : ''}`; el.textContent = badge.text; el.title = badge.title || ''; row.appendChild(el); }
         list.appendChild(row);
       }
       foldersEl.appendChild(box);
@@ -2408,6 +2418,7 @@ function createSlokaPicker(host, { mode = 'multi', max = null, onChange, onActiv
   allBtn.addEventListener('click', () => change(records.map((r) => r.id), undefined));
   clearBtn.addEventListener('click', () => change([], undefined));
   return {
+    refresh() { render(); },
     setRecords(list) { records = list.slice(); render(); },
     setSelection(ids) { selected = ids.slice(); render(); },
     setMode(m, mx = null) { mode = m; max = mx; render(); },
@@ -2425,7 +2436,61 @@ const practicePicker = createSlokaPicker($('#practice-picker'), {
   onChange: (ids, activated) => setSelection(ids, activated),
   onActivate: (id) => setSelection(practice.selection.includes(id) ? practice.selection : [...practice.selection, id], id),
   activeId: () => practice.activeId,
+  badgeOf: (r) => soloBadge(r.id),
 });
+// How a sloka stands on its own, for the picker's badge and the note under it: how many
+// times this learner evaluated it alone (recited whole and found), and whether its
+// signatures — its first and last seconds in their voice — are kept.
+let soloCache = { learner: null, at: 0, byId: new Map() };
+async function soloPractice() {
+  const learner = learnerId || null;
+  if (soloCache.learner === learner && Date.now() - soloCache.at < 60000) return soloCache.byId;
+  let sessions = [];
+  try { sessions = await api.listSessions(); } catch { sessions = []; }
+  const byId = new Map();
+  for (const s of sessions) {
+    if (!s || s.kind !== 'evaluation' || !Array.isArray(s.items) || s.items.length !== 1) continue;
+    if (((s.learner && s.learner.profileId) || null) !== learner) continue;
+    const it = s.items[0];
+    if (!it || !it.matched || it.partial) continue;
+    byId.set(it.id, (byId.get(it.id) || 0) + 1);
+  }
+  const store = await speakerLineStore();
+  const out = new Map();
+  for (const id of new Set([...byId.keys(), ...Object.keys((store && store.phrases) || {}).filter((k) => k.startsWith('sloka:')).map((k) => k.split(':')[1])])) {
+    const sc = signatureCount(store, id);
+    out.set(id, { n: byId.get(id) || 0, signatures: sc.start > 0 && sc.end > 0 });
+  }
+  soloCache = { learner, at: Date.now(), byId: out };
+  return out;
+}
+function soloBadge(id) {
+  const s = soloCache.byId.get(id);
+  if (!s || (!s.n && !s.signatures)) return null;
+  return { text: `${s.signatures ? '✓ ' : ''}${s.n}`, cls: s.signatures ? 'ready' : '', title: `${s.n ? `evaluated on its own ${s.n} time${s.n === 1 ? '' : 's'}` : 'never evaluated on its own'}${s.signatures ? ' · its first and last seconds in your voice are kept: in a recital it is placed from both ends' : ''}` };
+}
+// The slokas of the selection never evaluated on their own.
+const unpractisedSlokas = () => practice.selection.filter((id) => { const s = soloCache.byId.get(id); return !s || !s.signatures; }); // kept signatures, not past evaluations: an older take is never read again
+function renderSoloNote() {
+  const el = $('#practice-solo-note');
+  if (!el) return;
+  const n = practice.selection.length;
+  if (practice.quiz || practice.teach || n < 2) { setHidden(el, true); return; }
+  const un = unpractisedSlokas();
+  if (!un.length) { el.textContent = 'Every sloka of this recital has a clean evaluation on its own: each is placed from both ends by your own voice.'; setHidden(el, false); return; }
+  const names = un.map(nameOf).join(', ');
+  const again = un.some((id) => (soloCache.byId.get(id) || {}).n) ? 'once more, whole and clean' : 'once';
+  el.textContent = soloFirst
+    ? `${names}: no clean evaluation on ${un.length === 1 ? 'its' : 'their'} own is kept yet. Evaluate ${un.length === 1 ? 'it' : 'each'} alone ${again} first (Settings: a sloka joins a recital only after it is practised on its own).`
+    : `${names}: no clean evaluation on ${un.length === 1 ? 'its' : 'their'} own is kept yet, so the recital's cuts around ${un.length === 1 ? 'it' : 'them'} lean on the ear. Evaluate ${un.length === 1 ? 'it' : 'each'} alone ${again}, and your own voice places ${un.length === 1 ? 'it' : 'them'} next time.`;
+  setHidden(el, false);
+}
+async function refreshSolo() {
+  await soloPractice();
+  practicePicker.refresh();
+  renderSoloNote();
+  updateRecLabel();
+}
 
 function setListBusy(busy) {
   practicePicker.setBusy(busy);
@@ -2512,6 +2577,7 @@ async function setSelection(ids, activate) {
   chosen.sort((x, y) => (x.folder || '').localeCompare(y.folder || '') || (verseOf(x) && verseOf(y) ? compareVerseOrder(verseOf(x), verseOf(y)) : 0) || x.name.localeCompare(y.name));
   practice.selection = chosen.map((r) => r.id);
   if (!practice.quiz && !practice.teach) { try { localStorage.setItem(SELECTION_KEY, JSON.stringify(practice.selection)); } catch { /* ignore */ } }
+  refreshSolo().catch(() => {});
   // the slokas of a take load as they are ticked, one after another in the background, so
   // that the ear has every plan when the take begins and nothing loads while it runs
   if (practice.selection.length > 1 && !recordingNow()) { const sel = practice.selection.slice(); (async () => { for (const id of sel) { if (!practice.selection.includes(id) || recordingNow()) continue; try { await ensureBase(id); } catch { /* the comparison reports it */ } } })(); }
@@ -2688,6 +2754,10 @@ $('#practice-rec').addEventListener('click', async () => {
     await analyseAttempt();
   } else {
     if (!practice.base) return;
+    if (soloFirst && !practice.quiz && !practice.teach && practice.selection.length > 1) {
+      const un = unpractisedSlokas();
+      if (un.length) { toast(`${un.map(nameOf).join(', ')}: no clean evaluation on ${un.length === 1 ? 'its' : 'their'} own is kept yet. Evaluate ${un.length === 1 ? 'it' : 'each'} alone first, whole and clean, or switch the rule off in Settings.`, 'error', 8000); return; }
+    }
     try {
       hideResults();
       practiceUI.reset();
@@ -2844,6 +2914,53 @@ async function harvestSpeakerLine(id, heardT, base) {
   if (!addTemplate(store, p.phrase, packTemplate(t, { at: Math.round(span.from * 100) / 100, sec: t.sec, session: practice.session && practice.session.id ? practice.session.id : `take-${Math.round(practice.take.duration * 10)}`, sloka: nameOf(id), addedAt: new Date().toISOString() }))) return;
   try { await api.putSpeakerLines(learnerId, store); } catch (err) { console.warn(`The speaker line could not be kept: ${err.message}`); }
 }
+// A clean evaluation of one sloka keeps the sloka's first and last SIGNATURE_SEC seconds in
+// this learner's voice (dsp/speakerlines.js signatures), which later place the sloka in a
+// recital from both ends. Clean: recited whole and found, Fair or better, no slip, and — for a
+// sloka the library says opens with a speaker line — the line heard at its start when the
+// words are in. A take that falls short says why and asks for another; an older take is
+// never read again for this. Called once the slips are known: with the words in, or at the
+// save when the words are not heard.
+async function harvestSignatures(id, { heardT = null } = {}) {
+  if (!learnerId || practice.quiz || practice.teach || practice.selection.length !== 1 || !practice.take || !practice.heard) return null;
+  const take = practice.take;
+  const res = practice.results.get(id);
+  const name = nameOf(id);
+  const refuse = (why) => {
+    if (practice.signatureNotice === take) return why;
+    practice.signatureNotice = take;
+    toast(`${name}'s signatures were not kept from this take (${why}). Evaluate it alone once more, whole and clean, and your own voice will place it in a recital.`, 'info', 9000);
+    return why;
+  };
+  if (!isReport(res) || !res.matched || !res.matched.heard || !res.match || !res.match.ok) return refuse('the sloka was not found in the recording');
+  if (partialOf(id)) return refuse('less than half was recited');
+  const sl = slipsOf(id);
+  if (sl.length) return refuse(slipsLabel(sl));
+  const { overall } = reportOverall(id);
+  const fairMin = (gradeById('fair') || { min: 65 }).min;
+  if (overall == null || overall < fairMin) return refuse(`scored ${overall ?? '–'}, under the Fair line of ${fairMin}`);
+  const [h0, h1] = playRangeOf(practice.heard, res.matched.heard) || res.matched.heard;
+  if (!(h1 - h0 >= 2 * SIGNATURE_SEC)) return refuse('too short');
+  // a sloka that opens with a speaker line must begin with it: the hearing, when there is one, says
+  const plan = planOf({ id });
+  if (plan && plan.speakerLine > 0 && heardT) {
+    const span = attributionSpan(tokenizeTranscript(heardT), heardT.chunks);
+    if (!span) return refuse('the speaker line was not heard at the start');
+    if (span.from != null && span.from > h0 + 1.5) return refuse('the speaker line was heard late, not at the start');
+  }
+  const start = templateFrom(practice.heard, h0, h0 + SIGNATURE_SEC);
+  const end = templateFrom(practice.heard, Math.max(h0, h1 - SIGNATURE_SEC), h1);
+  if (!start || !end) return refuse('too short');
+  const store = await speakerLineStore();
+  if (!store) return null;
+  const keys = signatureKeys(id);
+  const session = practice.session && practice.session.id ? practice.session.id : `take-${Math.round(take.duration * 10)}`;
+  const meta = { sloka: name, session, addedAt: new Date().toISOString() };
+  const added = addTemplate(store, keys.start, packTemplate(start, { ...meta, at: Math.round(h0 * 100) / 100, sec: start.sec })) | addTemplate(store, keys.end, packTemplate(end, { ...meta, at: Math.round((h1 - SIGNATURE_SEC) * 100) / 100, sec: end.sec }));
+  if (!added) return null;
+  try { await api.putSpeakerLines(learnerId, store); soloCache.at = 0; refreshSolo().catch(() => {}); if (practice.signatureNotice !== take) { practice.signatureNotice = take; toast(`${name}'s beginning and ending are kept in your voice: in a recital it is placed from both ends.`, 'info', 6000); } } catch (err) { console.warn(`The sloka's signatures could not be kept: ${err.message}`); }
+  return null;
+}
 async function secondOpinionOf(take) {
   try {
     const items = practice.selection.map((id) => { const it = { id, name: nameOf(id) }; const plan = planOf(it); return { name: it.name, teacherSec: expectedSecOf(it) || null, total: plan ? plan.total : null, speakerLine: plan ? plan.speakerLine || 0 : 0 }; });
@@ -2873,8 +2990,28 @@ async function secondOpinionOf(take) {
       for (const a of assigned) { if (a.index >= 1 && a.index <= items.length - 1 && !pinned.some((p) => p.after === a.index - 1)) pinned.push({ after: a.index - 1, at: a.at, by: 'speakerLine' }); }
       speakerLines = { templates: found.templates, thresholds: found.thresholds, candidates: found.candidates, matches: found.matches, assigned };
     }
+    // every sloka's own beginning and ending in the learner's voice, where kept: the two passes
+    // place each sloka from both ends and pin the cut before it (over a speaker line's pin;
+    // under the student's own)
+    let signatures = null;
+    if (store && templateCount(store)) {
+      const r = twoPassMarkers(practice.heard, store, practice.selection.map((sid, i) => ({ id: sid, name: names[i] })), { seeds: speakerLines ? speakerLines.assigned.map((a) => ({ index: a.index, at: a.at })) : [] });
+      if (r.markers.length) {
+        for (const mk of r.markers) {
+          if (mk.index < 1) continue;
+          const before = r.markers.find((x) => x.index === mk.index - 1);
+          const at = before && before.endAt != null && before.endAt < mk.startAt ? (before.endAt + mk.startAt) / 2 : mk.startAt;
+          const k = pinned.findIndex((p) => p.after === mk.index - 1);
+          if (k >= 0 && pinned[k].by !== 'speakerLine') continue; // the student's cut stands
+          if (k >= 0) pinned.splice(k, 1);
+          pinned.push({ after: mk.index - 1, at, by: 'signature' });
+        }
+        signatures = r;
+      }
+    }
     const so = segmentTake(practice.heard, items, { pace, lastPos, pinned, recited });
     so.speakerLines = speakerLines;
+    so.signatures = signatures;
     return so;
   } catch (err) { return { error: String((err && err.message) || err) }; }
 }
@@ -2981,6 +3118,8 @@ async function saveSession() {
     session.pending = false;
     session.sent = JSON.stringify(items);
     refreshProgress(`session:${saved.id}`);
+    if (!wordsWanted()) harvestSignatures(practice.activeId, { heardT: null }).catch(() => {}); // the words not heard: the slips are what they are now
+    soloCache.at = 0; // one more evaluation on its own
     api.putSessionAudio(saved.id, take.blob).catch((err) => console.warn(`The session's recording could not be kept: ${err.message}`));
     if (take.earLog) api.putSessionEar(saved.id, take.earLog).catch((err) => console.warn(`The ear's log could not be kept: ${err.message}`));
     if (session.dirty) syncSession();
@@ -3273,6 +3412,7 @@ function takeWaveMarks() {
   const res = so && so.chosen && so.results ? so.results[so.chosen] : null;
   for (const b of (res && res.boundaries) || []) lines.push({ at: (b.from + b.to) / 2, color: second, row: 0, dash: [4, 3], width: b.pinned ? 3 : 1.5, label: b.pinned ? '2nd · pinned' : b.virtual ? '2nd · no breath' : '2nd' });
   for (const a of (so && so.speakerLines && so.speakerLines.assigned) || []) lines.push({ at: a.at, color: cssVar('--accent'), row: 2, width: 2, label: phraseLabel(a.phrase) });
+  for (const mk of (so && so.signatures && so.signatures.markers) || []) { lines.push({ at: mk.startAt, color: cssVar('--accent'), row: 3, width: 2, label: `▶ ${mk.name}` }); if (mk.endAt != null) lines.push({ at: mk.endAt, color: cssVar('--accent'), row: 3, width: 2, dash: [2, 2], label: `${mk.name} ◀` }); }
   return { duration, spans, lines };
 }
 
@@ -3534,6 +3674,7 @@ async function renderSlokaTexts() {
       else api.getVerse(link.dataset, link.id).then((entry) => { base.verseEntry = entry; showMeaning(entry); }).catch(() => {});
     }
   };
+  renderNextText(items, i, token).catch(() => {}); // several slokas: the next one under this
   const cached = practice.bases.get(it.id);
   if (cached) { show(cached); return; } // a sloka already loaded: no "Loading…" flicker when paging
   setHidden(hintEl, true);
@@ -3543,6 +3684,24 @@ async function renderSlokaTexts() {
   try { base = await ensureBase(it.id); } catch { base = null; }
   if (token !== slokaTextsToken) return;
   if (base) show(base); else { body.textContent = 'This sloka could not be loaded.'; }
+}
+// With several slokas, the next sloka's text sits under the current one — smaller, dimmer —
+// so the reciter sees it before the page turns and a turn that comes late costs nothing.
+async function renderNextText(items, i, token) {
+  const host = $('#practice-text-next');
+  const next = items.length > 1 && i + 1 < items.length && textShown() ? items[i + 1] : null;
+  setHidden(host, !next);
+  if (!next) return;
+  $('#practice-text-next-name').textContent = `Next · ${next.folder ? `${next.name} · ${next.folder}` : next.name}`;
+  const body = $('#practice-text-next-body');
+  let base = practice.bases.get(next.id) || null;
+  if (!base) { body.textContent = 'Loading…'; body.classList.add('muted'); try { base = await ensureBase(next.id); } catch { base = null; } }
+  if (token !== slokaTextsToken) return;
+  const text = base ? slokaTextOf(base) : '';
+  if (!text) { body.textContent = base ? 'No text yet.' : 'This sloka could not be loaded.'; body.classList.add('muted'); return; }
+  const ch = chandasOf(base.record, text);
+  body.innerHTML = scriptHtml(withDandas(layoutSloka(text, { perPada: ch ? ch.perPada : null, lines: slokaLines })));
+  body.classList.remove('muted');
 }
 const PAGE_TURN_SETTLE_MS = 1200; // a key or click this soon after the ear turned the page by itself agrees with it rather than turning again
 function stepText(delta, how = 'button') {
@@ -5986,6 +6145,7 @@ function renderTranscriptDiff() {
     syncSession();
   }
   harvestSpeakerLine(practice.activeId, sttPractice.heard, practice.base).catch(() => {});
+  harvestSignatures(practice.activeId, { heardT: sttPractice.heard }).catch(() => {});
   renderPhonologyReport($('#stt-phon'), phonology);
   renderCorrections($('#stt-corrections'), slipsOf(practice.activeId));
   refreshVerdicts();

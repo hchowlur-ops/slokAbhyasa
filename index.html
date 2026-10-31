@@ -237,6 +237,7 @@
             <ol class="quiz-items" id="quiz-box-items"></ol>
           </div>
           <div class="picker" id="practice-picker"></div>
+          <p id="practice-solo-note" class="muted small" hidden></p>
           <p id="practice-list-hint" class="muted small hint">Open a folder and tick the slokas to be evaluated against; one recording is compared with all of them, and a sloka longer or shorter than your recording is matched to the part that fits. The ticked slokas are listed above the folders — click one there to preview it, or its × to untick it.</p>
           <p id="teach-hint" class="muted small hint" hidden>Open a folder and choose one sloka. Play it as often as you like, at any speed; then press Listen and recite it back.</p>
           <p id="practice-base-empty" class="muted small">No slokas yet. Record or import one in <a href="#learn">Learn</a>.</p>
@@ -309,6 +310,11 @@
               <div class="stt-text quiz-text-body" id="practice-text-body"></div>
               <div class="muted small text-meaning" id="practice-text-meaning" hidden></div>
               <div class="muted small mark-legend" id="practice-text-legend" hidden>Above each akṣara: ◡ laghu (light) · — guru (heavy)</div>
+              <!-- several slokas: the next one under the current, so the turn is never a surprise -->
+              <div class="text-next" id="practice-text-next" hidden>
+                <div class="muted small text-next-head" id="practice-text-next-name"></div>
+                <div class="stt-text quiz-text-body text-next-body" id="practice-text-next-body"></div>
+              </div>
             </div>
           </div>
           <div class="rec-stage">
@@ -684,6 +690,8 @@
           <label class="field inline"><span>Slokas per take, at most</span>
             <input type="number" class="num" id="settings-slokas-per-take" min="2" max="20" value="10" aria-label="Slokas per take, at most" />
           </label>
+          <label class="toggle"><input type="checkbox" id="settings-solo-first" /><span>A sloka joins a recital only after it is practised on its own</span></label>
+          <span class="muted small">Off, a recital may hold a sloka never evaluated on its own; the picker shows how many times each was, and the recital's cuts lean on the ear for one that was not. A clean evaluation of a sloka on its own — recited whole, Fair or better, no slip — also keeps the sloka's first and last seconds in your voice, which later place it in a recital from both ends.</span>
           <span class="muted small">How many slokas Self Evaluation and a quiz let you tick for one recording: 2 to 20, 10 unless you change it. Memory and the time to hear the words grow with the number, so raise it only for a learner who recites a whole chapter in one breath. Learn records one sloka at a time.</span>
         </div>
       </div>

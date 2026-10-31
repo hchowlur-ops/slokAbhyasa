@@ -102,6 +102,7 @@ function describeSecondOpinion(log) {
   const ear = new Map((log.segments || []).map((s) => [s.name, s]));
   out.push(`  ${so.pauses} pauses · sound ${r2(so.sungTotal)} s of ${r2(so.spanTotal)} s · pace ${so.pace ? `tempo ${so.pace.tempoRatio ?? '—'}, ${so.pace.aksPerSec ?? '—'} akṣaras/s` : 'unknown'} · methods: ${Object.keys(so.results || {}).join(', ') || 'none'} · chosen ${so.chosen || '—'}`);
   if (so.speakerLines) { const sl = so.speakerLines; out.push(`  speaker lines in the learner's voice: ${sl.templates} template${sl.templates === 1 ? '' : 's'}, thresholds ${JSON.stringify(sl.thresholds || {})}, ${sl.candidates} starts tried · heard: ${sl.matches.length ? sl.matches.map((m) => `${m.phrase} at ${r2(m.at)} s (dist ${m.dist})`).join(', ') : 'none'} · taken: ${sl.assigned.length ? sl.assigned.map((a) => `${a.name} begins at ${r2(a.at)} s`).join(', ') : 'none'}`); }
+  if (so.signatures && so.signatures.markers) out.push(`  signatures (the slokas' own beginnings and endings in the learner's voice): ${so.signatures.markers.map((m) => `${m.name} begins ${r2(m.startAt)} s (dist ${m.startDist})${m.endAt != null ? `, ends ${r2(m.endAt)} s (dist ${m.endDist})` : ', end not confirmed'}`).join(' · ')}`);
   for (const [method, r] of Object.entries(so.results || {})) {
     if (!r) { out.push(`  ${method}: too few pauses for the cuts`); continue; }
     const ds = [];

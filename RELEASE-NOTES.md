@@ -8,6 +8,16 @@ last package. The README describes every feature as it stands; this file says wh
 
 ### 31 October 2026
 
+- **A sloka practised on its own places itself in a recital.** A clean evaluation of a
+  sloka alone keeps its first and last two seconds in your voice; in a recital the second
+  opinion matches every sloka's beginning, then confirms each with its ending, and pins
+  the cuts between slokas placed from both ends. The picker shows how often each sloka
+  was evaluated alone and ticks those whose signatures are kept; a recital with a sloka
+  without them says so, and a Settings switch can require it. A solo take that cannot keep
+  the signatures says why and asks for another; a speaker line heard in a recital counts
+  as the beginning of its sloka.
+- **The next sloka in view.** With several slokas the panel shows the sloka in view and,
+  under it, the next one, so a page turn is never a surprise.
 - **The speaker lines heard in your own voice.** The Gītā's four speaker lines are matched
   after a take against templates of how *you* say them, harvested whenever a sloka's words
   are in and place its line; a line heard marks the start of the sloka that opens with it,

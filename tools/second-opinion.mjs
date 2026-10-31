@@ -14,7 +14,7 @@ import { decodeWav } from '../js/wav.js';
 import { resample } from '../js/dsp/resample.js';
 import { extractFeatures, SR } from '../js/dsp/features.js';
 import { segmentTake } from '../js/dsp/segment.js';
-import { phraseOfText, findSpeakerLines, assignSpeakerLines, templateCount } from '../js/dsp/speakerlines.js';
+import { phraseOfText, findSpeakerLines, assignSpeakerLines, templateCount, twoPassMarkers } from '../js/dsp/speakerlines.js';
 import { aksharaPlan } from '../js/chandas.js';
 import { resolveDataDir } from '../datadir.js';
 
@@ -40,7 +40,7 @@ function slokaOf(item) {
   let speakerLine = 0;
   let phrase = null;
   if (meta && meta.text && meta.text.body) { try { const plan = aksharaPlan(meta.text.body); if (!total) total = plan.total || null; speakerLine = plan.speakerLine || 0; const ph = phraseOfText(meta.text.body); phrase = ph ? ph.phrase : null; } catch { /* no plan */ } }
-  return { name: rec.name, teacherSec, total, speakerLine, phrase };
+  return { id: rec.id, name: rec.name, teacherSec, total, speakerLine, phrase };
 }
 function featuresOf(wavPath) {
   const d = decodeWav(new Uint8Array(fs.readFileSync(wavPath)));
@@ -84,6 +84,9 @@ function analyse(id) {
       const assigned = assignSpeakerLines(found.matches, items.map((it) => ({ name: it.name, phrase: it.phrase })));
       for (const a of assigned) if (a.index >= 1) pinned.push({ after: a.index - 1, at: a.at });
       speakerLines = { ...found, assigned };
+      const two = twoPassMarkers(F, store, items.map((it) => ({ id: it.id, name: it.name })), { seeds: assigned.map((a) => ({ index: a.index, at: a.at })) });
+      for (const mk of two.markers) { if (mk.index < 1) continue; const before = two.markers.find((x) => x.index === mk.index - 1); const at = before && before.endAt != null && before.endAt < mk.startAt ? (before.endAt + mk.startAt) / 2 : mk.startAt; const k = pinned.findIndex((p) => p.after === mk.index - 1); if (k >= 0) pinned.splice(k, 1); pinned.push({ after: mk.index - 1, at }); }
+      speakerLines.markers = two.markers;
     }
   } catch { speakerLines = null; }
   const second = segmentTake(F, items, { pace, lastPos, recited, pinned });
@@ -107,6 +110,7 @@ function printOne(res) {
   console.log(`  slokas: ${second.items.map((it) => `${it.name} (${it.total ?? '?'} akṣaras${it.speakerLine ? `, speaker line ${it.speakerLine}` : ''}, teacher ${r2(it.teacherSec)} s)`).join(' · ')}`);
   if (second.speakerLines) console.log(`  speaker lines in the learner's voice: ${second.speakerLines.templates} templates, thresholds ${JSON.stringify(second.speakerLines.thresholds)} · heard: ${second.speakerLines.matches.map((m) => `${m.phrase} at ${r2(m.at)} s (dist ${m.dist})`).join(', ') || 'none'} · taken: ${second.speakerLines.assigned.map((a) => `${a.name} begins at ${r2(a.at)} s`).join(', ') || 'none'}`);
   else console.log('  speaker lines: no templates kept for this learner yet (they come from takes whose words are in)');
+  if (second.speakerLines && second.speakerLines.markers) console.log(`  signatures (the slokas' own beginnings and endings in the learner's voice): ${second.speakerLines.markers.length ? second.speakerLines.markers.map((m) => `${m.name} begins ${r2(m.startAt)} s (dist ${m.startDist})${m.endAt != null ? `, ends ${r2(m.endAt)} s (dist ${m.endDist})` : ', end not confirmed'}`).join(' · ') : 'none heard'}`);
   for (const method of ['plan', 'teacher', 'share']) {
     const c = compareMethod(res, method);
     if (!c) { console.log(`  ${method}: not available${method === 'share' ? '' : ' (no learnt pace)'}${second.results[method] === null ? ' — too few pauses' : ''}`); continue; }

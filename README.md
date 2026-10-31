@@ -322,8 +322,10 @@ the words. Once the take is compared, the **words of every
 report are transcribed in the background**, in turn, the open one first (each sloka's own
 stretch of the recording), and their word scores filled in as they arrive — so Next opens a
 report with its words ready, and the session's scores cover every sloka. Better still, turn
-the pages **while recording**: with several slokas, Next in the sloka panel — or the **space
-bar or →** on the keyboard — works during the take, and each turn is your word that the
+the pages **while recording**: with several slokas the panel shows the sloka in view and,
+under it, smaller and dimmer, **the next one**, so the turn is never a surprise and a turn
+that comes late costs nothing; Next in the sloka panel — or the **space bar or →** on the
+keyboard — works during the take, and each turn is your word that the
 sloka in view is over: the stretch recorded since the last turn closes where your breath
 began and goes to the speech worker at once, as a background job that touches neither the
 recording nor the page ("Listening to CH12-03 in the background…" under the timer); the
@@ -446,7 +448,21 @@ are in and place its speaker line, that stretch becomes a template of the phrase
 it, kept with your profile (five newest per phrase); after a take the templates are matched
 at every start of sound after a breath, and a speaker line heard marks the start of the next
 sloka that opens with it, pinning the cut before it. The teacher's recording is not used for
-this, since another voice sits too far for the match to tell. Nothing is decided by it yet; it is written beside the ear's own stretches so the two can be
+this, since another voice sits too far for the match to tell. The same holds for **every
+sloka's own beginning and ending**: a clean evaluation of a sloka on its own — recited whole
+and found, Fair or better, no slip — keeps its first and last two seconds in your voice as
+the sloka's signatures, and in a recital the second opinion then runs in two passes: every
+sloka's beginning is matched and placed in the take's order, then each sloka's ending is looked
+for before the next beginning and confirms the marker; the cut between two slokas placed from
+both ends is pinned between them. The picker shows, beside each sloka, how many times you
+have evaluated it on its own and a tick when its signatures are kept; a recital that includes
+a sloka without kept signatures says so under the picker, and its cuts around that sloka lean
+on the ear. The Settings switch **"A sloka joins a recital only after it is practised on its
+own"** makes that a rule rather than a note. A solo evaluation that cannot keep the signatures
+— the sloka not found, under half, a slip, under Fair, or its speaker line not heard at the
+start — says why and asks you to evaluate the sloka alone once more; older takes are never
+read again for this. In a recital, a speaker line heard counts as the beginning of the sloka
+that opens with it, even before that sloka has signatures of its own. Nothing is decided by it yet; it is written beside the ear's own stretches so the two can be
 compared on every take (`node tools/second-opinion.mjs <session id>`, or `--all` for a table
 over every kept take of several slokas).
 

@@ -117,20 +117,23 @@ export const templateCount = (store) => Object.values((store && store.phrases) |
 // candidates at most are taken, the weakest dropped first when it does not stand out.
 export const STANDS_OUT_SHARE = 0.8;
 export const STANDS_OUT_MARGIN = 1.1;
-export function findSpeakerLines(F, store, { candidates = null, offsets = MATCH_OFFSETS, margin = MATCH_MARGIN, minGapSec = 0.25, expected = null } = {}) {
+// `keys` limits the templates to those phrases (every key of the store otherwise); `align`
+// 'start' matches a template beginning at a candidate, 'end' one ending there (the candidates
+// then being where runs of sound end).
+export function findTemplates(F, store, { keys = null, candidates = null, offsets = MATCH_OFFSETS, margin = MATCH_MARGIN, minGapSec = 0.25, expected = null, align = 'start' } = {}) {
   const byPhrase = new Map();
-  for (const [phrase, list] of Object.entries((store && store.phrases) || {})) for (const t of list) { const rows = unpackTemplate(t); if (rows.length >= 15) { if (!byPhrase.has(phrase)) byPhrase.set(phrase, []); byPhrase.get(phrase).push(rows); } }
+  for (const [phrase, list] of Object.entries((store && store.phrases) || {})) { if (keys && !keys.includes(phrase)) continue; for (const t of list) { const rows = unpackTemplate(t); if (rows.length >= 15) { if (!byPhrase.has(phrase)) byPhrase.set(phrase, []); byPhrase.get(phrase).push(rows); } } }
   const nTemplates = [...byPhrase.values()].reduce((n, l) => n + l.length, 0);
   if (!nTemplates || !F || !F.mfcc || !F.hopSec) return { matches: [], thresholds: {}, templates: nTemplates, candidates: 0 };
   const hop = F.hopSec;
   let starts = candidates;
   if (!starts) {
     const { mask } = soundMaskOf(F);
-    const { first, gaps } = pausesOf(mask, hop, { minGapSec });
-    starts = [first, ...gaps.map((g) => g.to)];
+    const { first, last, gaps } = pausesOf(mask, hop, { minGapSec });
+    starts = align === 'end' ? [...gaps.map((g) => g.from), last] : [first, ...gaps.map((g) => g.to)];
   }
   const median = (xs) => { const s = xs.slice().sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : null; };
-  const distAt = (rowsList, at) => { const from = Math.round(at / hop); let best = Infinity; for (const rows of rowsList) { const d = dtwDistance(mfccRows(F, from, rows.length), rows); if (d < best) best = d; } return best; };
+  const distAt = (rowsList, at) => { let best = Infinity; for (const rows of rowsList) { const from = align === 'end' ? Math.round(at / hop) - rows.length : Math.round(at / hop); if (from < 0 || from + rows.length > F.n) continue; const d = dtwDistance(mfccRows(F, from, rows.length), rows); if (d < best) best = d; } return best; };
   // every phrase's distance at every candidate, and over the take's stretches every 2 s
   const positions = [];
   for (const s of starts) for (const off of offsets) if (s + off >= 0) positions.push(Math.round((s + off) * 100) / 100);
@@ -138,8 +141,8 @@ export function findSpeakerLines(F, store, { candidates = null, offsets = MATCH_
   const thresholds = {};
   for (const [phrase, rowsList] of byPhrase) {
     const stretch = [];
-    for (let at = 0; at + 2 <= F.n * hop; at += 2) stretch.push(distAt(rowsList, at));
-    const med = median(stretch.filter(Number.isFinite));
+    for (let at = 0; at <= F.n * hop; at += 2) { const d = distAt(rowsList, at); if (Number.isFinite(d)) stretch.push(d); }
+    const med = median(stretch);
     thresholds[phrase] = med == null ? null : Math.round(med * STANDS_OUT_SHARE * 1000) / 1000;
     table.set(phrase, positions.map((at) => ({ at, dist: distAt(rowsList, at) })).filter((x) => Number.isFinite(x.dist)));
   }
@@ -171,6 +174,72 @@ export function findSpeakerLines(F, store, { candidates = null, offsets = MATCH_
   }
   matches.sort((a, b) => a.at - b.at);
   return { matches, thresholds, templates: nTemplates, candidates: starts.length };
+}
+// The four speaker lines in a take (findTemplates over the phrases alone).
+export function findSpeakerLines(F, store, opts = {}) {
+  return findTemplates(F, store, { ...opts, keys: PHRASES.map((p) => p.id) });
+}
+
+// ---------- every sloka's beginning and ending, in the learner's voice ----------
+// A learner who has practised a sloka on its own has said its first and last seconds in
+// their own voice; kept as the sloka's signatures (the store's keys `sloka:<id>:start` and
+// `sloka:<id>:end`), they place the sloka in a recital of several from both ends.
+export const SIGNATURE_SEC = 2.0;
+export const signatureKeys = (id) => ({ start: `sloka:${id}:start`, end: `sloka:${id}:end` });
+export function signatureCount(store, id) {
+  const k = signatureKeys(id);
+  const ph = (store && store.phrases) || {};
+  return { start: (ph[k.start] || []).length, end: (ph[k.end] || []).length };
+}
+// The two passes over a take: first every sloka's beginning, placed in the take's order as a
+// marker; then each marker's ending, looked for between its start and the next marker (or
+// the take's end), which confirms it. items: [{ id, name }] in the take's order. Returns
+// { markers: [{ index, id, name, startAt, startDist, endAt, endDist, confirmed }], starts }.
+// `seeds`: beginnings known otherwise — a speaker line heard is the beginning of the sloka
+// that opens with it — as [{ index, at }], used for slokas without a kept beginning of their
+// own; their endings are still looked for.
+export function twoPassMarkers(F, store, items, { minSlokaSec = 3, seeds = null } = {}) {
+  const ph = (store && store.phrases) || {};
+  const present = (items || []).filter((it) => it && it.id && (ph[signatureKeys(it.id).start] || []).length);
+  if ((!present.length && !(seeds && seeds.length)) || !F || !F.hopSec || !F.mfcc) return { markers: [], starts: null };
+  const expected = {};
+  for (const it of present) expected[signatureKeys(it.id).start] = 1;
+  const starts = present.length ? findTemplates(F, store, { keys: Object.keys(expected), expected, align: 'start' }) : { matches: [], templates: 0, thresholds: {}, candidates: 0 };
+  const markers = [];
+  const used = new Set();
+  let lastAt = -Infinity;
+  items.forEach((it, i) => {
+    const key = signatureKeys(it.id).start;
+    const m = starts.matches.find((x) => !used.has(x) && x.phrase === key && x.at > lastAt);
+    if (!m) return;
+    used.add(m);
+    lastAt = m.at;
+    markers.push({ index: i, id: it.id, name: it.name, startAt: m.at, startDist: m.dist, endAt: null, endDist: null, confirmed: false });
+  });
+  for (const sd of seeds || []) {
+    if (!items[sd.index] || markers.some((m) => m.index === sd.index)) continue;
+    const before = markers.filter((m) => m.index < sd.index).pop();
+    const after = markers.find((m) => m.index > sd.index);
+    if ((before && sd.at <= before.startAt) || (after && sd.at >= after.startAt)) continue; // out of the take's order
+    markers.push({ index: sd.index, id: items[sd.index].id, name: items[sd.index].name, startAt: sd.at, startDist: null, endAt: null, endDist: null, confirmed: false, seeded: 'speakerLine' });
+  }
+  markers.sort((a, b) => a.index - b.index);
+  const hop = F.hopSec;
+  const takeEnd = F.n * hop;
+  const { mask } = soundMaskOf(F);
+  const { last, gaps } = pausesOf(mask, hop, { minGapSec: 0.25 });
+  const ends = [...gaps.map((g) => g.from), last];
+  markers.forEach((mk, k) => {
+    const endKey = signatureKeys(mk.id).end;
+    if (!(ph[endKey] || []).length) return;
+    const limit = k + 1 < markers.length ? markers[k + 1].startAt : takeEnd;
+    const cands = ends.filter((t) => t >= mk.startAt + minSlokaSec && t <= limit + 0.1);
+    if (!cands.length) return;
+    const r = findTemplates(F, store, { keys: [endKey], candidates: cands, expected: { [endKey]: 1 }, align: 'end', offsets: [-0.3, 0, 0.3] });
+    const m = r.matches[0];
+    if (m) { mk.endAt = m.at; mk.endDist = m.dist; mk.confirmed = true; }
+  });
+  return { markers, starts: { templates: starts.templates, thresholds: starts.thresholds, candidates: starts.candidates } };
 }
 
 // The slokas of the take that open with a speaker line, in order, each given the earliest

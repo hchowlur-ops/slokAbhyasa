@@ -103,6 +103,7 @@ try {
   // the two views: a sloka's card opens its report (Yours plays its stretch alone), the card again comes back to the whole recital
   try {
     const whole = await evaluate(`!document.querySelector('#take-view').hidden`);
+    log('toasts:', await evaluate(`[...document.querySelectorAll('#toast-host > *')].map((t) => t.textContent.trim()).join(' | ') || 'none'`)); // the notices up: a solo take's signatures kept, or why not
     log('first view:', whole ? 'the whole recital' : 'a report', '· cards:', await evaluate(`[...document.querySelectorAll('#take-cards .take-card')].map(c => c.querySelector('.tc-name').textContent + (c.classList.contains('active') ? '*' : '')).join(', ')`));
     if (whole) {
       await pg(`document.querySelectorAll('#take-cards .take-card:not(.whole)')[0].click();`);

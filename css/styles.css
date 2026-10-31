@@ -908,6 +908,11 @@ textarea.locked { background: var(--surface-2); color: var(--muted); cursor: not
 .tc-btn .tc-spin { width: 14px; height: 14px; }
 .tc-btn.done { border-color: var(--accent); color: var(--accent-strong); }
 .take-whole { display: flex; align-items: center; gap: 10px; margin: 6px 0 10px; }
+.ibadge { font-size: 0.72rem; font-weight: 600; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); white-space: nowrap; }
+.ibadge.ready { border-color: var(--accent); color: var(--accent-strong); }
+.text-next { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--border); opacity: .78; }
+.text-next-head { margin-bottom: 4px; }
+.text-next-body { font-size: 0.92em; }
 .grade-row { position: relative; display: flex; align-items: center; gap: 6px; }
 .grade-row .info-pop { top: calc(100% + 10px); }
 .info-pop ul { margin: 6px 0 6px 18px; padding: 0; }
