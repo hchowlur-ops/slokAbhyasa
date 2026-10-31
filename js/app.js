@@ -11,6 +11,7 @@ import { serializeFeatures, deserializeFeatures, isValidFeatures, SR as FEAT_SR,
 import { earExpectedMs, earPositionOf, earDecision, calibrateCountRatio, padaStartsFromPauses } from './dsp/ear.js';
 import { EarLog } from './earlog.js';
 import { segmentTake, playRangeOf } from './dsp/segment.js';
+import { phraseOfText, attributionSpan, templateFrom, packTemplate, addTemplate, emptyStore, findSpeakerLines, assignSpeakerLines, templateCount, phraseLabel } from './dsp/speakerlines.js';
 import { padaStarts, startTemplates, calibrate, matchStart, mfccRows, meanOf, TEMPLATE_SEC, TEMPLATE_FRAMES, MIN_TEMPLATE_FRAMES } from './dsp/starts.js';
 import { MISMATCH_CONTRAST, confirmByWords, confirmByEar } from './dsp/compare.js';
 import { QUIZ_CATEGORIES, LEGACY_CATEGORIES, DEFAULT_QUIZ_CATEGORIES, DEFAULT_TOLERANCE, CATEGORY_WEIGHTS, categoryLabel, normalizeWeights, itemScores, attemptSummary, scoreFor, normalizeCategories, normalizeTolerance, recordTolerance, withinTolerance, itemVerdict, correctness, pickBaselines, overallScore, attemptOverall, itemOverall, applySlipPenalty, selfCorrections, SLIP_PENALTY, isPartial, droppedByWords, gradeOf, gradeById, gradeWithSlips, gradeWords, slipsLabel, anySlips, modernCategories } from './quizscore.js';
@@ -2760,7 +2761,7 @@ async function analyseAttempt() {
     if (sttSettings.auto && take.duration <= TAKE_WHOLE_MAX_SEC && practice.selection.length === 1) transcribeTakePart(null, false).catch(() => {}); // several slokas: each stretch once it is found
     refineStretches(take); // the words already in move the ear's boundaries before anything is compared
     practice.heard = await analyzer.features(take.samples, take.sampleRate, (p) => practiceProgress.set(p * 0.6), { warps: true });
-    if (take.earLog && practice.selection.length > 1) take.earLog.secondOpinion = secondOpinionOf(take); // the cuts found from the whole take, beside the ear's; no verdict rests on them yet
+    if (take.earLog && practice.selection.length > 1) take.earLog.secondOpinion = await secondOpinionOf(take); // the cuts found from the whole take, beside the ear's; no verdict rests on them yet
     practice.options = {
       ignoreKey: $('#practice-ignorekey').checked,
       judgeSpeed: $('#practice-tempo').checked,
@@ -2816,7 +2817,34 @@ const EAR_WINDOW_PAD_SEC = 0.5;
 // the whole take's pauses and the slokas' expected lengths — the plan at the learner's speed,
 // the teacher's time at their tempo, the take's own shares — written into the ear's log beside
 // the ear's own stretches, so the two can be compared on every take. Nothing is decided by it.
-function secondOpinionOf(take) {
+// The learner's speaker-line templates (dsp/speakerlines.js), fetched once per learner.
+let speakerLinesCache = { learner: null, store: null };
+async function speakerLineStore() {
+  if (!learnerId) return null;
+  if (speakerLinesCache.learner === learnerId && speakerLinesCache.store) return speakerLinesCache.store;
+  let store = null;
+  try { store = await api.getSpeakerLines(learnerId); } catch { store = null; }
+  if (!store || typeof store !== 'object') store = emptyStore();
+  if (!store.phrases) store.phrases = {};
+  speakerLinesCache = { learner: learnerId, store };
+  return store;
+}
+// A sloka's words are in: when the sloka opens with a speaker line and the words place it,
+// the line's frames become a template of that phrase in this learner's voice.
+async function harvestSpeakerLine(id, heardT, base) {
+  if (!learnerId || !heardT || !base || !practice.heard || practice.take == null) return;
+  const p = phraseOfText(slokaTextOf(base));
+  if (!p) return;
+  const span = attributionSpan(tokenizeTranscript(heardT), heardT.chunks);
+  if (!span || span.from == null || span.to == null || span.phrase !== p.phrase) return;
+  const t = templateFrom(practice.heard, span.from, span.to);
+  if (!t) return;
+  const store = await speakerLineStore();
+  if (!store) return;
+  if (!addTemplate(store, p.phrase, packTemplate(t, { at: Math.round(span.from * 100) / 100, sec: t.sec, session: practice.session && practice.session.id ? practice.session.id : `take-${Math.round(practice.take.duration * 10)}`, sloka: nameOf(id), addedAt: new Date().toISOString() }))) return;
+  try { await api.putSpeakerLines(learnerId, store); } catch (err) { console.warn(`The speaker line could not be kept: ${err.message}`); }
+}
+async function secondOpinionOf(take) {
   try {
     const items = practice.selection.map((id) => { const it = { id, name: nameOf(id) }; const plan = planOf(it); return { name: it.name, teacherSec: expectedSecOf(it) || null, total: plan ? plan.total : null, speakerLine: plan ? plan.speakerLine || 0 : 0 }; });
     const p = profileById(learnerId);
@@ -2831,7 +2859,23 @@ function secondOpinionOf(take) {
     const lastPos = stop && stop[6] === 'done' ? 1 : stop && stop[5] > 0 && stop[4] != null ? stop[4] / stop[5] : null;
     // the cuts the student made by turning the page are fixed: the second opinion keeps them
     const pinned = (take.segments || []).filter((p) => p.byHand && p.name).map((p) => ({ after: names.indexOf(p.name), at: p.to })).filter((p) => p.after >= 0 && p.after < items.length - 1);
-    return segmentTake(practice.heard, items, { pace, lastPos, pinned, recited });
+    // the speaker lines heard by sound in the learner's own voice: each one found is the
+    // start of the sloka with that line, and the cut before it is pinned (the student's own
+    // cut, when there is one, stands first)
+    const store = await speakerLineStore();
+    let speakerLines = null;
+    if (store && templateCount(store)) {
+      const withPhrase = practice.selection.map((sid, i) => { const b = practice.bases.get(sid); const ph = b ? phraseOfText(slokaTextOf(b)) : null; return { name: names[i], phrase: ph ? ph.phrase : null }; });
+      const expected = {};
+      for (const w of withPhrase) if (w.phrase) expected[w.phrase] = (expected[w.phrase] || 0) + 1;
+      const found = findSpeakerLines(practice.heard, store, { expected });
+      const assigned = assignSpeakerLines(found.matches, withPhrase);
+      for (const a of assigned) { if (a.index >= 1 && a.index <= items.length - 1 && !pinned.some((p) => p.after === a.index - 1)) pinned.push({ after: a.index - 1, at: a.at, by: 'speakerLine' }); }
+      speakerLines = { templates: found.templates, thresholds: found.thresholds, candidates: found.candidates, matches: found.matches, assigned };
+    }
+    const so = segmentTake(practice.heard, items, { pace, lastPos, pinned, recited });
+    so.speakerLines = speakerLines;
+    return so;
   } catch (err) { return { error: String((err && err.message) || err) }; }
 }
 // The stretch the ear closed for a sloka in the take (the longest, two seconds at least).
@@ -3228,6 +3272,7 @@ function takeWaveMarks() {
   const so = take.earLog && take.earLog.secondOpinion;
   const res = so && so.chosen && so.results ? so.results[so.chosen] : null;
   for (const b of (res && res.boundaries) || []) lines.push({ at: (b.from + b.to) / 2, color: second, row: 0, dash: [4, 3], width: b.pinned ? 3 : 1.5, label: b.pinned ? '2nd · pinned' : b.virtual ? '2nd · no breath' : '2nd' });
+  for (const a of (so && so.speakerLines && so.speakerLines.assigned) || []) lines.push({ at: a.at, color: cssVar('--accent'), row: 2, width: 2, label: phraseLabel(a.phrase) });
   return { duration, spans, lines };
 }
 
@@ -5703,6 +5748,7 @@ async function transcribeSloka(id, force = false) {
   const heardT = await transcribeTakePart(heardPartOf(res), force);
   if (practice.take !== take || !heardT) return null;
   const base = await ensureBase(id);
+  harvestSpeakerLine(id, heardT, base).catch(() => {}); // a speaker line the words placed: a template of it in this learner's voice
   const ref = referenceWords(base, res);
   if (!ref) return heardT; // the sloka has no words: nothing to compare the words with
   const { ws } = await hearAgainIfPoor(res, ref, heardT, base.duration, force, planOf({ id }));
@@ -5799,6 +5845,15 @@ function nextOpeningOf(id) {
   const text = base ? slokaTextOf(base) : '';
   return text ? tokenize(text).slice(0, 8) : null;
 }
+// The last words of the sloka before `id` in the take, for a window that begins with its tail.
+function prevEndingOf(id) {
+  const items = practice.quiz ? practice.quiz.items.map((it) => it.id) : practice.selection;
+  const k = id ? items.indexOf(id) : -1;
+  if (k <= 0) return null;
+  const base = practice.bases.get(items[k - 1]);
+  const text = base ? slokaTextOf(base) : '';
+  return text ? tokenize(text).slice(-4) : null;
+}
 const idOfResult = (res) => { for (const [id, r] of practice.results) if (r === res) return id; return null; };
 function windowedDiff(res, baseT, heardT, baseDuration, takeDuration, plan = null) {
   const A = windowedTokens(baseT, res.matched.base, baseDuration);
@@ -5840,7 +5895,7 @@ function windowedDiff(res, baseT, heardT, baseDuration, takeDuration, plan = nul
       const ends = []; let e = sp; for (const n of usePlan.padas) { e += n; ends.push(e); }
       for (const t of refToks) { let u = 0; while (u < ends.length && acc >= ends[u]) u++; refPada.push(acc < sp ? 0 : 1 + u); acc += syllabify(t.word).length; }
     } else if (perPada) { refPada = []; let acc = 0; for (const t of refToks) { refPada.push(acc < offset ? 0 : 1 + Math.floor((acc - offset) / perPada)); acc += syllabify(t.word).length; } }
-    corrections = findSelfCorrections(refToks, heardToks, { refPada, nextOpening: nextOpeningOf(idOfResult(res)) }).map((c) => { const tok = heardToks[c.at]; const ch = tok && heardT.chunks && heardT.chunks[tok.chunk]; return { ...c, at: ch && typeof ch.start === 'number' ? ch.start : undefined }; });
+    corrections = findSelfCorrections(refToks, heardToks, { refPada, nextOpening: nextOpeningOf(idOfResult(res)), prevEnding: prevEndingOf(idOfResult(res)) }).map((c) => { const tok = heardToks[c.at]; const ch = tok && heardT.chunks && heardT.chunks[tok.chunk]; return { ...c, at: ch && typeof ch.start === 'number' ? ch.start : undefined }; });
   }
   return { A, B, ai, bi, delA, insB, dimA, dimB, summary: cmp.summary, phonology, corrections };
 }
@@ -5930,6 +5985,7 @@ function renderTranscriptDiff() {
     }
     syncSession();
   }
+  harvestSpeakerLine(practice.activeId, sttPractice.heard, practice.base).catch(() => {});
   renderPhonologyReport($('#stt-phon'), phonology);
   renderCorrections($('#stt-corrections'), slipsOf(practice.activeId));
   refreshVerdicts();

@@ -4,7 +4,14 @@ What changed in each packaged version (`node tools/package.mjs` builds
 `dist/SlokAbhyasa-<version>-windows.zip`), newest first, and what has been built since the
 last package. The README describes every feature as it stands; this file says when it came.
 
-## Unreleased — since 1.6.0 (branch `AcousticAssessment`, 9–22 October 2026)
+## Unreleased — since 1.6.0 (branch `AcousticAssessment`, 9–31 October 2026)
+
+### 31 October 2026
+
+- **The speaker lines heard in your own voice.** The Gītā's four speaker lines are matched
+  after a take against templates of how *you* say them, harvested whenever a sloka's words
+  are in and place its line; a line heard marks the start of the sloka that opens with it,
+  and the second opinion pins the cut before it. Kept per learner beside the profiles.
 
 ### 28 October 2026
 

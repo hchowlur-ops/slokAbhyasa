@@ -440,7 +440,13 @@ stopped inside its last sloka is taken from the ear's count at the stop, since t
 alone cannot tell a faster reciter from an unfinished sloka. Where no breath lies near where
 the lengths want a cut (you went straight on), the cut may go through the sound at a dip of
 the level, at a cost; and the slokas the take never reached (the ear's word at the stop) are
-left unplaced. Nothing is decided by it yet; it is written beside the ear's own stretches so the two can be
+left unplaced. The Gītā's four **speaker lines** — dhṛtarāṣṭra uvāca, sañjaya uvāca, arjuna
+uvāca, śrībhagavān uvāca — are heard by sound in *your own voice*: whenever a sloka's words
+are in and place its speaker line, that stretch becomes a template of the phrase as you say
+it, kept with your profile (five newest per phrase); after a take the templates are matched
+at every start of sound after a breath, and a speaker line heard marks the start of the next
+sloka that opens with it, pinning the cut before it. The teacher's recording is not used for
+this, since another voice sits too far for the match to tell. Nothing is decided by it yet; it is written beside the ear's own stretches so the two can be
 compared on every take (`node tools/second-opinion.mjs <session id>`, or `--all` for a table
 over every kept take of several slokas).
 

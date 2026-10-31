@@ -781,7 +781,26 @@ function withProfiles(fn) {
 
 async function handleProfiles(req, res, parts) {
   const id = parts[2];
+  const sub = parts[3];
   const json = async () => { try { return JSON.parse((await readBody(req, 1e5)).toString('utf8')); } catch { return null; } };
+  // GET / PUT /api/profiles/:id/speaker-lines — the learner's speaker-line templates
+  // (js/dsp/speakerlines.js), one document per learner in <data>/speaker-lines
+  if (id && sub === 'speaker-lines') {
+    if (!/^[a-zA-Z0-9_-]+$/.test(id)) return sendJson(res, 400, { error: 'Bad id' });
+    const p = path.join(DATA, 'speaker-lines', `${id}.json`);
+    if (req.method === 'GET') {
+      try { return sendJson(res, 200, JSON.parse(await fsp.readFile(p, 'utf8'))); } catch { return sendJson(res, 200, { version: 1, phrases: {} }); }
+    }
+    if (req.method === 'PUT') {
+      let body = null;
+      try { body = JSON.parse((await readBody(req, 4e6)).toString('utf8')); } catch { body = null; }
+      if (!body || typeof body !== 'object' || !body.phrases || typeof body.phrases !== 'object') return sendJson(res, 400, { error: 'Body must be a speaker-lines document' });
+      await fsp.mkdir(path.dirname(p), { recursive: true });
+      await fsp.writeFile(p, JSON.stringify(body));
+      return sendJson(res, 200, { ok: true });
+    }
+    return sendJson(res, 405, { error: 'Method not allowed' });
+  }
   if (!id && req.method === 'GET') return sendJson(res, 200, await readProfiles(PROFILES));
   if (!id && req.method === 'POST') {
     const body = await json();

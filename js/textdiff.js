@@ -310,12 +310,14 @@ function editDistance(a, b) {
 }
 // `nextOpening`: the first words of the sloka that follows in the take — a sloka that ends
 // with the word the next begins with ("…kim akurvata sañjaya | sañjaya uvāca") is the recital
-// going on, not a word said twice.
-export function findSelfCorrections(refToks, heardToks, { refPada = null, nextOpening = null } = {}) {
+// going on, not a word said twice. `prevEnding`: the last words of the sloka before, for a
+// window that begins with its tail — the mirror case.
+export function findSelfCorrections(refToks, heardToks, { refPada = null, nextOpening = null, prevEnding = null } = {}) {
   const stream = (toks) => { let s = ''; const tokAt = []; const starts = []; for (let i = 0; i < toks.length; i++) { const k = phoneticKey(toks[i].norm || toks[i].word || ''); starts.push(s.length); for (let c = 0; c < k.length; c++) tokAt.push(i); s += k; } return { s, tokAt, starts }; };
   const H = stream(heardToks || []);
   const R = stream(refToks || []);
   const N = nextOpening && nextOpening.length ? stream(nextOpening) : null;
+  const P = prevEnding && prevEnding.length ? stream(prevEnding) : null;
   const out = [];
   if (H.s.length < 2 * SELF_CORR_MIN_SOUNDS) return out;
   // where each pāda of the sloka starts in its stream, and how long it runs
@@ -344,6 +346,15 @@ export function findSelfCorrections(refToks, heardToks, { refPada = null, nextOp
       let opening = false;
       for (let shift = -2; shift <= 2 && !opening; shift++) { const at = i + hit.L + hit.gap + shift; if (at < 0) continue; const b = H.s.substr(at, n.length); if (b.length >= 3 && editDistance(b, n.slice(0, b.length)) <= slack(b.length)) opening = true; }
       if (opening) { i += hit.L; continue; }
+    }
+    // the first saying is the previous sloka's tail at the window's start, the second this
+    // sloka's opening: the same, the other way round
+    if (P && P.s.length >= 3 && i <= P.s.length + 2) {
+      const a = H.s.substr(i, hit.L);
+      const tail = P.s.slice(-Math.min(hit.L + 2, P.s.length));
+      let fromTail = false;
+      for (let shift = 0; shift <= 2 && !fromTail; shift++) { const t = tail.slice(shift, shift + a.length); if (t.length >= 3 && editDistance(a.slice(0, t.length), t) <= slack(t.length)) fromTail = true; }
+      if (fromTail) { i += hit.L; continue; }
     }
     // both sayings inside one heard word ("…somāśarasomayā" for śrutau vistaraśo mayā): the
     // recogniser's echo, not the learner's — a word said twice is written as two words

@@ -29,6 +29,7 @@ const STT = (process.env.STT || 'off') === 'on';
 const MULTI = (process.env.MULTI || 'off') === 'on';
 const HEAD = (process.env.HEAD || 'on') === 'on';
 const KEEP = process.env.KEEP === '1';
+const TIER = process.env.TIER || null; // the speech model tier for the replay (fast | better | best); the app's choice when unset
 const KEYS = (process.env.KEYS || '').split(',').map((s) => Number(s.trim())).filter((x) => Number.isFinite(x) && x > 0).sort((a, b) => a - b); // seconds into the recording at which Space is pressed (the student turning the page)
 const LEARNER = process.env.LEARNER || 'p-20261008195044-8m0l';
 const CHROME = process.env.CHROME || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
@@ -71,7 +72,7 @@ try {
   await send('Runtime.enable'); await send('Page.enable');
   await send('Page.navigate', { url: APP + '#settings' });
   await until(`document.querySelector('.nav-btn.active') && document.querySelector('#settings-stt-auto')`, 'app');
-  await evaluate(`(() => { const s = JSON.parse(localStorage.getItem('tutor-stt') || '{}'); delete s.cpuTiers; s.auto = ${STT}; s.multi = ${MULTI}; s.tier = null; localStorage.setItem('tutor-ear-head', ${HEAD} ? '1' : '0'); localStorage.setItem('tutor-ear-log', '1'); localStorage.setItem('tutor-stt', JSON.stringify(s)); localStorage.removeItem('tutor-eval-selection'); localStorage.removeItem('tutor-text-language'); localStorage.removeItem('tutor-slokas-per-take'); localStorage.setItem('tutor-eval-text', '1'); localStorage.setItem('tutor-learner', ${JSON.stringify(LEARNER)}); })()`);
+  await evaluate(`(() => { const s = JSON.parse(localStorage.getItem('tutor-stt') || '{}'); delete s.cpuTiers; s.auto = ${STT}; s.multi = ${MULTI}; s.tier = ${JSON.stringify(TIER)}; localStorage.setItem('tutor-ear-head', ${HEAD} ? '1' : '0'); localStorage.setItem('tutor-ear-log', '1'); localStorage.setItem('tutor-stt', JSON.stringify(s)); localStorage.removeItem('tutor-eval-selection'); localStorage.removeItem('tutor-text-language'); localStorage.removeItem('tutor-slokas-per-take'); localStorage.setItem('tutor-eval-text', '1'); localStorage.setItem('tutor-learner', ${JSON.stringify(LEARNER)}); })()`);
   await send('Page.reload'); await sleep(1500);
   await pg(`document.querySelector('.nav-btn[data-view="evaluate"]').click();`);
   await until(`document.querySelectorAll('#practice-picker .picker-folder').length > 0`, 'picker');
@@ -132,7 +133,9 @@ try {
   let ear = null;
   for (let i = 0; i < 40 && !ear; i++) { const r = await fetch(`${APP}api/sessions/${s0.id}/ear`); if (r.ok) ear = await r.json(); else await sleep(500); }
   if (!ear) throw new Error('the replay saved no ear log (is the app current?)');
-  await sleep(STT ? 20000 : 2000); // late words, late syncs
+  if (STT) { const t1 = Date.now(); while (Date.now() - t1 < 480000 && await evaluate(`document.querySelectorAll('#take-cards .take-card.busy').length > 0`)) await sleep(2000); log('the words of every card are in, or the wait is over'); }
+  await sleep(STT ? 5000 : 2000); // late words, late syncs
+  try { const sl = await (await fetch(`${APP}api/profiles/${LEARNER}/speaker-lines`)).json(); log('speaker-line templates kept for the learner:', JSON.stringify(Object.fromEntries(Object.entries(sl.phrases || {}).map(([k, v]) => [k, v.length])))); } catch (e) { log('speaker lines:', e.message); }
   const session = await (await fetch(`${APP}api/sessions/${s0.id}`)).json();
   fs.writeFileSync(path.join(OUT, 'session.json'), JSON.stringify(session, null, 2));
   fs.writeFileSync(path.join(OUT, 'ear.json'), JSON.stringify(ear));

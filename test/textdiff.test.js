@@ -145,6 +145,11 @@ test('self-corrections: a sloka ending with the word the next sloka begins with 
   assert.deepEqual(findSelfCorrections(ref, heard).map((c) => c.kind), ['repeat'], 'blind to the next sloka, a repeat');
   assert.deepEqual(findSelfCorrections(ref, heard, { nextOpening: T('सञ्जय उवाच दृष्ट्वा तु पाण्डवानीकं') }), [], 'the next sloka begins with that word');
   assert.deepEqual(findSelfCorrections(ref, heard, { nextOpening: T('अर्जुन उवाच') }).map((c) => c.kind), ['repeat'], 'a next sloka beginning otherwise: still a repeat');
+  // the mirror: the next sloka's window begins with the previous sloka's last word
+  const ref2 = T('सञ्जय उवाच दृष्ट्वा तु पाण्डवानीकं व्यूढं दुर्योधनस्तदा');
+  const heard2 = T('किमकुर्वत सञ्जय सञ्जय उवाच दृष्ट्वा तु पाण्डवानीकं व्यूढं दुर्योधनस्तदा');
+  assert.deepEqual(findSelfCorrections(ref2, heard2).map((c) => c.kind), ['repeat'], 'blind to the sloka before, a repeat');
+  assert.deepEqual(findSelfCorrections(ref2, heard2, { prevEnding: T('मामकाः पाण्डवाश्चैव किमकुर्वत सञ्जय') }), [], 'the sloka before ends with that word');
 });
 
 test('self-corrections from the words: a word said twice, a pāda started again, the sloka started again', () => {

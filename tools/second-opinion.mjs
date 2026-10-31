@@ -14,6 +14,7 @@ import { decodeWav } from '../js/wav.js';
 import { resample } from '../js/dsp/resample.js';
 import { extractFeatures, SR } from '../js/dsp/features.js';
 import { segmentTake } from '../js/dsp/segment.js';
+import { phraseOfText, findSpeakerLines, assignSpeakerLines, templateCount } from '../js/dsp/speakerlines.js';
 import { aksharaPlan } from '../js/chandas.js';
 import { resolveDataDir } from '../datadir.js';
 
@@ -37,8 +38,9 @@ function slokaOf(item) {
   const teacherSec = meta && meta.voice && meta.voice.activeSec > 0 ? meta.voice.activeSec : rec.duration || null;
   let total = meta && meta.text && Number.isInteger(meta.text.aksharaCount) ? meta.text.aksharaCount : null;
   let speakerLine = 0;
-  if (meta && meta.text && meta.text.body) { try { const plan = aksharaPlan(meta.text.body); if (!total) total = plan.total || null; speakerLine = plan.speakerLine || 0; } catch { /* no plan */ } }
-  return { name: rec.name, teacherSec, total, speakerLine };
+  let phrase = null;
+  if (meta && meta.text && meta.text.body) { try { const plan = aksharaPlan(meta.text.body); if (!total) total = plan.total || null; speakerLine = plan.speakerLine || 0; const ph = phraseOfText(meta.text.body); phrase = ph ? ph.phrase : null; } catch { /* no plan */ } }
+  return { name: rec.name, teacherSec, total, speakerLine, phrase };
 }
 function featuresOf(wavPath) {
   const d = decodeWav(new Uint8Array(fs.readFileSync(wavPath)));
@@ -70,7 +72,22 @@ function analyse(id) {
   if (stopRow && stopRow[6] === 'done') lastPos = 1;
   else if (stopRow && stopRow[5] > 0 && stopRow[4] != null) lastPos = stopRow[4] / stopRow[5];
   else { const lastItem = (session.items || [])[(session.items || []).length - 1]; if (lastItem) { const sl = (lastItem.slips || []).find((x) => (x.kind === 'partial' || x.kind === 'dropped') && x.expected > 0); lastPos = sl ? sl.count / sl.expected : lastItem.partial ? 0.3 : lastItem.matched ? 1 : null; } }
-  const second = segmentTake(F, items, { pace, lastPos, recited });
+  // the learner's speaker-line templates, when kept: the lines heard pin the cuts before their slokas
+  let speakerLines = null;
+  const pinned = [];
+  try {
+    const store = session.learner && session.learner.profileId ? JSON.parse(fs.readFileSync(path.join(DATA, 'speaker-lines', `${session.learner.profileId}.json`), 'utf8')) : null;
+    if (store && templateCount(store)) {
+      const expected = {};
+      for (const it of items) if (it.phrase) expected[it.phrase] = (expected[it.phrase] || 0) + 1;
+      const found = findSpeakerLines(F, store, { expected });
+      const assigned = assignSpeakerLines(found.matches, items.map((it) => ({ name: it.name, phrase: it.phrase })));
+      for (const a of assigned) if (a.index >= 1) pinned.push({ after: a.index - 1, at: a.at });
+      speakerLines = { ...found, assigned };
+    }
+  } catch { speakerLines = null; }
+  const second = segmentTake(F, items, { pace, lastPos, recited, pinned });
+  second.speakerLines = speakerLines;
   const ear = earStretches(session, earLog);
   return { session, items, pace, duration, second, ear, earLog };
 }
@@ -88,6 +105,8 @@ function printOne(res) {
   const { session, second, ear } = res;
   console.log(`Take ${session.id} · ${(session.items || []).map((it) => it.name).join(', ')} · ${r2(res.duration)} s · learner pace ${res.pace ? `tempo ${res.pace.tempoRatio ?? '—'}, ${res.pace.aksPerSec ?? '—'} akṣaras/s` : 'unknown'} · ${second.pauses} pauses · sound ${r2(second.sungTotal)} s of ${r2(second.spanTotal)} s · the ear at the stop: ${second.lastPos == null ? 'unknown' : `${Math.round(second.lastPos * 100)} % of the last sloka`} · the ear's stretches from ${ear.source}`);
   console.log(`  slokas: ${second.items.map((it) => `${it.name} (${it.total ?? '?'} akṣaras${it.speakerLine ? `, speaker line ${it.speakerLine}` : ''}, teacher ${r2(it.teacherSec)} s)`).join(' · ')}`);
+  if (second.speakerLines) console.log(`  speaker lines in the learner's voice: ${second.speakerLines.templates} templates, thresholds ${JSON.stringify(second.speakerLines.thresholds)} · heard: ${second.speakerLines.matches.map((m) => `${m.phrase} at ${r2(m.at)} s (dist ${m.dist})`).join(', ') || 'none'} · taken: ${second.speakerLines.assigned.map((a) => `${a.name} begins at ${r2(a.at)} s`).join(', ') || 'none'}`);
+  else console.log('  speaker lines: no templates kept for this learner yet (they come from takes whose words are in)');
   for (const method of ['plan', 'teacher', 'share']) {
     const c = compareMethod(res, method);
     if (!c) { console.log(`  ${method}: not available${method === 'share' ? '' : ' (no learnt pace)'}${second.results[method] === null ? ' — too few pauses' : ''}`); continue; }

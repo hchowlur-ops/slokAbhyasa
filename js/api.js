@@ -129,6 +129,16 @@ export async function createProfile(profile) {
   return res.json();
 }
 
+// A learner's speaker-line templates (js/dsp/speakerlines.js): the lines in their own voice,
+// kept on the server beside the profiles.
+export async function getSpeakerLines(id) {
+  const res = await check(await fetch(`/api/profiles/${encodeURIComponent(id)}/speaker-lines`));
+  return res.json();
+}
+export async function putSpeakerLines(id, doc) {
+  const res = await check(await fetch(`/api/profiles/${encodeURIComponent(id)}/speaker-lines`, jsonReq('PUT', doc)));
+  return res.json();
+}
 export async function patchProfile(id, patch) {
   const res = await check(await fetch(`/api/profiles/${encodeURIComponent(id)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) }));
   return res.json();
