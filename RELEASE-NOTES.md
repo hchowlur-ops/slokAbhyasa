@@ -28,6 +28,13 @@ last package. The README describes every feature as it stands; this file says wh
   sat at contrast 0.885–0.93, over the line. A speaker line the words place with one chunk
   spanning the whole window is no longer harvested as a template (one cut so at 18.3 s of the
   morning's first take held CH18-01's tail and then pinned CH18-02's start two seconds early).
+- **Debug notes.** `debug-notes/` holds HTML reports written while chasing wrong verdicts:
+  how the app finds mistakes (the pipeline, the ear's state machine, every detector's rules),
+  the ear against the second opinion judged by sound over 22 recitals, and one note per take
+  of the day — `node tools/debug-note.mjs <session id> [--replay <log>]` writes a take's note:
+  the verdicts, every sloka's three windows (the ear's stretch, the second opinion's segment,
+  the sloka's own recording located in the take by sound) and the one the verdict used, the
+  second opinion in full, the ear's log, and what a replay found.
 - **The whole recital's wave stays when a card is open.** Opening a sloka's card no longer
   hides the recital's wave: it stays above the report, its playhead follows the card's play
   button as it does the whole recital's, and the open card again closes the report.

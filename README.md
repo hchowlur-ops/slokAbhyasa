@@ -1309,6 +1309,7 @@ tools/bench/           benchmarks of the speech and encoder models on this machi
 tools/ear-log.mjs      prints the ear's log of a take of several slokas (sessions/<id>/ear.json), with the comparison beside it
 tools/replay-take.mjs  replays a kept take through the live app in headless Chrome and prints its ear log
 tools/second-opinion.mjs  the cuts found from a kept take's whole recording against the ear's, one take or all
+tools/debug-note.mjs   a debug note for a kept take of several slokas, as HTML in debug-notes/: the verdicts, every sloka's three windows (the ear's, the second opinion's, by sound) and the one used, the second opinion in full, the ear's log, and replay logs when given
 test/                  synthetic signal generators and the DSP tests
 reports/               the research the presets and the details file follow
 RELEASE-NOTES.md       what changed in each packaged version, and since the last one
