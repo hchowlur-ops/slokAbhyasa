@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { tokenize, diffWords, diffSummary, compareWords, phoneticKey, tokenizeTranscript, windowedTokens, dandaMarks, withDandas, uvacaWords, isUvacaLine, splitUvaca } from '../js/textdiff.js';
+import { tokenize, diffWords, diffSummary, compareWords, phoneticKey, tokenizeTranscript, windowedTokens, dandaMarks, withDandas, uvacaWords, isUvacaLine, splitUvaca, neighbourEdges, loopedHearing } from '../js/textdiff.js';
 import { findSelfCorrections, tokenMoments, refineBoundary } from '../js/textdiff.js';
 import fs from 'node:fs';
 
@@ -256,4 +256,61 @@ test('the words move a boundary between two stretches: a later stretch that begi
   const nextLate = { toks: tokenizeTranscript(T([{ text: 'त्वत्तः कमलपत्राक्ष माहात्म्यमपि चाव्ययम्', start: 16.5, end: 22 }])), moments: tokenMoments(T([{ text: 'त्वत्तः कमलपत्राक्ष माहात्म्यमपि चाव्ययम्', start: 16.5, end: 22 }]), take), ref: ref11_2 };
   const b2 = refineBoundary(prevLate, nextLate);
   assert.ok(b2 != null && b2 > 11.5 && b2 < 13.2, `boundary back to the head of 11.2: ${b2}`);
+});
+
+test('neighbour edges: the previous sloka\'s ending at the head of a window, the next one\'s opening at its tail, are theirs', () => {
+  const T = (s) => s.split(' ').map((w) => ({ word: w, norm: w }));
+  // 18.4's window began inside 18.3 (…tyājyam iti cāpare) on 1 November 2026: its last words were heard as 18.4's first
+  const prevEnding = T('कर्म न त्याज्यमिति चापरे').slice(-4);
+  const nextOpening = T('श्रीभगवानुवाच काम्यानां कर्मणां न्यासं').slice(0, 8);
+  const heard = T('मिति चापरे निश्चयं शृणु मे तत्र त्यागे भरतसत्तम त्यागो हि पुरुषव्याघ्र त्रिविधः सम्प्रकीर्तितः श्रीभगवानुवाच काम्यानां');
+  const unmatched = heard.map((_, i) => i < 2 || i >= heard.length - 2);
+  assert.deepEqual(neighbourEdges(heard, unmatched, { prevEnding, nextOpening }), { lead: 2, trail: 2 });
+  // a word the learner added at the head that is not the neighbour's stays
+  const heard2 = T('ओम् निश्चयं शृणु मे तत्र त्यागे');
+  assert.deepEqual(neighbourEdges(heard2, heard2.map((_, i) => i === 0), { prevEnding, nextOpening }), { lead: 0, trail: 0 });
+  // the neighbour's tail followed by an addition of the learner's: only the tail is theirs
+  const heard3 = T('चापरे ओम् निश्चयं शृणु मे तत्र त्यागे');
+  assert.deepEqual(neighbourEdges(heard3, heard3.map((_, i) => i < 2), { prevEnding, nextOpening }), { lead: 1, trail: 0 });
+  // nothing unmatched at the edges, or no neighbours: nothing to leave out
+  assert.deepEqual(neighbourEdges(heard, heard.map(() => false), { prevEnding, nextOpening }), { lead: 0, trail: 0 });
+  assert.deepEqual(neighbourEdges(heard, unmatched, {}), { lead: 0, trail: 0 });
+});
+
+test('looped hearing: the recogniser\'s loop is not the sloka, a pāda said again is', () => {
+  const T = (s) => s.split(' ').map((w) => ({ word: w, norm: w }));
+  const ref = T('निश्चयं शृणु मे तत्र त्यागे भरतसत्तम त्यागो हि पुरुषव्याघ्र त्रिविधः सम्प्रकीर्तितः');
+  // as the recogniser wrote 18.4 on 1 November 2026: 100 akṣaras for a sloka of 32
+  const loop = T('निच्चयम्षुनुमे थत्रा थ्यागे भरतसत्तमा थ्यागो हिपुरुषव्याग्व्णा त्रिविधस्व्णुमे थ्यागो हिपुरुषव्याग्व्णुमे थ्यागो हिपुरुषव्याग्व्णुमे थ्याग्व्णुमे थ्याग्व्णुमे थ्याग्व्णुमे हिपुरुषव्याग्व्णुमे थ्यागो हिपुरुषव्याग्व्णुमे थ्यागो हिपुरुषव्याग्व्णुमे थ्याग्व्णुमे थ्याग्व्णुमे थ्याग्व्णुमे');
+  assert.equal(loopedHearing(ref, loop), true);
+  assert.equal(loopedHearing(ref, ref), false);
+  // a pāda said twice, even thrice: the learner, not the loop (not 1.6 times the sloka)
+  assert.equal(loopedHearing(ref, T('निश्चयं शृणु मे तत्र निश्चयं शृणु मे तत्र त्यागे भरतसत्तम त्यागो हि पुरुषव्याघ्र त्रिविधः सम्प्रकीर्तितः')), false);
+  assert.equal(loopedHearing(ref, T('निश्चयं शृणु मे तत्र निश्चयं शृणु मे तत्र निश्चयं शृणु मे तत्र त्यागे भरतसत्तम त्यागो हि पुरुषव्याघ्र त्रिविधः सम्प्रकीर्तितः')), false);
+  // a long hearing of other material (the neighbours' words) without a loop is not a loop either
+  assert.equal(loopedHearing(ref, T('काम्यानां कर्मणां न्यासं संन्यासं कवयो विदुः सर्वकर्मफलत्यागं प्राहुस्त्यागं विचक्षणाः निश्चयं शृणु मे तत्र त्यागे भरतसत्तम त्यागो हि पुरुषव्याघ्र त्रिविधः सम्प्रकीर्तितः त्याज्यं दोषवदित्येके कर्म प्राहुर्मनीषिणः यज्ञदानतपःकर्म न त्याज्यमिति चापरे')), false);
+});
+
+test('self-corrections: a short echo across the words with the recogniser\'s drift is not a repeat; a short word said twice is', () => {
+  const T = (s) => s.split(' ').map((w) => ({ word: w, norm: w }));
+  const ref = T('अर्जुन उवाच संन्यासस्य महाबाहो तत्त्वमिच्छामि वेदितुम् त्यागस्य च हृषीकेश पृथक्केशिनिषूदन');
+  // 18.1 as the recogniser heard it on 1 November 2026, the next sloka's speaker line at the tail: a-sany / a-sasy
+  const heard = T('अर्चुन उवाच्छ सन्या सस्यमहाबाह तत्व विच्चमिच्चामि वेदितुम् त्यागस्यचहृषीकेषः प्रुतक्चेषिनिशूधना रई भगवानुवाच्च');
+  assert.deepEqual(findSelfCorrections(ref, heard, { nextOpening: T('श्रीभगवानुवाच काम्यानां कर्मणां न्यासं') }), []);
+  assert.deepEqual(findSelfCorrections(ref, heard), []);
+  // a short word said twice at a word's start, to the sound, is still a repeat
+  assert.deepEqual(findSelfCorrections(ref, T('अर्जुन उवाच संन्यासस्य महाबाहो तत्त्वमिच्छामि वेदितुम् त्यागस्य त्यागस्य च हृषीकेश पृथक्केशिनिषूदन')).map((c) => c.kind), ['repeat']);
+});
+
+test('looped hearing: more akṣaras than the counter heard sung, a run said twice, is the loop; a half-line said again is not', () => {
+  const T = (s) => s.split(' ').map((w) => ({ word: w, norm: w }));
+  const ref = T('श्रीभगवानुवाच काम्यानां कर्मणां न्यासं संन्यासं कवयो विदुः सर्वकर्मफलत्यागं प्राहुस्त्यागं विचक्षणाः');
+  // 18.2's hearing of 1 November 2026: 57 akṣaras where the counter heard 40 sung
+  const loop = T('प्राहुर्मनीशिनहा प्राहुस्त्यागाँ विचक्षणाह त्याज्यम् दोषविधिके कर्म प्राहुर्मनीशिनहा प्राहुस्त्यागाँ विचक्षणाह त्याज्यम् दोषविधित्ये के कर्म प्राहुर्मनीशिनहा');
+  assert.equal(loopedHearing(ref, loop, { heardAksharas: 57, sungAksharas: 40 }), true);
+  assert.equal(loopedHearing(ref, loop, { heardAksharas: 57, sungAksharas: 55 }), false, 'as much sung as heard: the learner said it twice');
+  assert.equal(loopedHearing(ref, loop), false, 'without the counter\'s word, under 1.6 times the sloka, no loop is claimed');
+  // the learner starting the second line again: as much sung as heard
+  const again = T('श्रीभगवानुवाच काम्यानां कर्मणां न्यासं संन्यासं कवयो विदुः सर्वकर्मफलत्यागं सर्वकर्मफलत्यागं प्राहुस्त्यागं विचक्षणाः');
+  assert.equal(loopedHearing(ref, again, { heardAksharas: 47, sungAksharas: 46 }), false);
 });

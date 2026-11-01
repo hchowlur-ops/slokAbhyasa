@@ -892,6 +892,8 @@ textarea.locked { background: var(--surface-2); color: var(--muted); cursor: not
 .take-overall-text .score-grade { margin-top: 0; }
 .take-overall-text .score-words { margin: 0; max-width: 420px; text-align: left; }
 .take-sub { line-height: 1.35; }
+.take-advice { display: grid; gap: 4px; line-height: 1.4; }
+.take-advice p { margin: 0; }
 .take-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
 .take-card { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 9px 11px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); cursor: pointer; font: inherit; color: inherit; text-align: left; min-width: 0; transition: border-color .12s, transform .12s, box-shadow .12s; }
 .take-card:hover { border-color: var(--accent); transform: translateY(-1px); box-shadow: var(--shadow); }

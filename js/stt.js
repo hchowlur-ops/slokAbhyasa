@@ -80,7 +80,7 @@ export class Transcriber {
     if (job.warm) { this.worker.postMessage({ id: job.id, type: 'warm', tier: job.tier, device: job.device, language: job.language }); return; }
     const samples = job.background ? job.samples.slice() : job.samples; // a background job keeps a copy in case it has to give way
     job.samples = job.background ? job.samples : null;
-    this.worker.postMessage({ id: job.id, type: 'transcribe', samples, sampleRate: job.sampleRate, language: job.language, tier: job.tier, device: job.device }, [samples.buffer]);
+    this.worker.postMessage({ id: job.id, type: 'transcribe', samples, sampleRate: job.sampleRate, language: job.language, tier: job.tier, device: job.device, steady: !!job.steady }, [samples.buffer]);
   }
 
   // The running background job makes room for foreground work: a copy of it goes back to
@@ -146,11 +146,13 @@ export class Transcriber {
   // `device: 'wasm'` keeps the job off the GPU; `fellBack` in the result says the worker
   // moved it there itself because the GPU's answer was nonsense. `background` jobs run
   // only when nobody is waiting (see above).
-  transcribe({ samples, sampleRate, language, tier, device = null, onProgress, signal, background = false }) {
+  // steady: the decoder run with a repetition penalty and no repeated trigrams from the start
+  // (the app's own answer to a hearing that looped), not only after a degenerate answer
+  transcribe({ samples, sampleRate, language, tier, device = null, onProgress, signal, background = false, steady = false }) {
     if (signal && signal.aborted) return Promise.reject(stoppedError());
     const copy = Float32Array.from(samples); // the worker resamples: nothing heavy on this thread
     return new Promise((resolve, reject) => {
-      const job = { id: ++this.seq, samples: copy, sampleRate, language, tier, device, onProgress, resolve, reject, done: false, killTimer: null, background, yielded: false, next: null };
+      const job = { id: ++this.seq, samples: copy, sampleRate, language, tier, device, steady: !!steady, onProgress, resolve, reject, done: false, killTimer: null, background, yielded: false, next: null };
       if (signal) signal.addEventListener('abort', () => this._stop(job), { once: true });
       if (background) this.queue.push(job);
       else {

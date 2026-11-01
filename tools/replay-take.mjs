@@ -11,7 +11,9 @@
 //   picker folder(s), comma-separated) · LEARNER (profile id) · STT=on|off (hear the words;
 //   off) · MULTI=on|off (the words in a take of several; off) · HEAD=on|off (the next
 //   sloka's opening by sound; on) · KEYS=17.2,37.4 (seconds into the recording at which Space
-//   is pressed, the student turning the page) · KEEP=1 · APP (http://127.0.0.1:8787/) · CHROME (path)
+//   is pressed, the student turning the page) · KEEP=1 · APP (http://127.0.0.1:8787/) · CHROME (path) · CARDS=on (after the take, each card's
+//   words button is pressed in turn — nothing transcribed during the take — and the transcripts
+//   with their timings are saved as heard.json beside the log)
 import { spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
@@ -29,6 +31,7 @@ const STT = (process.env.STT || 'off') === 'on';
 const MULTI = (process.env.MULTI || 'off') === 'on';
 const HEAD = (process.env.HEAD || 'on') === 'on';
 const KEEP = process.env.KEEP === '1';
+const CARDS = process.env.CARDS === 'on'; // the words of each card asked for after the take, one by one
 const TIER = process.env.TIER || null; // the speech model tier for the replay (fast | better | best); the app's choice when unset
 const KEYS = (process.env.KEYS || '').split(',').map((s) => Number(s.trim())).filter((x) => Number.isFinite(x) && x > 0).sort((a, b) => a - b); // seconds into the recording at which Space is pressed (the student turning the page)
 const LEARNER = process.env.LEARNER || 'p-20261008195044-8m0l';
@@ -135,6 +138,28 @@ try {
   for (let i = 0; i < 40 && !ear; i++) { const r = await fetch(`${APP}api/sessions/${s0.id}/ear`); if (r.ok) ear = await r.json(); else await sleep(500); }
   if (!ear) throw new Error('the replay saved no ear log (is the app current?)');
   if (STT) { const t1 = Date.now(); while (Date.now() - t1 < 480000 && await evaluate(`document.querySelectorAll('#take-cards .take-card.busy').length > 0`)) await sleep(2000); log('the words of every card are in, or the wait is over'); }
+  if (STT && CARDS) {
+    // each card's words button in turn, the next pressed once the card is no longer busy
+    const n = await evaluate(`document.querySelectorAll('#take-cards .take-card:not(.whole)').length`);
+    for (let i = 0; i < n; i++) {
+      const name = await evaluate(`document.querySelectorAll('#take-cards .take-card:not(.whole)')[${i}].querySelector('.tc-name').textContent`);
+      const can = await evaluate(`!document.querySelectorAll('#take-cards .take-card:not(.whole)')[${i}].querySelector('.tc-words').hidden`);
+      if (!can) { log('card', name, ': no words button (not recited, or under half)'); continue; }
+      const t2 = Date.now();
+      await pg(`document.querySelectorAll('#take-cards .take-card:not(.whole)')[${i}].querySelector('.tc-words').click();`);
+      await sleep(1500);
+      while (Date.now() - t2 < 300000 && await evaluate(`document.querySelectorAll('#take-cards .take-card:not(.whole)')[${i}].classList.contains('busy') || !document.querySelectorAll('#take-cards .take-card:not(.whole)')[${i}].querySelector('.tc-spin').hidden`)) await sleep(1500);
+      log('card', name, ': words in after', ((Date.now() - t2) / 1000).toFixed(0), 's');
+    }
+    await sleep(2000);
+    try {
+      const heard = await evaluate(`JSON.stringify({ transcripts: window.__slokabhyasa.heardTranscripts(), reports: window.__slokabhyasa.reports() })`);
+      fs.writeFileSync(path.join(OUT, 'heard.json'), heard);
+      const h = JSON.parse(heard);
+      for (const r of h.reports) log('report', r.name, '· window', r.heard ? r.heard.map((x) => x.toFixed(2)).join('–') : '—', '· slips', JSON.stringify(r.slips), '· counts', JSON.stringify(r.phonology));
+      for (const t of h.transcripts) log('heard', t.key, ':', (t.chunks || []).map((c) => `[${c.start == null ? '?' : c.start.toFixed(1)}–${c.end == null ? '?' : c.end.toFixed(1)}] ${c.text}`).join(' '));
+    } catch (e) { log('the transcripts could not be read:', e.message); }
+  }
   await sleep(STT ? 5000 : 2000); // late words, late syncs
   try { const sl = await (await fetch(`${APP}api/profiles/${LEARNER}/speaker-lines`)).json(); log('speaker-line templates kept for the learner:', JSON.stringify(Object.fromEntries(Object.entries(sl.phrases || {}).map(([k, v]) => [k, v.length])))); } catch (e) { log('speaker lines:', e.message); }
   const session = await (await fetch(`${APP}api/sessions/${s0.id}`)).json();

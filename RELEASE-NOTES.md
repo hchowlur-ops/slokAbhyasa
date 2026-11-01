@@ -4,7 +4,46 @@ What changed in each packaged version (`node tools/package.mjs` builds
 `dist/SlokAbhyasa-<version>-windows.zip`), newest first, and what has been built since the
 last package. The README describes every feature as it stands; this file says when it came.
 
-## Unreleased — since 1.6.0 (branch `AcousticAssessment`, 9–31 October 2026)
+## Unreleased — since 1.6.0 (branch `AcousticAssessment`, 9 October – 1 November 2026)
+
+### 1 November 2026
+
+- **The verdicts follow the second opinion where it and the ear disagree.** On a recital of
+  CH18-01..04 the ear cut two and four seconds late after CH18-02 and CH18-03 (a breath
+  shorter than the one it had learnt, a count a few short, and the lateness carried on), so
+  CH18-03 was judged on a stretch holding CH18-02's last pāda and CH18-04's first, and
+  CH18-04 came out "akṣaras dropped" though recited whole. The second opinion had all three
+  cuts within a third of a second of where the slokas' own recordings lie in the take by
+  sound. Measured over 30 cuts of 22 recitals since 20 October, it is the more reliable (within
+  a second of the sound on 24 cuts against the ear's 15; the closer one on 17 against 4), but
+  not infallible (a pin from a bad template, the last sloka read as unfinished), so where the
+  two differ by half a second or more (within six seconds, at a real pause or pinned, never a
+  page you turned yourself) each sloka beside the cut is compared on both windows, and the
+  second opinion's is kept when the sloka's sound matches on it and either does not match on
+  the ear's or fits the second's clearly better (when it matches on neither, the ear's stays:
+  its count can still vouch for the stretch); a stretch that takes the second opinion's
+  window loses the ear's count and the "akṣaras dropped" that count made. The whole-recital wave marks such a
+  cut "ear → 2nd", and the ear's log keeps the proposed cuts and which window each sloka
+  kept. A speaker line the words place with one chunk spanning the whole window is no longer
+  harvested as a template (one cut so at 18.3 s of the morning's first take held CH18-01's
+  tail and then pinned CH18-02's start two seconds early).
+- **Advice under the cards of a recital.** A sloka recited for the first time: practise it on
+  its own a few times before it joins a recital. A sloka that is Needs practice: evaluate it
+  alone, whole and clean, where it is judged more surely and a clean take keeps its
+  signatures.
+- **The words of a sloka in a recital, read more carefully.** The previous sloka's last words
+  at the head of a sloka's window, or the next sloka's first words at its tail (the ear's cut
+  early or late), are the neighbours', not akṣaras you added. A hearing in which the
+  recogniser looped — far more sounds than the sloka has and a run said three times over, or
+  more akṣaras than the ear heard sung and a run said twice — is heard once more held steady
+  (a repetition penalty from the first run), and if it still loops its words are not used: no
+  slips, no word scores, the card says "the recogniser looped on its words · sound only". A
+  hearing far thinner than the stretch's nuclei, asked for from a card, is heard again in two
+  halves as a live stretch already was. The words' "akṣaras dropped" is doubted when the
+  ear counted the stretch whole and the words miss a quarter of the sloka or more (the
+  recogniser skipping, not you). And a short echo across two words with the recogniser's
+  drift — *uvāccha sanyā|sasya* read as a-sany / a-sasy — is no longer a repeat: a saying
+  under eight sounds must begin where a heard word begins and be said again to the sound.
 
 ### 31 October 2026
 

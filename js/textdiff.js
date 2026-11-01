@@ -292,6 +292,67 @@ export function withDandas(text) {
 // refIndex? }].
 const SELF_CORR_MIN_SOUNDS = 5; // about three akṣaras: shorter echoes are the language itself
 const SELF_CORR_MAX_SOUNDS = 60;
+const SELF_CORR_EXACT_UNDER = 8; // a saying under eight sounds must begin where a heard word begins and be said again to the sound
+// Words at the edges of a sloka's window in a recital that belong to its neighbours: the
+// ear's cut early or late puts the previous sloka's last words at the window's head, or the
+// next sloka's first words at its tail. A leading run of heard words the sloka's text does
+// not have that reads as the previous sloka's ending (`prevEnding`, its last words), and a
+// trailing run that reads as the next sloka's opening (`nextOpening`, its first words), are
+// theirs — not akṣaras the learner added. heardToks: the window's heard tokens; unmatched[i]:
+// true when the diff found no word of the sloka for the i-th. Returns { lead, trail }: how
+// many tokens to leave out at each end (the longest run at each end that reads as the
+// neighbour's, a quarter of its sounds allowed to differ).
+export function neighbourEdges(heardToks, unmatched, { prevEnding = null, nextOpening = null } = {}) {
+  const key = (toks) => (toks || []).map((t) => phoneticKey(t.norm || t.word || '')).join('');
+  const n = heardToks ? heardToks.length : 0;
+  const out = { lead: 0, trail: 0 };
+  let lead = 0;
+  while (lead < n && unmatched[lead]) lead++;
+  let trail = 0;
+  while (trail < n - lead && unmatched[n - 1 - trail]) trail++;
+  const alike = (a, b) => { const L = Math.min(a.length, b.length); return L >= 3 && editDistance(a, b) <= Math.max(1, Math.round(L * 0.25)); };
+  if (lead && prevEnding && prevEnding.length) {
+    const P = key(prevEnding);
+    for (let k = lead; k >= 1; k--) { const s = key(heardToks.slice(0, k)); const L = Math.min(s.length, P.length); if (alike(s.slice(-L), P.slice(-L))) { out.lead = k; break; } }
+  }
+  if (trail && nextOpening && nextOpening.length) {
+    const N = key(nextOpening);
+    for (let k = trail; k >= 1; k--) { const s = key(heardToks.slice(n - k)); const L = Math.min(s.length, N.length); if (alike(s.slice(0, L), N.slice(0, L))) { out.trail = k; break; } }
+  }
+  return out;
+}
+// A hearing that cannot be the sloka: far more sounds than the sloka has (over 1.6 times as
+// many) and a run said three times over, one saying straight after the other — the
+// recogniser's loop ("thyāgvṇume thyāgvṇume thyāgvṇume", 100 akṣaras heard for a sloka
+// of 32 on 1 November 2026), which the worker's own check misses when the looping unit is
+// several words said only a few times. A learner saying a pāda again does not reach this.
+// Or, when the counter's nuclei say how much was sung in the stretch (`sungAksharas`, the
+// nuclei over the learner's ratio): a hearing with a quarter more akṣaras than were sung,
+// more sounds than the sloka has, and a run of ten sounds or more said twice over holds what
+// was not said — the loop of 18.2's hearing on 1 November 2026, 57 akṣaras for 40 sung.
+export function loopedHearing(refToks, heardToks, { heardAksharas = null, sungAksharas = null } = {}) {
+  const key = (toks) => (toks || []).map((t) => phoneticKey(t.norm || t.word || '')).join('');
+  const R = key(refToks);
+  const H = key(heardToks);
+  if (R.length < 12) return false;
+  const slack = (L) => Math.max(1, Math.round(L * 0.15));
+  // a run of minL sounds or more said `times` times, one saying straight after the other
+  const runSaid = (times, minL) => {
+    for (let i = 0; i + times * minL <= H.length; i++) {
+      const maxL = Math.min(80, Math.floor((H.length - i) / times)); // a loop's period can be a whole line
+      for (let L = maxL; L >= minL; L--) {
+        const a = H.substr(i, L);
+        let ok = true;
+        for (let t = 1; t < times && ok; t++) { const b = H.substr(i + t * L, L); if (a.slice(0, 2) !== b.slice(0, 2) || editDistance(a, b) > slack(L)) ok = false; }
+        if (ok) return true;
+      }
+    }
+    return false;
+  };
+  if (H.length > 1.6 * R.length && runSaid(3, 6)) return true;
+  if (heardAksharas != null && sungAksharas != null && heardAksharas > 1.3 * sungAksharas && H.length > 1.2 * R.length && runSaid(2, 10)) return true;
+  return false;
+}
 function editDistance(a, b) {
   const n = a.length;
   const m = b.length;
@@ -317,6 +378,7 @@ function editDistance(a, b) {
 export function findSelfCorrections(refToks, heardToks, { refPada = null, nextOpening = null, prevEnding = null } = {}) {
   const stream = (toks) => { let s = ''; const tokAt = []; const starts = []; for (let i = 0; i < toks.length; i++) { const k = phoneticKey(toks[i].norm || toks[i].word || ''); starts.push(s.length); for (let c = 0; c < k.length; c++) tokAt.push(i); s += k; } return { s, tokAt, starts }; };
   const H = stream(heardToks || []);
+  const wordStart = new Set(H.starts);
   const R = stream(refToks || []);
   const N = nextOpening && nextOpening.length ? stream(nextOpening) : null;
   const P = prevEnding && prevEnding.length ? stream(prevEnding) : null;
@@ -346,11 +408,15 @@ export function findSelfCorrections(refToks, heardToks, { refPada = null, nextOp
     let hit = null;
     const maxL = Math.min(SELF_CORR_MAX_SOUNDS, Math.floor((H.s.length - i) / 2));
     for (let L = maxL; L >= SELF_CORR_MIN_SOUNDS && !hit; L--) {
+      // a short saying (under eight sounds) must begin where a heard word begins and be said
+      // again to the sound: "uvāccha sanyā|sasya…" holds a-sany / a-sasy one sound apart across
+      // the words — the sloka's own text with the recogniser's drift, not a slip (1 November 2026)
+      if (L < SELF_CORR_EXACT_UNDER && !wordStart.has(i)) break;
       const a = H.s.substr(i, L);
       for (let gap = 0; gap <= 2 && !hit; gap++) {
         const b = H.s.substr(i + L + gap, L);
         if (b.length < L || a.slice(0, 3) !== b.slice(0, 3)) continue; // a saying again begins as the first did
-        if (editDistance(a, b) <= slack(L)) hit = { L, gap };
+        if (editDistance(a, b) <= (L < SELF_CORR_EXACT_UNDER ? 0 : slack(L))) hit = { L, gap };
       }
     }
     if (!hit) { i++; continue; }

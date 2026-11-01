@@ -10,10 +10,11 @@ import { drawWaveform, drawLiveWave, ComparisonChart, cssVar } from './visualize
 import { serializeFeatures, deserializeFeatures, isValidFeatures, SR as FEAT_SR, HOP_SEC as FEAT_HOP } from './dsp/features.js';
 import { earExpectedMs, earPositionOf, earDecision, calibrateCountRatio, padaStartsFromPauses } from './dsp/ear.js';
 import { EarLog } from './earlog.js';
-import { segmentTake, playRangeOf } from './dsp/segment.js';
+import { segmentTake, playRangeOf, adoptCuts } from './dsp/segment.js';
 import { phraseOfText, attributionSpan, templateFrom, packTemplate, addTemplate, emptyStore, findSpeakerLines, assignSpeakerLines, templateCount, phraseLabel, signatureKeys, signatureCount, twoPassMarkers, SIGNATURE_SEC } from './dsp/speakerlines.js';
 import { padaStarts, startTemplates, calibrate, matchStart, mfccRows, meanOf, TEMPLATE_SEC, TEMPLATE_FRAMES, MIN_TEMPLATE_FRAMES } from './dsp/starts.js';
 import { MISMATCH_CONTRAST, confirmByWords, confirmByEar } from './dsp/compare.js';
+import { takeAdvice } from './advice.js';
 import { QUIZ_CATEGORIES, LEGACY_CATEGORIES, DEFAULT_QUIZ_CATEGORIES, DEFAULT_TOLERANCE, CATEGORY_WEIGHTS, categoryLabel, normalizeWeights, itemScores, attemptSummary, scoreFor, normalizeCategories, normalizeTolerance, recordTolerance, withinTolerance, itemVerdict, correctness, pickBaselines, overallScore, attemptOverall, itemOverall, applySlipPenalty, selfCorrections, SLIP_PENALTY, isPartial, droppedByWords, gradeOf, gradeById, gradeWithSlips, gradeWords, slipsLabel, anySlips, modernCategories } from './quizscore.js';
 import { comparePhonology, ERROR_LABEL, syllabify } from './phon.js';
 import { SyllableCounter } from './dsp/syllables.js';
@@ -29,7 +30,7 @@ import { transliterateTranscript } from './translit.js';
 import { identifyChandas, layoutSloka, padaBreaks, linesFor, uvacaOffset, chandasLabel, chandasPattern, gitaVerse, gitaFamily, aksharaPlan } from './chandas.js';
 import { canonOf, canonOfText, CANON_VERSION } from './canon.js';
 import { periodRange, shiftPeriod, inRange, isoDate, slokaRows, summarize, KIND_LABEL, progress } from './reports.js';
-import { diffWords, diffSummary, compareWords, tokenizeTranscript, windowedTokens, tokenMoments, refineBoundary, tokenize, dandaMarks, withDandas, uvacaWords, isUvacaLine, findSelfCorrections } from './textdiff.js';
+import { diffWords, diffSummary, compareWords, tokenizeTranscript, windowedTokens, tokenMoments, refineBoundary, tokenize, dandaMarks, withDandas, uvacaWords, isUvacaLine, findSelfCorrections, neighbourEdges, loopedHearing } from './textdiff.js';
 import { AGE_GROUPS, VOICE_TYPES, STYLE_MODES, DEFAULT_STYLE_MODE, presetsFor, ADULT_PRESET, compareModeFor, speakerLabel, ageGroupLabel, styleMode, voiceStats, deriveText } from './meta.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -489,10 +490,10 @@ function syncSttAuto() {
 // Transcribes in the speech worker; the caller carries on meanwhile. `signal` (an
 // AbortSignal) stops the job, and the promise then rejects with an error isStopped() accepts.
 // The language is the chosen one unless given; `background` jobs give way to everything else.
-async function runTranscription(samples, sampleRate, progress, what, signal, { language = sttSettings.language, background = false } = {}) {
+async function runTranscription(samples, sampleRate, progress, what, signal, { language = sttSettings.language, background = false, steady = false } = {}) {
   const tier = await sttTier();
   const result = await stt.transcribe({
-    samples, sampleRate, language, tier, signal, background,
+    samples, sampleRate, language, tier, signal, background, steady,
     device: sttSettings.cpuTiers.includes(tier) ? 'wasm' : null,
     onProgress: (p) => {
       if (!progress) return;
@@ -1757,6 +1758,8 @@ let practice = {
   pairContrast: new Map(), // "idA|idB" → how alike two slokas are (see locate.js)
   wordSims: new Map(), // id → share of that sloka's words heard (0..1), once its transcript diff was done
   phonology: new Map(), // id → comparePhonology() of the words heard against the sloka's text
+  wordsLooped: new Set(), // id → the recogniser looped on the sloka's stretch, held steady too: its words are not used
+  steadyTried: new Set(), // id → the open report asked for a hearing held steady once
   result: null, // = results.get(activeId) when it is a real result
   selected: null,
   teach: false, // Teach: one sloka at a time, Play then Listen
@@ -1807,7 +1810,12 @@ function slipsOf(id) {
   // it at least, half a pāda) missing from what was heard. The ear's count cannot for a
   // voice it has not learnt — slow chanting counts more nuclei than akṣaras — and a take
   // that stops short of the plan leaves it nothing to close (the 17 October simulations).
-  const wordsDropped = !!(ph && droppedByWords(ph.counts));
+  // — unless the ear counted the stretch whole and the words miss a quarter of the sloka or
+  // more: then the hearing fell short (the recogniser skipping — 9 akṣaras heard of 18.4's 32
+  // the ear counted in full, 1 November 2026), not the learner
+  const seg = earSegmentFor(id);
+  const earWhole = !!(seg && seg.expected && seg.count != null && seg.count >= seg.expected - 1);
+  const wordsDropped = !!(ph && droppedByWords(ph.counts)) && !(earWhole && ph.counts.missing >= Math.max(8, Math.round(ph.counts.ref * 0.25)));
   if (!raw.length && !wordsDropped) return raw;
   if (isPartial(raw)) return raw.filter((x) => x.kind === 'partial' || x.kind === 'skipped'); // under half recited: that is the whole story
   const res = practice.results.get(id);
@@ -2448,18 +2456,21 @@ async function soloPractice() {
   let sessions = [];
   try { sessions = await api.listSessions(); } catch { sessions = []; }
   const byId = new Map();
+  const takes = new Map(); // sloka → the takes (alone or in a recital, Self Evaluation or Teach) in which it was recited
   for (const s of sessions) {
-    if (!s || s.kind !== 'evaluation' || !Array.isArray(s.items) || s.items.length !== 1) continue;
+    if (!s || !Array.isArray(s.items) || (s.kind !== 'evaluation' && s.kind !== 'teach')) continue;
     if (((s.learner && s.learner.profileId) || null) !== learner) continue;
+    for (const it of s.items) { if (it && it.id && it.matched && !it.partial) { if (!takes.has(it.id)) takes.set(it.id, new Set()); takes.get(it.id).add(s.id); } }
+    if (s.kind !== 'evaluation' || s.items.length !== 1) continue;
     const it = s.items[0];
     if (!it || !it.matched || it.partial) continue;
     byId.set(it.id, (byId.get(it.id) || 0) + 1);
   }
   const store = await speakerLineStore();
   const out = new Map();
-  for (const id of new Set([...byId.keys(), ...Object.keys((store && store.phrases) || {}).filter((k) => k.startsWith('sloka:')).map((k) => k.split(':')[1])])) {
+  for (const id of new Set([...byId.keys(), ...takes.keys(), ...Object.keys((store && store.phrases) || {}).filter((k) => k.startsWith('sloka:')).map((k) => k.split(':')[1])])) {
     const sc = signatureCount(store, id);
-    out.set(id, { n: byId.get(id) || 0, signatures: sc.start > 0 && sc.end > 0 });
+    out.set(id, { n: byId.get(id) || 0, signatures: sc.start > 0 && sc.end > 0, takes: takes.get(id) || new Set() });
   }
   soloCache = { learner, at: Date.now(), byId: out };
   return out;
@@ -2470,6 +2481,9 @@ function soloBadge(id) {
   return { text: `${s.signatures ? '✓ ' : ''}${s.n}`, cls: s.signatures ? 'ready' : '', title: `${s.n ? `evaluated on its own ${s.n} time${s.n === 1 ? '' : 's'}` : 'never evaluated on its own'}${s.signatures ? ' · its first and last seconds in your voice are kept: in a recital it is placed from both ends' : ''}` };
 }
 // The slokas of the selection never evaluated on their own.
+// The takes before this one in which the sloka was recited, alone or in a recital: none, and
+// this take is the learner's first time with it.
+const recitedBefore = (id) => { const s = soloCache.byId.get(id); const cur = practice.session && practice.session.id; return s && s.takes ? [...s.takes].filter((x) => x !== cur).length : 0; };
 const unpractisedSlokas = () => practice.selection.filter((id) => { const s = soloCache.byId.get(id); return !s || !s.signatures; }); // kept signatures, not past evaluations: an older take is never read again
 function renderSoloNote() {
   const el = $('#practice-solo-note');
@@ -2803,7 +2817,7 @@ function recompareWhenRefined(take) {
     if (practice.take !== take) return;
     const moved = refineStretches(take);
     if (!moved.length) return;
-    for (const id of moved) { practice.results.delete(id); practice.wordSims.delete(id); practice.phonology.delete(id); for (const k of [...practice.heardTranscripts.keys()]) if (k !== 'all') practice.heardTranscripts.delete(k); }
+    for (const id of moved) { practice.results.delete(id); practice.wordSims.delete(id); practice.phonology.delete(id); practice.wordsLooped.delete(id); for (const k of [...practice.heardTranscripts.keys()]) if (k !== 'all') practice.heardTranscripts.delete(k); }
     await runComparisons();
     if (practice.take !== take) return;
     if (moved.includes(practice.activeId)) showActiveReport();
@@ -2831,7 +2845,7 @@ async function analyseAttempt() {
     if (sttSettings.auto && take.duration <= TAKE_WHOLE_MAX_SEC && practice.selection.length === 1) transcribeTakePart(null, false).catch(() => {}); // several slokas: each stretch once it is found
     refineStretches(take); // the words already in move the ear's boundaries before anything is compared
     practice.heard = await analyzer.features(take.samples, take.sampleRate, (p) => practiceProgress.set(p * 0.6), { warps: true });
-    if (take.earLog && practice.selection.length > 1) take.earLog.secondOpinion = await secondOpinionOf(take); // the cuts found from the whole take, beside the ear's; no verdict rests on them yet
+    if (take.earLog && practice.selection.length > 1) { take.earLog.secondOpinion = await secondOpinionOf(take); adoptSecondOpinion(take); } // the cuts found from the whole take; where they and the ear's disagree, each sloka is also compared on the second opinion's window and the sound keeps the better
     practice.options = {
       ignoreKey: $('#practice-ignorekey').checked,
       judgeSpeed: $('#practice-tempo').checked,
@@ -2907,6 +2921,10 @@ async function harvestSpeakerLine(id, heardT, base) {
   if (!p) return;
   const span = attributionSpan(tokenizeTranscript(heardT), heardT.chunks);
   if (!span || span.from == null || span.to == null || span.phrase !== p.phrase) return;
+  // the line's words placed by one chunk that spans the whole window (the recogniser's timing is
+  // coarse on a long stretch) place nothing: a template cut there held the previous sloka's
+  // tail and matched itself afterwards (CH18-02 at 18.3 s on 1 November 2026)
+  if (span.to - span.from > 5) return;
   const t = templateFrom(practice.heard, span.from, span.to);
   if (!t) return;
   const store = await speakerLineStore();
@@ -3015,6 +3033,59 @@ async function secondOpinionOf(take) {
     return so;
   } catch (err) { return { error: String((err && err.message) || err) }; }
 }
+// Where the second opinion and the ear disagree on a cut (dsp/segment.js adoptCuts; measured
+// 1 November 2026: the ear ran two to four seconds late on a recital of 18.1–18.4 when the
+// breath between slokas was shorter than the one it had learnt and its count a few short,
+// and the lateness carried into every sloka after), each sloka on either side gets a second
+// window — the second opinion's — beside the ear's stretch (`alt`); compareMissing compares
+// the sloka on both and keeps the window that fits it better by sound (the lower contrast),
+// since the second opinion can be wrong too (a pin from a bad template, the take's last
+// sloka read as unfinished) and the ear's count can still vouch for its own stretch. A
+// stretch that takes the second opinion's window loses the ear's count (it counted another
+// stretch) and the unsure "akṣaras dropped" that count made. Only a take whose stretches are
+// the selection's slokas one each, in order, is treated; the proposed cuts and which window
+// each sloka kept go to the ear's log (`adopted`) for the readers.
+function adoptSecondOpinion(take) {
+  const so = take && take.earLog && take.earLog.secondOpinion;
+  const res = so && !so.error && so.chosen && so.results ? so.results[so.chosen] : null;
+  const segs = (take && take.segments) || [];
+  if (!res || !Array.isArray(res.boundaries)) return [];
+  if (segs.length !== practice.selection.length || segs.some((s, i) => s.id !== practice.selection[i])) { take.earLog.adopted = []; return []; }
+  const moves = adoptCuts(segs, res.boundaries);
+  const cutAfter = new Map(moves.map((m) => [m.i, m.to]));
+  segs.forEach((s, i) => {
+    const from = cutAfter.has(i - 1) ? cutAfter.get(i - 1) : s.from;
+    const to = cutAfter.has(i) ? cutAfter.get(i) : s.to;
+    if (from !== s.from || to !== s.to) s.alt = [from, to];
+  });
+  take.earLog.adopted = moves.map((m) => ({ after: segs[m.i].name, from: Math.round(m.from * 100) / 100, to: m.to, keptBy: {} }));
+  return moves;
+}
+// The sloka compared on the second opinion's window as well (adoptSecondOpinion): the better
+// window by sound is kept — the stretch moves to it when it is the second opinion's — and the
+// ear's log says which each sloka kept.
+async function compareOnBothWindows(id, base, result) {
+  const take = practice.take;
+  const seg = earSegmentFor(id);
+  if (!take || !seg || !seg.alt || practice.selection.length < 2) return result;
+  let alt = null;
+  try { alt = await analyzer.compare(base.features, practice.heard, { ...optionsFor(base), window: [Math.max(0, seg.alt[0] - EAR_WINDOW_PAD_SEC), Math.min(take.duration, seg.alt[1] + EAR_WINDOW_PAD_SEC)] }); } catch { alt = null; }
+  if (practice.take !== take) return result;
+  const c0 = result && result.match ? result.match.contrast : null;
+  const c1 = alt && alt.match ? alt.match.contrast : null;
+  // the second opinion's window is kept only when the sloka's sound matches on it (contrast under the mismatch line) and either the ear's window does not match or the second's fits clearly better; when neither matches the ear's stays, since its count can still vouch for its own stretch (confirmByEar)
+  const better = !!alt && alt.match && alt.match.ok && c1 != null && (c0 == null || !(result && result.match && result.match.ok) || c1 < c0 - 0.02);
+  const i = practice.selection.indexOf(id);
+  for (const a of (take.earLog && take.earLog.adopted) || []) { const k = practice.selection.findIndex((sid) => nameOf(sid) === a.after); if (k === i || k === i - 1) a.keptBy[nameOf(id)] = { window: better ? 'second' : 'ear', ear: c0 == null ? null : Math.round(c0 * 1000) / 1000, second: c1 == null ? null : Math.round(c1 * 1000) / 1000 }; }
+  if (!better) return result;
+  const movedStart = Math.abs(seg.alt[0] - seg.from) >= 1;
+  seg.from = seg.alt[0];
+  seg.to = seg.alt[1];
+  seg.adopted = true;
+  seg.count = null; // the ear's count was of another stretch
+  if (movedStart) practice.slips.set(id, (practice.slips.get(id) || []).filter((x) => !(x.kind === 'dropped' && x.unsure && x.by === 'ear')));
+  return alt;
+}
 // The stretch the ear closed for a sloka in the take (the longest, two seconds at least).
 function earSegmentFor(id) {
   const take = practice.take;
@@ -3055,7 +3126,8 @@ async function compareMissing(p0) {
         const base = await ensureBase(id);
         practiceProgress.show(label);
         practiceProgress.set(p0 + (1 - p0) * (k / todo.length), label);
-        const result = await analyzer.compare(base.features, practice.heard, optionsFor(base));
+        let result = await analyzer.compare(base.features, practice.heard, optionsFor(base));
+        result = await compareOnBothWindows(id, base, result); // the second opinion's window too, where it differs: the better by sound is kept
         // the words not heard (a take of several slokas): a sloka the timbre comparison rejected
         // but the ear closed with its count at the plan's end is taken as recited
         if (!wordsWanted() && practice.selection.length > 1) {
@@ -3249,7 +3321,7 @@ function renderTakeBoard(ids) {
     $('.tc-name', card).title = nameOf(id);
     const noteEl = $('.tc-note', card);
     // being evaluated: compared still, or its words on their way — a spinner, and a tooltip
-    const wordsComing = isReport(r) && sc && sc.matched && !practice.wordSims.has(id) && wordsWanted() && !practice.listenStopped && !partialOf(id);
+    const wordsComing = isReport(r) && sc && sc.matched && !practice.wordSims.has(id) && !practice.wordsLooped.has(id) && wordsWanted() && !practice.listenStopped && !partialOf(id);
     const busy = !!(!r || wordsComing || (practice.quiz && quizScoring)); // a boolean: classList.toggle flips on a null
     card.classList.toggle('busy', busy);
     setHidden($('.tc-busy', card), !busy);
@@ -3262,7 +3334,7 @@ function renderTakeBoard(ids) {
       if (g) { $('.tc-grade', card).textContent = gradeText(g); $('.tc-grade', card).classList.add(g.id); }
       const sl = slipsOf(id);
       const flag = reportFlag(id);
-      noteEl.textContent = sl.length ? slipsLabel(sl) : flag && flag.level !== 'info' ? flag.text : practice.wordSims.has(id) ? '' : practice.listenStopped || !wordsWanted() ? (sc.fromHistory ? 'sound · words from your practice' : 'sound only') : 'words on their way';
+      noteEl.textContent = sl.length ? slipsLabel(sl) : flag && flag.level !== 'info' ? flag.text : practice.wordsLooped.has(id) ? 'the recogniser looped on its words · sound only' : practice.wordSims.has(id) ? '' : practice.listenStopped || !wordsWanted() ? (sc.fromHistory ? 'sound · words from your practice' : 'sound only') : 'words on their way';
       if (sl.length || (flag && flag.level === 'bad')) noteEl.classList.add('bad');
     }
     card.title = busy ? 'Evaluating…' : open ? 'This report is open below · click again for the whole recital' : 'Open this sloka\'s report';
@@ -3285,7 +3357,31 @@ function renderTakeBoard(ids) {
     wireCardInfo(card, id, ready);
     cards.appendChild(card);
   }
+  renderTakeAdvice(ids);
   if (takeViewOn() && !$('#take-view').hidden) drawTakeWave(); // a comparison that just came in moves the teacher's marks
+}
+// Under the cards of a take of several slokas (js/advice.js): a sloka recited for the first
+// time is better practised on its own a few times before it joins a recital; one that is
+// Needs practice is evaluated alone next, where it is judged more surely and a clean take
+// keeps its signatures. The learner's past takes come from the picker's cache; when that is
+// not this learner's yet, it is fetched once for this take and the advice drawn again.
+let adviceFetchedFor = null;
+function renderTakeAdvice(ids) {
+  const el = $('#take-advice');
+  if (!el) return;
+  if (practice.quiz || practice.teach || ids.length < 2 || !practice.take) { setHidden(el, true); return; }
+  const known = !!learnerId && soloCache.learner === learnerId;
+  if (!known && learnerId && adviceFetchedFor !== practice.take) { adviceFetchedFor = practice.take; soloPractice().then(() => { if (practice.take === adviceFetchedFor) renderTakeAdvice(reportIds()); }).catch(() => {}); }
+  const entries = ids.map((id) => {
+    const r = practice.results.get(id);
+    if (!r || r.error) return null;
+    const g = isReport(r) ? reportOverall(id).grade : null;
+    const needs = partialOf(id) || (isReport(r) && !reportScores(id).matched) || !!(g && g.id === 'practice');
+    return { name: nameOf(id), firstTime: known && recitedBefore(id) === 0, needs };
+  }).filter(Boolean);
+  const lines = takeAdvice(entries);
+  el.innerHTML = lines.map((t) => `<p>${escapeHtml(t)}</p>`).join('');
+  setHidden(el, !lines.length);
 }
 // The "i" on a card whose note speaks of akṣaras dropped or words missing: the missing
 // akṣaras when the words are in, with a way to the analysis; else what the count said, with a
@@ -3407,7 +3503,7 @@ function takeWaveMarks() {
   const ear = cssVar('--gold');
   const second = cssVar('--chart-text');
   for (const id of reportIds()) { const r = practice.results.get(id); if (isReport(r) && r.matched && r.matched.heard) spans.push({ from: r.matched.heard[0], to: r.matched.heard[1], color: teacher, label: nameOf(id) }); }
-  for (const seg of take.segments || []) if (seg.to < duration - 0.3) lines.push({ at: seg.to, color: ear, row: 1, width: seg.byHand ? 3 : 1.5, label: seg.byHand ? 'you' : 'ear' });
+  for (const seg of take.segments || []) if (seg.to < duration - 0.3) lines.push({ at: seg.to, color: ear, row: 1, width: seg.byHand ? 3 : 1.5, label: seg.byHand ? 'you' : seg.adopted ? 'ear → 2nd' : 'ear' });
   const so = take.earLog && take.earLog.secondOpinion;
   const res = so && so.chosen && so.results ? so.results[so.chosen] : null;
   for (const b of (res && res.boundaries) || []) lines.push({ at: (b.from + b.to) / 2, color: second, row: 0, dash: [4, 3], width: b.pinned ? 3 : 1.5, label: b.pinned ? '2nd · pinned' : b.virtual ? '2nd · no breath' : '2nd' });
@@ -4292,7 +4388,12 @@ function startEar(rec) {
   liveEar = ear;
 }
 // For the probes and the replay tool: the ear's own clock (seconds of audio read), null when it is not listening.
-window.__slokabhyasa = Object.assign(window.__slokabhyasa || {}, { earClock: () => (liveEar ? liveEar.samplesRead / liveEar.rec.ctx.sampleRate : null) });
+window.__slokabhyasa = Object.assign(window.__slokabhyasa || {}, {
+  earClock: () => (liveEar ? liveEar.samplesRead / liveEar.rec.ctx.sampleRate : null),
+  // the words heard of the take so far, in the take's time, and each report's window and slips
+  heardTranscripts: () => [...practice.heardTranscripts.entries()].map(([key, t]) => ({ key, text: t ? t.text : null, chunks: t && Array.isArray(t.chunks) ? t.chunks.map((c) => ({ text: c.text, start: c.start, end: c.end })) : null })),
+  reports: () => reportIds().map((id) => { const r = practice.results.get(id); return { id, name: nameOf(id), heard: isReport(r) && r.matched ? r.matched.heard : null, slips: slipsOf(id), phonology: practice.phonology.get(id) ? practice.phonology.get(id).counts : null }; }),
+});
 function stopEar() {
   if (liveEar) { liveEar.rec.removeEventListener('level', liveEar.listener); const ear = liveEar; liveEar = null; savePace(ear); }
   $('#practice-rec-count').textContent = '';
@@ -4466,7 +4567,7 @@ function renderQuizBox() {
 // Share of a sloka's words heard in the take, over the parts that were compared.
 function wordSimilarity(res, baseT, heardT, baseDuration, takeDuration, plan = null) {
   const d = windowedDiff(res, baseT, heardT, baseDuration, takeDuration, plan);
-  return d.ai.length ? { similarity: d.summary.similarity, wordShare: d.summary.matched / d.ai.length, phonology: d.phonology, corrections: d.corrections } : null;
+  return d.ai.length ? { similarity: d.summary.similarity, wordShare: d.summary.matched / d.ai.length, phonology: d.phonology, corrections: d.corrections, looped: d.looped } : null;
 }
 
 // What the comparison decided on the way to its scores, kept with a quiz attempt so a
@@ -5236,6 +5337,8 @@ function hideResults() {
   practice.pairContrast.clear();
   practice.wordSims.clear();
   practice.phonology.clear();
+  practice.wordsLooped.clear();
+  practice.steadyTried.clear();
   practice.heard = null;
   practice.heardTranscripts.clear();
   stopTakeTranscriptions();
@@ -5812,19 +5915,29 @@ function heardPartOf(res) {
 }
 const partKey = (win) => (win ? `${win[0].toFixed(1)}-${win[1].toFixed(1)}` : 'all');
 
-async function transcribeTakePart(win, force, language = sttSettings.language) {
+// The counter's nuclei for a window of the take, from the ear's stretch under it, scaled up
+// when the window is the wider: what a hearing of the window should hold (rehearIfImplausible).
+function nucleiNear(win) {
+  const sg = win ? segmentFor(win) : null;
+  if (!sg || !sg.nuclei) return null;
+  const span = Math.max(0.5, sg.to - sg.from);
+  return sg.nuclei * Math.min(1.5, Math.max(1, (win[1] - win[0]) / span));
+}
+async function transcribeTakePart(win, force, language = sttSettings.language, { steady = false } = {}) {
   const take = practice.take;
   if (!take) return null;
   const tier = await sttTier();
   const fits = (t) => !!t && t.language === language && (!force || t.tier === tier);
   if (practice.take !== take) return null;
-  const key = language === sttSettings.language ? partKey(win) : `${language}:${partKey(win)}`; // a hearing in another language is kept apart
+  const plainKey = language === sttSettings.language ? partKey(win) : `${language}:${partKey(win)}`; // a hearing in another language is kept apart
+  const key = steady ? `steady:${plainKey}` : plainKey; // a hearing held steady (the decoder's loop broken) is kept apart too
   const have = practice.heardTranscripts.get(key);
   if (fits(have)) return have;
+  if (!steady) { const st = practice.heardTranscripts.get(`steady:${plainKey}`); if (fits(st)) return st; } // the plain hearing looped and was heard again held steady: that one stands
   // a window of a take heard whole (one sloka): the whole's words, windowed by time when
   // they are read — never a second hearing that could cut a word at the window's edge
-  if (win && !force) { const whole = practice.heardTranscripts.get(language === sttSettings.language ? 'all' : `${language}:all`); if (fits(whole)) return whole; }
-  if (win && !force) {
+  if (win && !force && !steady) { const whole = practice.heardTranscripts.get(language === sttSettings.language ? 'all' : `${language}:all`); if (fits(whole)) return whole; }
+  if (win && !force && !steady) {
     // the words of every stretch whose hearing touches the window, in take time, merged in
     // order: a window the words moved can span two hearings, and a report's words are
     // then windowed by their moments (windowedTokens)
@@ -5832,7 +5945,7 @@ async function transcribeTakePart(win, force, language = sttSettings.language) {
     if (practice.take !== take) return null;
     if (merged) { practice.heardTranscripts.set(key, merged); return merged; }
   }
-  const seg = !force ? segmentFor(win) : null;
+  const seg = !force && !steady ? segmentFor(win) : null;
   if (seg) {
     const t = await seg.promise;
     if (practice.take !== take) return null;
@@ -5853,7 +5966,8 @@ async function transcribeTakePart(win, force, language = sttSettings.language) {
   const samples = win ? take.samples.subarray(from, to) : take.samples;
   const what = win ? `your attempt (${fmtTime(win[0])}–${fmtTime(win[1])})` : 'your attempt';
   sttProgress.show('Starting…', () => ctrl.abort());
-  job.promise = runTranscription(samples, sr, sttProgress, what, ctrl.signal, { language })
+  job.promise = runTranscription(samples, sr, sttProgress, what, ctrl.signal, { language, steady })
+    .then((t) => (win ? rehearIfImplausible(t, { nuclei: nucleiNear(win), ctrl, name: what }, samples, sr) : t)) // a hearing far thinner than the stretch's nuclei: once more in two halves, as a live stretch's
     .then((t) => {
       const abs = win ? shiftTranscript(t, from / sr, take.duration) : t;
       if (practice.take === take) practice.heardTranscripts.set(key, abs);
@@ -5910,8 +6024,20 @@ async function transcribeSloka(id, force = false) {
   harvestSpeakerLine(id, heardT, base).catch(() => {}); // a speaker line the words placed: a template of it in this learner's voice
   const ref = referenceWords(base, res);
   if (!ref) return heardT; // the sloka has no words: nothing to compare the words with
-  const { ws } = await hearAgainIfPoor(res, ref, heardT, base.duration, force, planOf({ id }));
+  let { ws } = await hearAgainIfPoor(res, ref, heardT, base.duration, force, planOf({ id }));
   if (practice.take !== take || !ws) return heardT;
+  // the recogniser looped on this stretch (far more sounds than the sloka has, a run said three
+  // times over): once more, held steady; still looping, its words are not used — no slips, no
+  // word scores — and the sound alone judges the sloka (the card says so)
+  if (ws.looped) {
+    let steady = null;
+    try { steady = await transcribeTakePart(heardPartOf(res), true, sttSettings.language, { steady: true }); } catch { steady = null; }
+    if (practice.take !== take) return heardT;
+    const ws2 = steady ? wordSimilarity(res, ref, steady, base.duration, take.duration, planOf({ id })) : null;
+    if (ws2 && !ws2.looped) { ws = ws2; heardT = steady; practice.wordsLooped.delete(id); }
+    else { practice.wordsLooped.add(id); practice.wordSims.delete(id); practice.phonology.delete(id); setWordSlips(id, []); refreshVerdicts(); syncSession(); return heardT; }
+  }
+  practice.wordsLooped.delete(id);
   if (force || !practice.wordSims.has(id)) {
     practice.wordSims.set(id, ws.similarity);
     if (ws.phonology) practice.phonology.set(id, ws.phonology);
@@ -6018,20 +6144,41 @@ function windowedDiff(res, baseT, heardT, baseDuration, takeDuration, plan = nul
   const A = windowedTokens(baseT, res.matched.base, baseDuration);
   const B = windowedTokens(heardT, res.matched.heard, takeDuration);
   const ai = A.toks.map((_, i) => i).filter((i) => A.inside[i]);
-  const bi = B.toks.map((_, i) => i).filter((i) => B.inside[i]);
+  let bi = B.toks.map((_, i) => i).filter((i) => B.inside[i]);
   const aw = ai.map((i) => A.toks[i].norm);
-  const bw = bi.map((i) => B.toks[i].norm);
   // character by character, blind to word breaks; whole words only for texts too long for that
-  let cmp = compareWords(aw, bw);
-  if (!cmp) {
-    const ops = diffWords(aw, bw);
-    cmp = { delA: new Set(), insB: new Set(), summary: diffSummary(ops, aw.length, bw.length) };
-    for (const o of ops) { if (o.op === 'delete') cmp.delA.add(o.a); else if (o.op === 'insert') cmp.insB.add(o.b); }
-  }
+  const diffOf = (bw) => {
+    let cmp = compareWords(aw, bw);
+    if (!cmp) {
+      const ops = diffWords(aw, bw);
+      cmp = { delA: new Set(), insB: new Set(), summary: diffSummary(ops, aw.length, bw.length) };
+      for (const o of ops) { if (o.op === 'delete') cmp.delA.add(o.a); else if (o.op === 'insert') cmp.insB.add(o.b); }
+    }
+    return cmp;
+  };
+  let cmp = diffOf(bi.map((i) => B.toks[i].norm));
+  // a sloka of a recital: the neighbours' words at the window's edges — the previous sloka's
+  // ending at its head, the next one's opening at its tail, where the ear cut early or late —
+  // are theirs, not the learner's additions (textdiff.neighbourEdges); left out, and dimmed
+  const resId = idOfResult(res);
+  const prevE = prevEndingOf(resId);
+  const nextO = nextOpeningOf(resId);
+  const edges = bi.length && (prevE || nextO) ? neighbourEdges(bi.map((i) => B.toks[i]), bi.map((_, k) => cmp.insB.has(k)), { prevEnding: prevE, nextOpening: nextO }) : { lead: 0, trail: 0 };
+  const edgeB = new Set([...bi.slice(0, edges.lead), ...(edges.trail ? bi.slice(bi.length - edges.trail) : [])]);
+  if (edgeB.size) { bi = bi.filter((i) => !edgeB.has(i)); cmp = diffOf(bi.map((i) => B.toks[i].norm)); }
   const delA = new Set([...cmp.delA].map((k) => ai[k]));
   const insB = new Set([...cmp.insB].map((k) => bi[k]));
   const dimA = new Set(A.toks.map((_, i) => i).filter((i) => !A.inside[i]));
-  const dimB = new Set(B.toks.map((_, i) => i).filter((i) => !B.inside[i]));
+  const dimB = new Set([...B.toks.map((_, i) => i).filter((i) => !B.inside[i]), ...edgeB]);
+  // the recogniser looping on the stretch: far more sounds than the sloka has and a run said
+  // three times over, or more akṣaras than the counter heard sung in the stretch and a run
+  // said twice — these words cannot be the sloka's (textdiff.loopedHearing)
+  const earSeg = resId ? earSegmentFor(resId) : null;
+  const countRatio = (learnerPace() || {}).countRatio || null;
+  const winLen = res.matched && res.matched.heard ? res.matched.heard[1] - res.matched.heard[0] : null;
+  const sungAksharas = earSeg && earSeg.nuclei && countRatio ? (earSeg.nuclei / countRatio) * Math.min(1.5, Math.max(1, winLen && earSeg.to > earSeg.from ? winLen / (earSeg.to - earSeg.from) : 1)) : null;
+  const heardAksharas = bi.length ? syllabify(bi.map((i) => B.toks[i].word).join(' ')).length : null;
+  const looped = ai.length && bi.length ? loopedHearing(ai.map((i) => A.toks[i]), bi.map((i) => B.toks[i]), { heardAksharas, sungAksharas }) : false;
   // the same words, as text, for the akṣara-and-phoneme comparison
   // pāda by pāda when the whole text was compared: by the sloka's plan (its canonical
   // representation: the units of the verse, hypermetric pādas included) when the caller has
@@ -6056,7 +6203,7 @@ function windowedDiff(res, baseT, heardT, baseDuration, takeDuration, plan = nul
     } else if (perPada) { refPada = []; let acc = 0; for (const t of refToks) { refPada.push(acc < offset ? 0 : 1 + Math.floor((acc - offset) / perPada)); acc += syllabify(t.word).length; } }
     corrections = findSelfCorrections(refToks, heardToks, { refPada, nextOpening: nextOpeningOf(idOfResult(res)), prevEnding: prevEndingOf(idOfResult(res)) }).map((c) => { const tok = heardToks[c.at]; const ch = tok && heardT.chunks && heardT.chunks[tok.chunk]; return { ...c, at: ch && typeof ch.start === 'number' ? ch.start : undefined }; });
   }
-  return { A, B, ai, bi, delA, insB, dimA, dimB, summary: cmp.summary, phonology, corrections };
+  return { A, B, ai, bi, delA, insB, dimA, dimB, summary: cmp.summary, phonology, corrections, looped, edges };
 }
 // What the words found the learner correcting, kept as this sloka's slips (replacing what
 // the words found before; a restart the sound heard already only gains its word).
@@ -6130,8 +6277,23 @@ function renderPhonologyReport(host, ph) {
 function renderTranscriptDiff() {
   const res = practice.result;
   if (!res || !practice.base || !practice.take || !sttPractice.base || !sttPractice.heard) return;
-  const { A, B, ai, delA, insB, dimA, dimB, summary: sm, phonology, corrections } = windowedDiff(res, sttPractice.base, sttPractice.heard, practice.base.duration, practice.take.duration, planOf({ id: practice.activeId }));
-  if (ai.length) {
+  const { A, B, ai, delA, insB, dimA, dimB, summary: sm, phonology: phonologyHeard, corrections, looped } = windowedDiff(res, sttPractice.base, sttPractice.heard, practice.base.duration, practice.take.duration, planOf({ id: practice.activeId }));
+  const phonology = looped ? null : phonologyHeard;
+  if (looped) {
+    // the recogniser looped on this stretch: its words are not scored and leave no slips; once,
+    // the stretch is heard again held steady, and the report drawn again with that hearing
+    const id = practice.activeId;
+    practice.wordsLooped.add(id);
+    practice.wordSims.delete(id);
+    practice.phonology.delete(id);
+    setWordSlips(id, []);
+    if (!practice.steadyTried.has(id)) {
+      practice.steadyTried.add(id);
+      const take = practice.take;
+      transcribeTakePart(heardPartOf(res), true, sttSettings.language, { steady: true }).then((t) => { if (t && practice.take === take && practice.activeId === id && practice.result === res) { sttPractice.heard = t; renderTranscriptDiff(); } }).catch(() => {});
+    }
+  } else if (ai.length) {
+    practice.wordsLooped.delete(practice.activeId);
     practice.wordSims.set(practice.activeId, sm.similarity);
     if (phonology) practice.phonology.set(practice.activeId, phonology);
     setWordSlips(practice.activeId, corrections);
@@ -6154,7 +6316,9 @@ function renderTranscriptDiff() {
   renderTranscriptText($('#stt-base'), sttPractice.base, A.toks, delA, 'w-del', (s, e) => { heardPlayer.pause(); basePlayer.playRange(s, e); }, dimA, true, pp);
   renderTranscriptText($('#stt-heard'), sttPractice.heard, B.toks, insB, 'w-ins', (s, e) => { basePlayer.pause(); heardPlayer.playRange(s, e); }, dimB, true, pp);
   practicePanel.highlight(delA, 'w-del', dimA);
-  $('#stt-summary').textContent = ai.length
+  $('#stt-summary').textContent = looped
+    ? `The recogniser looped on this stretch (${B.toks.length} words heard for a sloka of ${ai.length}): these words are not scored and leave no slips; the sound alone judges the sloka.${practice.steadyTried.has(practice.activeId) ? '' : ' Listening once more, held steady…'}`
+    : ai.length
     ? `${Math.round(sm.similarity * 100)}% of the sloka's ${sttPractice.base.typed ? 'typed text' : 'text'} heard (${sm.matched} of ${ai.length} words) · ${sm.missing} missing · ${sm.extra} extra or different · ${sttLanguageLabel(sttPractice.base.language)}`
     : 'Nothing was recognised in the sloka. Try again.';
   // the words of the sloka not heard, named — the ones the Sloka row highlights

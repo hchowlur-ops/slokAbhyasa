@@ -304,9 +304,14 @@ the report below is the open card's; click a card to open its report. The sloka 
 above switches with the open report, so its play button and text always belong to it. With
 several slokas, a play button under the overall score, **Yours — the whole recital**, plays
 the whole take, and the results open with no card chosen: the take's wave, showing where the
-teacher's slokas were matched (shaded, with their names), where the ear cut the recital (gold
-lines; a thick one is a page you turned) and where the second opinion cut it (dashed; thick
-when pinned to your turn); click the wave to play from there. Every sloka's card carries two
+teacher's slokas were matched (shaded, with their names), where the take is cut for the
+verdicts (gold lines — the ear's cut, or the second opinion's where the two disagree, marked
+"ear → 2nd"; a thick one is a page you turned) and where the second opinion cut it (dashed;
+thick when pinned to your turn); click the wave to play from there. Under the cards, a line
+of advice when it applies: a sloka you recited for the first time is better practised on its
+own a few times before it joins a recital, and a sloka that came out Needs practice is
+evaluated alone next — on its own it is judged more surely, and a clean take of it keeps its
+signatures (below). Every sloka's card carries two
 buttons of its own: **play** hears that sloka alone, from its first sound after the breath to
 the end of its last (the stretch it was compared on is looser at both ends, and would begin
 inside the previous sloka's tail); **the words icon** hears its words now, whatever the
@@ -456,10 +461,23 @@ and found, Fair or better, no slip — keeps its first and last two seconds in y
 the sloka's signatures, and in a recital the second opinion then runs in two passes: every
 sloka's beginning is matched and placed in the take's order, then each sloka's ending is looked
 for before the next beginning and confirms the marker; the cut between two slokas placed from
-both ends is pinned between them. The picker shows, beside each sloka, how many times you
+both ends is pinned between them. **Where the second opinion and the ear disagree on a cut
+by half a second or more** (its cut at a real pause or pinned, within six seconds of the
+ear's, not a page you turned yourself), **each sloka beside that cut is compared on both
+windows, and the second opinion's is kept when the sloka's sound matches on it and either
+does not match on the ear's or fits the second's clearly better** — then the ear's stretch
+moves and the whole-recital wave marks the cut "ear → 2nd"; when the sound matches on
+neither, the ear's stays, since its count can still vouch for its own stretch. Measured on 1 November
+2026 against each sloka's own recording located in the take by sound, over 30 cuts of 22
+recitals, the second opinion lay within a second of the sound on 24 and the ear on 15, and
+where they differed the second opinion was the closer on 17 cuts and the ear on 4 — the ear
+runs a pāda or more late when the breath between two slokas is shorter than the one it has
+learnt and its count a few short, and the lateness then carries into every sloka after; but
+the second opinion can be wrong too (a pin from a bad template, the last sloka read as
+unfinished), so the sound decides between the two. The picker shows, beside each sloka, how many times you
 have evaluated it on its own and a tick when its signatures are kept; a recital that includes
 a sloka without kept signatures says so under the picker, and its cuts around that sloka lean
-on the ear. The Settings switch **"A sloka joins a recital only after it is practised on its
+on the ear and the second opinion. The Settings switch **"A sloka joins a recital only after it is practised on its
 own"** makes that a rule rather than a note. A solo evaluation that cannot keep the signatures
 — the sloka not found, under half, a slip, under Fair, or its speaker line not heard at the
 start — says why and asks you to evaluate the sloka alone once more; older takes are never

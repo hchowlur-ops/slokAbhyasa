@@ -166,7 +166,8 @@ if (typeof self !== 'undefined') self.onmessage = async (e) => {
   }
   if (msg.type !== 'transcribe') return;
   // `device` forces the CPU ('wasm') for a tier the client has learnt not to trust on the GPU.
-  const { id, language, tier, device } = msg;
+  // `steady` asks for the held-steady decoder from the first run: the client found the plain hearing looping
+  const { id, language, tier, device, steady } = msg;
   // the audio comes at the recorder's rate: resampled here, off the page's thread
   const samples = msg.sampleRate && msg.sampleRate !== 16000 ? resample(msg.samples, msg.sampleRate, 16000) : msg.samples;
   const job = { id, stopped: false };
@@ -194,7 +195,7 @@ if (typeof self !== 'undefined') self.onmessage = async (e) => {
   };
   try {
     let dev = device === 'wasm' ? 'wasm' : await detectDevice();
-    let r = await run(dev);
+    let r = await run(dev, !!steady);
     if (!r) return;
     let fellBack = false;
     // A GPU that computes nonsense gives nothing, or a word or two repeated for the whole
@@ -204,12 +205,12 @@ if (typeof self !== 'undefined') self.onmessage = async (e) => {
     // right, and the client then remembers the choice for this tier.
     if (dev === 'webgpu' && looksDegenerate(r.text)) {
       post({ type: 'progress', id, stage: 'retry' });
-      r = await run(dev);
+      r = await run(dev, !!steady);
       if (!r) return;
       if (looksDegenerate(r.text) && !MODELS[tier].webgpuOnly) {
         post({ type: 'progress', id, stage: 'fallback' });
         dev = 'wasm';
-        r = await run(dev);
+        r = await run(dev, !!steady);
         if (!r) return;
         fellBack = true;
       }
