@@ -10,10 +10,10 @@ import { drawWaveform, drawLiveWave, ComparisonChart, cssVar } from './visualize
 import { serializeFeatures, deserializeFeatures, isValidFeatures, SR as FEAT_SR, HOP_SEC as FEAT_HOP } from './dsp/features.js';
 import { earExpectedMs, earPositionOf, earDecision, calibrateCountRatio, padaStartsFromPauses } from './dsp/ear.js';
 import { EarLog } from './earlog.js';
-import { segmentTake, playRangeOf, adoptCuts } from './dsp/segment.js';
+import { segmentTake, playRangeOf } from './dsp/segment.js';
 import { phraseOfText, attributionSpan, templateFrom, packTemplate, addTemplate, emptyStore, findSpeakerLines, assignSpeakerLines, templateCount, phraseLabel, signatureKeys, signatureCount, twoPassMarkers, SIGNATURE_SEC } from './dsp/speakerlines.js';
 import { padaStarts, startTemplates, calibrate, matchStart, mfccRows, meanOf, TEMPLATE_SEC, TEMPLATE_FRAMES, MIN_TEMPLATE_FRAMES } from './dsp/starts.js';
-import { MISMATCH_CONTRAST, confirmByWords, confirmByEar } from './dsp/compare.js';
+import { MISMATCH_CONTRAST, confirmByWords, confirmByEar, confirmBySecond } from './dsp/compare.js';
 import { takeAdvice } from './advice.js';
 import { QUIZ_CATEGORIES, LEGACY_CATEGORIES, DEFAULT_QUIZ_CATEGORIES, DEFAULT_TOLERANCE, CATEGORY_WEIGHTS, categoryLabel, normalizeWeights, itemScores, attemptSummary, scoreFor, normalizeCategories, normalizeTolerance, recordTolerance, withinTolerance, itemVerdict, correctness, pickBaselines, overallScore, attemptOverall, itemOverall, applySlipPenalty, selfCorrections, SLIP_PENALTY, isPartial, droppedByWords, gradeOf, gradeById, gradeWithSlips, gradeWords, slipsLabel, anySlips, modernCategories } from './quizscore.js';
 import { comparePhonology, ERROR_LABEL, syllabify } from './phon.js';
@@ -1815,7 +1815,9 @@ function slipsOf(id) {
   // the ear counted in full, 1 November 2026), not the learner
   const seg = earSegmentFor(id);
   const earWhole = !!(seg && seg.expected && seg.count != null && seg.count >= seg.expected - 1);
-  const wordsDropped = !!(ph && droppedByWords(ph.counts)) && !(earWhole && ph.counts.missing >= Math.max(8, Math.round(ph.counts.ref * 0.25)));
+  // or the second opinion placed the stretch and its sung time is the sloka's expected length (a pāda dropped would take a quarter off it)
+  const secondWhole = !!(seg && seg.adopted && seg.second && seg.second.ratio >= 0.92 && seg.second.ratio <= 1.3);
+  const wordsDropped = !!(ph && droppedByWords(ph.counts)) && !((earWhole || secondWhole) && ph.counts.missing >= Math.max(6, Math.round(ph.counts.ref * 0.15)));
   if (!raw.length && !wordsDropped) return raw;
   if (isPartial(raw)) return raw.filter((x) => x.kind === 'partial' || x.kind === 'skipped'); // under half recited: that is the whole story
   const res = practice.results.get(id);
@@ -2845,7 +2847,7 @@ async function analyseAttempt() {
     if (sttSettings.auto && take.duration <= TAKE_WHOLE_MAX_SEC && practice.selection.length === 1) transcribeTakePart(null, false).catch(() => {}); // several slokas: each stretch once it is found
     refineStretches(take); // the words already in move the ear's boundaries before anything is compared
     practice.heard = await analyzer.features(take.samples, take.sampleRate, (p) => practiceProgress.set(p * 0.6), { warps: true });
-    if (take.earLog && practice.selection.length > 1) { take.earLog.secondOpinion = await secondOpinionOf(take); adoptSecondOpinion(take); } // the cuts found from the whole take; where they and the ear's disagree, each sloka is also compared on the second opinion's window and the sound keeps the better
+    if (take.earLog && practice.selection.length > 1) { take.earLog.secondOpinion = await secondOpinionOf(take); adoptSecondOpinion(take); } // the slokas placed from the whole take: the window each is compared on, the ear's stretch only where that fails
     practice.options = {
       ignoreKey: $('#practice-ignorekey').checked,
       judgeSpeed: $('#practice-tempo').checked,
@@ -3028,63 +3030,81 @@ async function secondOpinionOf(take) {
       }
     }
     const so = segmentTake(practice.heard, items, { pace, lastPos, pinned, recited });
+    // how far the three methods' cuts lie apart at most (seconds): a measure of how sure the placement is
+    try { const sets = Object.values(so.results || {}).map((r) => (r.boundaries || []).map((b) => (b.from + b.to) / 2)); let spread = 0; for (let k = 0; sets.length > 1 && k < sets[0].length; k++) { const xs = sets.map((c) => c[k]).filter((x) => Number.isFinite(x)); if (xs.length > 1) spread = Math.max(spread, Math.max(...xs) - Math.min(...xs)); } so.spread = r2(spread); } catch { /* a measure only */ }
     so.speakerLines = speakerLines;
     so.signatures = signatures;
     return so;
   } catch (err) { return { error: String((err && err.message) || err) }; }
 }
-// Where the second opinion and the ear disagree on a cut (dsp/segment.js adoptCuts; measured
-// 1 November 2026: the ear ran two to four seconds late on a recital of 18.1–18.4 when the
-// breath between slokas was shorter than the one it had learnt and its count a few short,
-// and the lateness carried into every sloka after), each sloka on either side gets a second
-// window — the second opinion's — beside the ear's stretch (`alt`); compareMissing compares
-// the sloka on both and keeps the window that fits it better by sound (the lower contrast),
-// since the second opinion can be wrong too (a pin from a bad template, the take's last
-// sloka read as unfinished) and the ear's count can still vouch for its own stretch. A
-// stretch that takes the second opinion's window loses the ear's count (it counted another
-// stretch) and the unsure "akṣaras dropped" that count made. Only a take whose stretches are
-// the selection's slokas one each, in order, is treated; the proposed cuts and which window
-// each sloka kept go to the ear's log (`adopted`) for the readers.
+// The second opinion places every sloka of a recital (dsp/segment.js: the whole take cut into
+// its slokas from the pauses, the lengths and the pins — the student's own page turns, the
+// speaker lines and the signatures heard in their voice), and its segment is the window each
+// sloka is compared on. Measured 1 November 2026 against each sloka's own recording located
+// in the take by sound: over 30 cuts of 22 recitals the second opinion lay within a second on
+// 24 and the ear on 15, and on the morning's three recitals of 18.1–18.4 the ear ran two to
+// four seconds late at every cut after the first (a breath between slokas shorter than the
+// one it had learnt, a count a few short, the lateness carried into every sloka after) while
+// the second opinion's cuts sat within half a second of the sound. Each stretch keeps the
+// ear's own edges beside (`ear`) for the fallback in compareSloka; a segment more than six
+// seconds from the ear's at either end is not offered (something else is wrong — a sloka
+// skipped or said twice — and neither is trusted over the other). The ear's log records each
+// sloka's two windows and, after the comparison, which one it kept (`adopted`).
 function adoptSecondOpinion(take) {
   const so = take && take.earLog && take.earLog.secondOpinion;
   const res = so && !so.error && so.chosen && so.results ? so.results[so.chosen] : null;
   const segs = (take && take.segments) || [];
-  if (!res || !Array.isArray(res.boundaries)) return [];
-  if (segs.length !== practice.selection.length || segs.some((s, i) => s.id !== practice.selection[i])) { take.earLog.adopted = []; return []; }
-  const moves = adoptCuts(segs, res.boundaries);
-  const cutAfter = new Map(moves.map((m) => [m.i, m.to]));
+  take.earLog.adopted = [];
+  if (!res || !Array.isArray(res.segments)) return [];
+  if (segs.length !== practice.selection.length || segs.some((s, i) => s.id !== practice.selection[i])) return [];
   segs.forEach((s, i) => {
-    const from = cutAfter.has(i - 1) ? cutAfter.get(i - 1) : s.from;
-    const to = cutAfter.has(i) ? cutAfter.get(i) : s.to;
-    if (from !== s.from || to !== s.to) s.alt = [from, to];
+    const sg = res.segments.find((x) => x.index === i) || res.segments[i];
+    if (!sg || !(sg.to > sg.from)) return;
+    s.ear = [s.from, s.to];
+    if (Math.abs(sg.from - s.from) > 6 || Math.abs(sg.to - s.to) > 6) { take.earLog.adopted.push({ name: s.name, ear: s.ear.map(r2), second: [r2(sg.from), r2(sg.to)], ratio: sg.ratio ?? null, offered: false }); return; }
+    const b0 = i > 0 ? res.boundaries[i - 1] : null;
+    const b1 = i < res.boundaries.length ? res.boundaries[i] : null;
+    s.second = { from: sg.from, to: sg.to, ratio: sg.ratio ?? null, pinned: !!((b0 && b0.pinned) || (b1 && b1.pinned)) };
+    take.earLog.adopted.push({ name: s.name, ear: s.ear.map(r2), second: [r2(sg.from), r2(sg.to)], ratio: sg.ratio ?? null, pinned: s.second.pinned, offered: true });
   });
-  take.earLog.adopted = moves.map((m) => ({ after: segs[m.i].name, from: Math.round(m.from * 100) / 100, to: m.to, keptBy: {} }));
-  return moves;
+  return take.earLog.adopted;
 }
-// The sloka compared on the second opinion's window as well (adoptSecondOpinion): the better
-// window by sound is kept — the stretch moves to it when it is the second opinion's — and the
-// ear's log says which each sloka kept.
-async function compareOnBothWindows(id, base, result) {
+// One sloka of a recital compared: on the second opinion's window when it has one, where the
+// sound verdict stands, or the second opinion's placement vouches for the sloka
+// (confirmBySecond: its sung time within the expected); failing both, the ear's own stretch
+// has its say — kept when the sound matches there, or the ear's count vouches for it
+// (confirmByEar). A sloka that keeps the second opinion's window moves its stretch to it (the
+// wave, the words' windows and the slips follow), loses the ear's count (it counted another
+// stretch) and the unsure "akṣaras dropped" that count made when the start moved a second
+// or more. Without a second window: the ear's stretch, as before.
+async function compareSloka(id, base) {
   const take = practice.take;
   const seg = earSegmentFor(id);
-  if (!take || !seg || !seg.alt || practice.selection.length < 2) return result;
-  let alt = null;
-  try { alt = await analyzer.compare(base.features, practice.heard, { ...optionsFor(base), window: [Math.max(0, seg.alt[0] - EAR_WINDOW_PAD_SEC), Math.min(take.duration, seg.alt[1] + EAR_WINDOW_PAD_SEC)] }); } catch { alt = null; }
-  if (practice.take !== take) return result;
-  const c0 = result && result.match ? result.match.contrast : null;
-  const c1 = alt && alt.match ? alt.match.contrast : null;
-  // the second opinion's window is kept only when the sloka's sound matches on it (contrast under the mismatch line) and either the ear's window does not match or the second's fits clearly better; when neither matches the ear's stays, since its count can still vouch for its own stretch (confirmByEar)
-  const better = !!alt && alt.match && alt.match.ok && c1 != null && (c0 == null || !(result && result.match && result.match.ok) || c1 < c0 - 0.02);
-  const i = practice.selection.indexOf(id);
-  for (const a of (take.earLog && take.earLog.adopted) || []) { const k = practice.selection.findIndex((sid) => nameOf(sid) === a.after); if (k === i || k === i - 1) a.keptBy[nameOf(id)] = { window: better ? 'second' : 'ear', ear: c0 == null ? null : Math.round(c0 * 1000) / 1000, second: c1 == null ? null : Math.round(c1 * 1000) / 1000 }; }
-  if (!better) return result;
-  const movedStart = Math.abs(seg.alt[0] - seg.from) >= 1;
-  seg.from = seg.alt[0];
-  seg.to = seg.alt[1];
+  const second = seg && seg.second && practice.selection.length > 1 ? seg.second : null;
+  if (!second) return analyzer.compare(base.features, practice.heard, optionsFor(base));
+  const win = (a, b) => [Math.max(0, a - EAR_WINDOW_PAD_SEC), Math.min(take.duration, b + EAR_WINDOW_PAD_SEC)];
+  const res = await analyzer.compare(base.features, practice.heard, { ...optionsFor(base), window: win(second.from, second.to) });
+  if (practice.take !== take) return res;
+  if (res.match && !res.match.ok) confirmBySecond(res, { ratio: second.ratio, pinned: second.pinned });
+  const rec = ((take.earLog && take.earLog.adopted) || []).find((a) => a.name === seg.name);
+  if (res.match && !res.match.ok && seg.ear) {
+    let alt = null;
+    try { alt = await analyzer.compare(base.features, practice.heard, { ...optionsFor(base), window: win(seg.ear[0], seg.ear[1]) }); } catch { alt = null; }
+    if (practice.take !== take) return res;
+    if (alt && alt.match && (alt.match.ok || (!wordsWanted() && seg.count != null && confirmByEar(alt, { count: seg.count, expected: seg.expected })))) {
+      if (rec) Object.assign(rec, { kept: 'ear', by: alt.match.by || 'sound', contrast: { second: r3(res.match.contrast), ear: r3(alt.match.contrast) } });
+      return alt;
+    }
+    if (alt && rec) rec.contrast = { second: r3(res.match.contrast), ear: r3(alt.match.contrast) };
+  }
+  if (rec) Object.assign(rec, { kept: 'second', by: res.match ? (res.match.ok ? res.match.by || 'sound' : 'none') : 'none', contrast: { ...(rec.contrast || {}), second: r3(res.match && res.match.contrast) } });
+  const movedStart = Math.abs(second.from - seg.from) >= 1;
+  seg.from = second.from;
+  seg.to = second.to;
   seg.adopted = true;
   seg.count = null; // the ear's count was of another stretch
   if (movedStart) practice.slips.set(id, (practice.slips.get(id) || []).filter((x) => !(x.kind === 'dropped' && x.unsure && x.by === 'ear')));
-  return alt;
+  return res;
 }
 // The stretch the ear closed for a sloka in the take (the longest, two seconds at least).
 function earSegmentFor(id) {
@@ -3126,8 +3146,7 @@ async function compareMissing(p0) {
         const base = await ensureBase(id);
         practiceProgress.show(label);
         practiceProgress.set(p0 + (1 - p0) * (k / todo.length), label);
-        let result = await analyzer.compare(base.features, practice.heard, optionsFor(base));
-        result = await compareOnBothWindows(id, base, result); // the second opinion's window too, where it differs: the better by sound is kept
+        const result = await compareSloka(id, base); // on the second opinion's window in a recital; the ear's stretch only where that fails
         // the words not heard (a take of several slokas): a sloka the timbre comparison rejected
         // but the ear closed with its count at the plan's end is taken as recited
         if (!wordsWanted() && practice.selection.length > 1) {
@@ -3337,7 +3356,7 @@ function renderTakeBoard(ids) {
       noteEl.textContent = sl.length ? slipsLabel(sl) : flag && flag.level !== 'info' ? flag.text : practice.wordsLooped.has(id) ? 'the recogniser looped on its words · sound only' : practice.wordSims.has(id) ? '' : practice.listenStopped || !wordsWanted() ? (sc.fromHistory ? 'sound · words from your practice' : 'sound only') : 'words on their way';
       if (sl.length || (flag && flag.level === 'bad')) noteEl.classList.add('bad');
     }
-    card.title = busy ? 'Evaluating…' : open ? 'This report is open below · click again for the whole recital' : 'Open this sloka\'s report';
+    card.title = busy ? 'Evaluating…' : open ? 'This report is open below · click again to close it' : 'Open this sloka\'s report';
     card.addEventListener('click', () => openReport(id));
     card.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); openReport(id); } });
     // its own sound, and its words on demand
@@ -3358,7 +3377,7 @@ function renderTakeBoard(ids) {
     cards.appendChild(card);
   }
   renderTakeAdvice(ids);
-  if (takeViewOn() && !$('#take-view').hidden) drawTakeWave(); // a comparison that just came in moves the teacher's marks
+  if (!$('#take-view').hidden) drawTakeWave(); // a comparison that just came in moves the teacher's marks
 }
 // Under the cards of a take of several slokas (js/advice.js): a sloka recited for the first
 // time is better practised on its own a few times before it joins a recital; one that is
@@ -3495,7 +3514,7 @@ function renderTakeView() {
 // turned the page), the second opinion's cuts (dashed; thick when pinned to the student's).
 function takeWaveMarks() {
   const take = practice.take;
-  if (!take || !takeViewOn()) return {};
+  if (!take || practice.quiz || practice.selection.length < 2) return {};
   const duration = take.duration;
   const spans = [];
   const lines = [];
@@ -3503,7 +3522,7 @@ function takeWaveMarks() {
   const ear = cssVar('--gold');
   const second = cssVar('--chart-text');
   for (const id of reportIds()) { const r = practice.results.get(id); if (isReport(r) && r.matched && r.matched.heard) spans.push({ from: r.matched.heard[0], to: r.matched.heard[1], color: teacher, label: nameOf(id) }); }
-  for (const seg of take.segments || []) if (seg.to < duration - 0.3) lines.push({ at: seg.to, color: ear, row: 1, width: seg.byHand ? 3 : 1.5, label: seg.byHand ? 'you' : seg.adopted ? 'ear → 2nd' : 'ear' });
+  for (const seg of take.segments || []) if (seg.to < duration - 0.3) lines.push({ at: seg.to, color: ear, row: 1, width: seg.byHand ? 3 : 1.5, label: seg.byHand ? 'you' : seg.adopted ? '2nd (used)' : 'ear' });
   const so = take.earLog && take.earLog.secondOpinion;
   const res = so && so.chosen && so.results ? so.results[so.chosen] : null;
   for (const b of (res && res.boundaries) || []) lines.push({ at: (b.from + b.to) / 2, color: second, row: 0, dash: [4, 3], width: b.pinned ? 3 : 1.5, label: b.pinned ? '2nd · pinned' : b.virtual ? '2nd · no breath' : '2nd' });
@@ -3517,7 +3536,10 @@ function showActiveReport() {
   if (!practice.take || !reportIds().length) return;
   setHidden($('#practice-results'), false);
   if (takeViewOn()) { renderTakeView(); return; }
-  setHidden($('#take-view'), true);
+  // a take of several slokas keeps the whole recital's wave above the open report: it follows
+  // the card's play button as it does the whole recital's, and its marks say where the sloka lies
+  setHidden($('#take-view'), practice.quiz || practice.selection.length < 2);
+  if (!$('#take-view').hidden) drawTakeWave();
   $('#res-play-both').disabled = false;
   const r = practice.results.get(practice.activeId);
   if (!isReport(r)) {
@@ -5919,7 +5941,11 @@ const partKey = (win) => (win ? `${win[0].toFixed(1)}-${win[1].toFixed(1)}` : 'a
 // when the window is the wider: what a hearing of the window should hold (rehearIfImplausible).
 function nucleiNear(win) {
   const sg = win ? segmentFor(win) : null;
-  if (!sg || !sg.nuclei) return null;
+  if (!sg) return null;
+  // a stretch the second opinion placed: its sung time against the expected says how much was
+  // sung, as the ear's count did for its own stretch (the count was of another stretch)
+  if (sg.adopted && sg.second && sg.second.ratio > 0 && sg.id) { const plan = planOf({ id: sg.id }); if (plan && plan.total) return plan.total * sg.second.ratio * ((learnerPace() || {}).countRatio || 1.3); }
+  if (!sg.nuclei) return null;
   const span = Math.max(0.5, sg.to - sg.from);
   return sg.nuclei * Math.min(1.5, Math.max(1, (win[1] - win[0]) / span));
 }

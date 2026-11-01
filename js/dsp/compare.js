@@ -89,6 +89,25 @@ export function confirmByEar(res, { count = null, expected = null } = {}) {
   res.notes.unshift(`Your recording and the sloka's sound different (another voice, pace or microphone), but the ear counted ${whole ? 'the sloka whole' : 'most of it'} — ${Math.round(count)} of ${expected} akṣaras — so it is taken as recited and the sound scores stand; its words were not heard (a take of several slokas).`);
   return true;
 }
+// A report whose match gate said "not this sloka" in a take of several slokas is overturned
+// by the second opinion that placed it: the whole take cut into its slokas from the pauses,
+// the lengths and the pins (dsp/segment.js), this sloka's sung time within SECOND_CONFIRM_RATIO
+// of what is expected of it — the right length in the right place, in order — which is
+// evidence enough that it was recited, in a voice or at a pace the timbre comparison did not
+// recognise (a learner's own recordings of 31 October 2026 sat at contrast 0.88–0.96 on the
+// right window of the next day's recitals, over the 0.87 line). `res.match.secondRatio`
+// carries the ratio; `pinned` says the sloka's beginning or ending was pinned by the
+// learner's own voice (a speaker line or a signature) or by their own page turn.
+export const SECOND_CONFIRM_RATIO = [0.7, 1.4];
+export function confirmBySecond(res, { ratio = null, pinned = false } = {}) {
+  if (!res || !res.match || res.match.ok || !(ratio >= SECOND_CONFIRM_RATIO[0] && ratio <= SECOND_CONFIRM_RATIO[1])) return false;
+  res.match.ok = true;
+  res.match.by = 'second';
+  res.match.secondRatio = Math.round(ratio * 100) / 100;
+  res.notes = res.notes.filter((n) => n !== MISMATCH_NOTE);
+  res.notes.unshift(`Your recording and the sloka's sound different (another voice, pace or microphone), but the recital's cuts place this sloka here at ${Math.round(ratio * 100)} % of its expected length${pinned ? ', pinned by your own voice' : ''}, so it is taken as recited and the sound scores stand.`);
+  return true;
+}
 const LOCATE_PAD = Math.round(0.3 / HOP_SEC);
 // The tempos the shorter recording is tried at when the sloka must be searched for inside
 // the longer one, and the contrast under which a found window is believed.

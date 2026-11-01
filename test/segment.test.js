@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { pausesOf, expectations, cutsFor, fitCuts, segmentTake, playRangeOf, MIN_GAP_SEC, adoptCuts } from '../js/dsp/segment.js';
+import { pausesOf, expectations, cutsFor, fitCuts, segmentTake, playRangeOf, MIN_GAP_SEC } from '../js/dsp/segment.js';
 
 const HOP = 0.02;
 // A take: slokas of the given sung seconds, each in four pādas with a breath of `padaGap`
@@ -151,19 +151,4 @@ test('segmentTake: with no pace the take shares itself out by the akṣaras; wit
   // too few pauses for the cuts: no result for that method
   const flat = { active: Uint8Array.from({ length: 500 }, () => 1), hopSec: HOP };
   assert.equal(segmentTake(flat, items).results.share, null);
-});
-
-test('adoptCuts: the second opinion\'s cuts where they and the ear\'s differ by half a second or more, within bounds', () => {
-  // the recital of 18.1–18.4 on 1 November 2026: the ear two and four seconds late after the first cut
-  const segs = [{ id: 'a', name: 'CH18-01', from: -0.82, to: 17.18 }, { id: 'b', name: 'CH18-02', from: 17.18, to: 37.62 }, { id: 'c', name: 'CH18-03', from: 37.62, to: 53.66 }, { id: 'd', name: 'CH18-04', from: 53.66, to: 68.47 }];
-  const bounds = [{ from: 16.8, to: 17.36, pinned: true }, { from: 35.28, to: 35.8 }, { from: 49.78, to: 50.32 }];
-  assert.deepEqual(adoptCuts(segs, bounds), [{ i: 1, from: 37.62, to: 35.54 }, { i: 2, from: 53.66, to: 50.05 }]);
-  // the student's own cut stands; a cut the words moved on both sides stands; a cut through sound (virtual) is not taken; a cut far off is not trusted either way
-  assert.deepEqual(adoptCuts([{ ...segs[1], byHand: 'key' }, segs[2]], [bounds[1]]), []);
-  assert.deepEqual(adoptCuts([{ ...segs[1], refined: true }, { ...segs[2], refined: true }], [bounds[1]]), []);
-  assert.deepEqual(adoptCuts([segs[1], segs[2]], [{ ...bounds[1], virtual: true }]), []);
-  assert.deepEqual(adoptCuts([segs[1], segs[2]], [{ from: 30.5, to: 31 }]), []);
-  // agreeing within half a second: nothing moves
-  assert.deepEqual(adoptCuts([segs[0], segs[1]], [bounds[0]]), []);
-  assert.deepEqual(adoptCuts(null, bounds), []);
 });

@@ -305,9 +305,11 @@ above switches with the open report, so its play button and text always belong t
 several slokas, a play button under the overall score, **Yours — the whole recital**, plays
 the whole take, and the results open with no card chosen: the take's wave, showing where the
 teacher's slokas were matched (shaded, with their names), where the take is cut for the
-verdicts (gold lines — the ear's cut, or the second opinion's where the two disagree, marked
-"ear → 2nd"; a thick one is a page you turned) and where the second opinion cut it (dashed;
-thick when pinned to your turn); click the wave to play from there. Under the cards, a line
+verdicts (gold lines — the second opinion's cut where it was used, marked "2nd (used)", else
+the ear's; a thick one is a page you turned) and where the second opinion cut it (dashed;
+thick when pinned to your turn); click the wave to play from there. The wave stays above a
+sloka's report when you open its card, and its playhead follows the card's play button as it
+does the whole recital's; the open card again closes the report. Under the cards, a line
 of advice when it applies: a sloka you recited for the first time is better practised on its
 own a few times before it joins a recital, and a sloka that came out Needs practice is
 evaluated alone next — on its own it is judged more surely, and a clean take of it keeps its
@@ -461,20 +463,22 @@ and found, Fair or better, no slip — keeps its first and last two seconds in y
 the sloka's signatures, and in a recital the second opinion then runs in two passes: every
 sloka's beginning is matched and placed in the take's order, then each sloka's ending is looked
 for before the next beginning and confirms the marker; the cut between two slokas placed from
-both ends is pinned between them. **Where the second opinion and the ear disagree on a cut
-by half a second or more** (its cut at a real pause or pinned, within six seconds of the
-ear's, not a page you turned yourself), **each sloka beside that cut is compared on both
-windows, and the second opinion's is kept when the sloka's sound matches on it and either
-does not match on the ear's or fits the second's clearly better** — then the ear's stretch
-moves and the whole-recital wave marks the cut "ear → 2nd"; when the sound matches on
-neither, the ear's stays, since its count can still vouch for its own stretch. Measured on 1 November
-2026 against each sloka's own recording located in the take by sound, over 30 cuts of 22
-recitals, the second opinion lay within a second of the sound on 24 and the ear on 15, and
-where they differed the second opinion was the closer on 17 cuts and the ear on 4 — the ear
-runs a pāda or more late when the breath between two slokas is shorter than the one it has
-learnt and its count a few short, and the lateness then carries into every sloka after; but
-the second opinion can be wrong too (a pin from a bad template, the last sloka read as
-unfinished), so the sound decides between the two. The picker shows, beside each sloka, how many times you
+both ends is pinned between them. **The second opinion's segment is the window every sloka
+of a recital is compared on.** Where the sound comparison on that window falls short of the
+match line, the second opinion's placement vouches for the sloka when its sung time lies
+within 70–140 % of what is expected ("taken as recited", the sound scores stand); failing
+that too, the ear's own stretch has its say and is kept when the sound matches there or the
+ear's count vouches for it. A sloka that keeps the second opinion's window moves its stretch
+to it — the whole-recital wave marks the cut "2nd (used)" — and loses the ear's count and the
+"akṣaras dropped" that count made. Measured on 1 November 2026 against each sloka's own
+recording located in the take by sound: over 30 cuts of 22 recitals the second opinion lay
+within a second of the sound on 24 and the ear on 15, and on the morning's three recitals of
+CH18-01..04 the ear ran two to four seconds late at every cut after the first (a breath
+between slokas shorter than the one it had learnt and a count a few short, the lateness
+carried into every sloka after) while the second opinion's cuts sat within half a second of
+the sound. The second opinion is only as good as its pins: a sloka with kept signatures is
+placed from both ends in your own voice, so evaluate each sloka alone once before it joins a
+recital (the advice under the cards says when). The picker shows, beside each sloka, how many times you
 have evaluated it on its own and a tick when its signatures are kept; a recital that includes
 a sloka without kept signatures says so under the picker, and its cuts around that sloka lean
 on the ear and the second opinion. The Settings switch **"A sloka joins a recital only after it is practised on its

@@ -29,35 +29,6 @@ export const QUIET_SHARE = 0.4; // the pause threshold sits this far up from the
 export const QUIET_MIN_DB = 6; // and at least this far above the floor
 export const SUNG_FILL_SEC = 0.2; // quiet shorter than this counts as sound when a segment's sung time is measured — as the ear's own time sung does, which the learner's speed was learnt on
 
-// The cuts the verdicts use: the second opinion's, where it and the ear disagree. Measured on
-// 1 November 2026 over 30 cuts of 22 recitals (20 October on) against each sloka's own
-// recording located in the take by sound: the second opinion within a second of the sound on
-// 24, the ear on 15; where they differed, the second opinion closer on 17, the ear on 4.
-// segments: the ear's stretches in the take's order [{ from, to, byHand, refined }];
-// boundaries: the chosen result's. Returns the moves [{ i, from, to }] — the cut after
-// segment i from the ear's `from` to the second opinion's `to` — for cuts that differ by
-// minShift or more and under maxShift (beyond that something else is wrong, a sloka skipped
-// or said twice, and neither is trusted over the other), at a real pause or pinned, not made
-// by the student's own hand, not already moved by the words, and leaving each neighbour a
-// second at least.
-export function adoptCuts(segments, boundaries, { minShift = 0.5, maxShift = 6 } = {}) {
-  const out = [];
-  if (!Array.isArray(segments) || !Array.isArray(boundaries)) return out;
-  for (let i = 0; i + 1 < segments.length && i < boundaries.length; i++) {
-    const A = segments[i];
-    const B = segments[i + 1];
-    const b = boundaries[i];
-    if (!A || !B || !b || A.byHand || (A.refined && B.refined) || (b.virtual && !b.pinned)) continue;
-    if (!(Number.isFinite(b.from) && Number.isFinite(b.to) && Number.isFinite(A.to))) continue;
-    const cut = (b.from + b.to) / 2;
-    const d = cut - A.to;
-    if (Math.abs(d) < minShift || Math.abs(d) > maxShift) continue;
-    if (cut <= A.from + 1 || cut >= B.to - 1) continue;
-    out.push({ i, from: A.to, to: Math.round(cut * 100) / 100 });
-  }
-  return out;
-}
-
 // A copy of a sound mask with quiet runs shorter than maxFrames filled in.
 export function fillShortGaps(mask, maxFrames) {
   const out = Uint8Array.from(mask);

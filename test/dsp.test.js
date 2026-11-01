@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { extractFeatures, hzToSt, serializeFeatures, deserializeFeatures, HOP_SEC } from '../js/dsp/features.js';
-import { compare, compareAuto, confirmByWords, confirmByEar, MISMATCH_NOTE, WORD_MATCH_MIN, WORD_SHARE_MIN, EAR_CONFIRM_SHARE } from '../js/dsp/compare.js';
+import { compare, compareAuto, confirmByWords, confirmByEar, confirmBySecond, MISMATCH_NOTE, WORD_MATCH_MIN, WORD_SHARE_MIN, EAR_CONFIRM_SHARE } from '../js/dsp/compare.js';
 import { foldOctave } from '../js/dsp/deviations.js';
 import { alignDTW, pathMaps } from '../js/dsp/dtw.js';
 import { resample } from '../js/dsp/resample.js';
@@ -504,4 +504,23 @@ test('confirmByEar: a sloka the timbre rejected but the ear counted whole is tak
   res = fresh(); res.match.ok = true;
   assert.equal(confirmByEar(res, { count: 44, expected: 44 }), false, 'already a match');
   assert.equal(EAR_CONFIRM_SHARE, 0.5);
+});
+
+test('confirmBySecond: a sloka the timbre rejected but the second opinion placed at a plausible length is taken as recited', () => {
+  const mk = () => ({ match: { ok: false, contrast: 0.92 }, notes: [MISMATCH_NOTE, 'other'] });
+  const res = mk();
+  assert.equal(confirmBySecond(res, { ratio: 0.98, pinned: true }), true);
+  assert.equal(res.match.ok, true);
+  assert.equal(res.match.by, 'second');
+  assert.equal(res.match.secondRatio, 0.98);
+  assert.ok(!res.notes.includes(MISMATCH_NOTE));
+  assert.match(res.notes[0], /pinned by your own voice/);
+  // too short or too long for the sloka: not vouched for
+  assert.equal(confirmBySecond(mk(), { ratio: 0.5 }), false);
+  assert.equal(confirmBySecond(mk(), { ratio: 1.6 }), false);
+  assert.equal(confirmBySecond(mk(), {}), false);
+  // already matched: nothing to do
+  const ok = { match: { ok: true, contrast: 0.7 }, notes: [] };
+  assert.equal(confirmBySecond(ok, { ratio: 1 }), false);
+  assert.equal(ok.match.by, undefined);
 });
