@@ -1,0 +1,262 @@
+_Markdown twin of [2026-11-01-error-identification.html](2026-11-01-error-identification.html), written by `node tools/note-md.mjs` for reading by agents and search; the HTML page is the source._
+
+SlokAbhyasa · branch AcousticAssessment · 1 November 2026
+
+# How SlokAbhyasa Finds Mistakes
+
+The chain of decisions from the live recording of a recital to the slips, scores and grades on the results panel: who decides where each sloka lies, what each detector listens for, how an uncertain finding is confirmed or dropped, and where the two takes of CH18-01..04 on the morning of 1 November went wrong. Rules added today are marked new.
+
+## 1. The pipeline at a glance
+
+```mermaid
+flowchart TD
+  rec["Recording of N slokas"] --> ear["Live ear per sloka<br/>nucleus count, pauses, sound checks"]
+  ear --> segs["Stretches: one per sloka<br/>cut where the ear closed"]
+  segs --> stop["Stop, trim the lead"]
+  stop --> words1["Words already in (live stretches)<br/>move a cut by the text"]
+  words1 --> so["Second opinion over the whole take<br/>pauses + expected lengths + pins"]
+  so --> adopt["Its segments are the windows;<br/>the ear's stretch only where neither<br/>sound nor length vouches for the sloka"]
+  adopt --> cmp["Per sloka: compare the teacher's recording<br/>with the stretch, cut plus 0.5 s each side"]
+  cmp --> verdict["Sound verdict: matched or not,<br/>tempo, deviations, sound scores"]
+  verdict --> cards["Cards: words heard per stretch"]
+  cards --> wordsG["Word guards: neighbours' edges,<br/>loop, thin hearing"]
+  wordsG --> diff["Diff + phonology + self-corrections"]
+  diff --> slips["Slips filtered: unsure ones need<br/>the words or the sound to agree"]
+  slips --> grade["Score, 15 % slip penalty, grade,<br/>advice under the cards"]
+  style adopt stroke:#3b5bdb,stroke-width:2px
+  style wordsG stroke:#2e7d32,stroke-width:2px
+```
+
+*The take passes through three opinions on where each sloka lies (the ear live, the second opinion afterwards, the words when they come) and two families of detectors (sound and words). The two boxes with a coloured border are new today.*
+
+## 2. The live ear: one state machine per sloka
+
+The ear counts syllable nuclei in the microphone stream and converts them to a position in akṣaras with a learnt ratio (about 1.34 nuclei per akṣara for this learner) and a learnt speed. It never hears the words live in a recital. Every pause and every "sound again" is an event; a few of them trigger a sound check against the teacher recording's pāda-start fingerprints.
+
+```mermaid
+stateDiagram-v2
+  [*] --> Counting : page shows sloka i
+  Counting --> Breath : pause of 250 ms or more
+  Breath --> Counting : sound again (pause measured as a pāda or sloka breath)
+  Breath --> RestartCheck : pause of 400 ms or more and fingerprints exist
+  RestartCheck --> Counting : doubtful (distance over the threshold or margin under 1.2)
+  RestartCheck --> Counting : confident, pāda k well into: restart slip, count back to k
+  RestartCheck --> Counting : confident, pāda 1: false start, count from 0
+  Counting --> Stalled : pause of 1200 ms or more inside a pāda
+  Stalled --> Counting : sound again (stall slip, unsure)
+  Counting --> NearEnd : position within 3 akṣaras of the plan
+  NearEnd --> HeadCheck : every 0.35 s, next sloka's opening fingerprint
+  HeadCheck --> NearEnd : doubtful
+  HeadCheck --> Closed : confident, close where that sound began
+  NearEnd --> Closed : close rule fires (see below)
+  Counting --> Closed : pause of 4 s (stop rule)
+  Closed --> [*] : stretch marked, page turns, next sloka counts
+```
+
+*The live ear for one sloka. Sound checks (restart, next-opening) have been "doubtful" on every take of this learner: the teacher's fingerprints calibrate a threshold of 11.6–12.8 and live distances sit at 22–34, so in practice the ear decides by count and pauses alone.*
+
+### The close rules, in order (dsp/ear.js earDecision)
+
+```
+given pos (akṣaras counted), exp (the plan), pause (ms running now), sung (ms of sound so far),
+      slokaPause (learnt breath between slokas, default 1000), padaPause (learnt, default 600)
+if sung < 3000 ms:                         not yet
+if pos >= exp - 1 and pause >= 120:        CLOSE by count
+elif ratio known and pos >= exp and no pause and run-on >= 500 ms:   CLOSE by run-on
+elif pos >= exp - 2 and pause >= min(350, 0.6 * slokaPause):          CLOSE by count
+elif pos >= 0.9 * exp and pause >= 0.9 * slokaPause:                  CLOSE by count   ← failed on 1 Nov: breath 520 ms < 662
+elif pos >= 1.3 * exp and pause >= 400:    CLOSE by count
+elif pos >= 0.5 * exp (0.35 when over time) and pause >= max(1500, 3 * padaPause):  CLOSE by pause
+elif pause >= 4000:                        CLOSE by stop
+on close: partial = pos < 0.5 * exp (not scored); dropped = pos < exp - 2 (unsure until the words agree)
+the stretch ends where the pause began (+0.3 s), or where the count completed on a run-on
+the next sloka's count starts at 0 — the counter carries nothing over
+```
+
+Two consequences matter for reliability. A count a few akṣaras short at the true end, with a breath shorter than the learnt one, makes the ear run on into the next sloka until the count fills up. And because the next count starts at zero wherever the page turned, a late cut propagates: the next sloka is short by what the previous one stole, and so on to the last, which then reads as "akṣaras dropped".
+
+## 3. The second opinion, and why it now decides
+
+After the stop, the whole take is read again from its pauses (dsp/segment.js). Every pause of 0.25 s or more is a candidate cut; the N−1 cuts are chosen together by dynamic programming so that each sloka's sung time agrees with what is expected of it (the plan's akṣaras at the learner's speed, under the "plan" method; alternatives "teacher" and "share"). Three kinds of pin fix a cut before the search: the student's own page turn, a speaker line heard in the learner's voice (CH18-02 begins with śrībhagavān uvāca, heard at 17.06 s), and a sloka's own beginning and ending signatures.
+
+```
+pauses   = runs of quiet >= 0.25 s (threshold 40 % up from the floor), plus valleys inside long sound runs (costly)
+expected = per sloka: akṣaras / learnt speed  (scaled by one common factor s in 0.6..1.6, cost SCALE_PRIOR·ln(s)²)
+cost(cuts) = Σ_slokas ln(sung/expected)²  +  Σ_cuts gapCost(pause length)   (a breath >= 1 s is free)
+pins     = student's turn > signature marker (two passes) > speaker line; a pinned cut is not searched
+chosen   = the "plan" method when it ran, else "teacher", else "share"
+runner-up per cut = the best other pause and its extra cost (the margin)
+```
+
+**Which was wrong on the 07:03 take, the ear or the second opinion?** The ear. Each sloka's own library recording (your solo take of 31 October) located in the whole take by sound puts the slokas at 0.0–17.2, 17.2–35.4, 35.5–50.0 and 53.4–67.5 s (the last weak). The second opinion cut at 17.06, 35.5 and 50.0 s, all within a third of a second of the sound. The ear cut at 17.18, 37.62 and 53.66 s: 2.2 s and 3.7 s late. CH18-04 was then counted from 3.3 s inside itself and came out "27 of 32, akṣaras dropped" though recited whole. The whole-recital wave and the card windows showed the ear's cuts, which is what you saw.
+
+Why the ear was late: at CH18-02's true end its position stood at 35.9 of 39 and the breath that followed was 520 ms, under the 662 ms the "a tenth short" rule asks for. No rule fired, the count ran on into CH18-03, and the lateness carried into CH18-03 and CH18-04.
+
+**The 08:38 take repeated it.** The second opinion's three methods agreed on every cut (17.06 pinned by the speaker line and by CH18-02's own start signature, 35.6–36.5 with CH18-02's end signature confirmed at 35.88, 51.5–52.2), the sound locate put the slokas at 0.0–16.7, 17.0–35.7, 36.1–51.6 and 52.0–67.3 s, and the ear cut 2.9, 3.9 and 4.0 s late. The morning's first fix still kept the ear's windows for CH18-02 to CH18-04, because the sound contrast on the right windows was over the match line; that gate is gone.
+
+### Measured over every recital since 20 October
+
+The same arbiter (the sloka's own recording located by sound, at five tempos, the best contrast kept) over 22 recitals with a take and an ear log. Thirty inner cuts could be judged; eight could not (a neighbour's recording not placed with confidence, or not in order).
+
+| Of 30 cuts the sound could judge | The ear | The second opinion |
+| --- | --- | --- |
+| Within 1 s of the sound | 15 | 24 |
+| More than 2 s off | 7 | 5 |
+| The closer of the two, where they differed by over 0.3 s | 4 | 17 |
+
+The second opinion fails where its model does: a sloka skipped or said again (one take of Ch01-01..04 had both opinions 4–11 s off). Its own margins (the runner-up pause's extra cost, +0.02 to +0.04 on the 07:03 take) say little about its correctness, so they are not used as a confidence.
+
+### new Its segments are the windows (app.js adoptSecondOpinion, compareSloka)
+
+```
+for each sloka i of the recital, with the second opinion's segment S_i = [from, to] and the ear's stretch E_i:
+  skip (keep the ear's) when S_i lies more than 6 s from E_i at either end: something else is wrong, a sloka skipped or said twice
+  compare the teacher's recording on S_i ± 0.5 s
+  if the sound matches (contrast under 0.87): done, "by sound"
+  else if S_i's sung time is within 0.7–1.4 of what is expected of the sloka: taken as recited, "by second" (confirmBySecond; "pinned" when
+      the segment's start or end was pinned by your own voice or your own page turn)
+  else compare on E_i ± 0.5 s: keep the ear's stretch when the sound matches there, or the ear's count vouches for it (confirmByEar)
+  a sloka that keeps S_i: its stretch moves to S_i (the wave, the words' windows and the slips follow), the ear's count is forgotten,
+      and its unsure "akṣaras dropped" goes when the start moved by 1 s or more
+the ear's log keeps each sloka's two windows and which it kept (adopted); the wave marks a cut taken "2nd (used)"
+```
+
+Why not pick between the two windows by the sound's contrast: on the 08:38 take the right windows for CH18-02 to CH18-04 scored 0.885, 0.898 and 0.929, all over the 0.87 line, while this voice's own recordings of the day before sit at 0.88–0.96 even on the right window. The contrast tells a sloka from another sloka; it cannot tell a right window from one a pāda off. The length fit can, and the pins can, so they decide. A speaker-line template cut from a window-wide chunk (the line placed at 18.3 s, inside CH18-01's tail) pinned a start two seconds early in one replay; such a chunk no longer harvests a template, and the three bad templates were removed.
+
+## 4. The sound verdict on each sloka
+
+```
+window   = the second opinion's segment ± 0.5 s in a recital (the ear's stretch only as the fallback above)
+features = MFCC-like frames of the teacher's recording B and the window H, the take read at the voice warp that fits B best
+align    = DTW of B against H, end to end, with a tempo prior from how long each sounds
+contrast = how much better the alignment is than the window's own surroundings; ok when < 0.95
+          not ok → "does not sound like this sloka" (the words can overturn it later: confirmByWords)
+deviations = stretches where the two disagree (extra, missing, timing); those at the window's edges are dropped as neighbours' material
+sound scores = emphasis, pitch (shown, not weighted), phrasing (where the pauses fall), timing
+```
+
+Nothing in this step can tell that a window began inside the previous sloka: an edge is "neighbours' material" by assumption. That is why the cut matters more than anything downstream, and why the second opinion now sets it.
+
+## 5. The words: from the hearing to the slips
+
+```mermaid
+flowchart TD
+  hear["Hear the window with Whisper<br/>(card button, or after the take)"] --> thin{"Thin? under 0.4 times the akṣaras<br/>the ear's nuclei say were sung"}
+  thin -- yes --> halves["Hear again in two halves,<br/>keep the fuller hearing"]
+  thin -- no --> win["Window the words by their moments<br/>(cut ± 0.5 s)"]
+  halves --> win
+  win --> edges["Leading run that reads as the previous<br/>sloka's ending, trailing run as the next's<br/>opening: left out, dimmed"]
+  edges --> diffn["Diff against the sloka's text<br/>(character level, blind to word breaks)"]
+  diffn --> loop{"Looped? a run said 3 times and over<br/>1.6 times the sloka's sounds, or over 1.3<br/>times the sung akṣaras and a run said twice"}
+  loop -- yes, first time --> steady["Hear once more held steady<br/>(repetition penalty from the first run)"]
+  steady --> diffn
+  loop -- yes, still --> unused["Words not used: no slips, no word<br/>scores; card says sound only"]
+  loop -- no --> phon["Phonology: akṣaras missing, added,<br/>replaced; phoneme and vowel errors"]
+  phon --> corr["Self-corrections: a run of sounds<br/>said again within 2 sounds"]
+  corr --> slips["Word slips: repeat, restart,<br/>false start, dropped"]
+  style edges stroke:#2e7d32,stroke-width:2px
+  style loop stroke:#2e7d32,stroke-width:2px
+  style steady stroke:#2e7d32,stroke-width:2px
+  style halves stroke:#2e7d32,stroke-width:2px
+```
+
+*The words of one sloka's window. The green-bordered steps are new or newly applied on the card path.*
+
+### The self-correction detector (textdiff.js findSelfCorrections)
+
+```
+H = heard words as one stream of phonetic keys (vowel length, sibilants, nasals folded); R = the sloka's text the same way
+scan i over H; for L from 60 down to 5 sounds, gap 0..2:
+  a = H[i, L], b = H[i+L+gap, L]
+  candidate if a and b begin with the same 3 sounds and editDistance(a, b) <= 15 % of L
+  NEW: if L < 8, a must begin where a heard word begins, and a == b exactly   ← "uvāccha sanyā|sasya": a-sany / a-sasy
+drop the candidate when
+  b is the next sloka's opening (the recital going on)            [nextOpening]
+  a is the previous sloka's ending (the window began in its tail) [prevEnding]
+  a and b lie inside one heard word (the recogniser's spelling)
+  a is placed in R and R goes on, within 4 sounds, with b         [the sloka's own echo, 31 Oct: 161 of 719 slokas]
+  or, read at b's place, R came from a                            [the mirror]
+classify a surviving hit
+  a placed in R at a pāda's start and L >= 6 akṣaras → restart of that pāda
+  a at the sloka's start → false start
+  else → repeat (the word label = the heard words under a)
+the slip's time = the chunk's start of a's first word
+```
+
+### The slip filter (app.js slipsOf) and the grade
+
+```
+a slip marked unsure by the ear stands only when another judge agrees:
+  dropped (ear)  → stands as "by words" when the words miss >= 2 akṣaras; as "by ear" only with no words wanted and 4+ short (a tenth of the sloka)
+  stall (ear)    → stands as "by sound" when the comparison found a timing deviation within 0.75 s of it
+dropped (words) → missing >= 4 and >= 10 % of the sloka   NEW: not when the ear counted the stretch whole, or the second opinion placed it at its
+                  expected length (×0.92–1.3), and the words miss >= 6 and >= 15 % (the recogniser skipped; a pāda dropped takes a quarter off the sung time)
+partial (ear, under half recited) → sure: not transcribed, not scored, Needs practice
+self-correction (repeat, restart, false start) → 15 % off the sloka's score; any slip → Needs practice
+overall = weighted mean of the judged categories; the take's grade = the lowest sloka's; the take's overall = the mean over the slokas recited
+```
+
+| Category | Weight | Source | CH18-03, 06:41 take |
+| --- | --- | --- | --- |
+| Phonemes | 30 | words | 92 |
+| Vowel length | 25 | words | 97 |
+| Syllables | 15 | words | 97 |
+| Emphasis | 10 | sound | 100 |
+| Pitch contour | 10 | sound (shown, not judged here) | — |
+| Phrasing | 5 | sound | 55 |
+| Timing | 5 | sound | 94 |
+
+That is why CH18-03 scored 93 with a false start and a 1.06 s pause in its first pāda: the pause lowered phrasing to 55, which weighs 5 of 90, and nothing else saw the stumble. The sound check at that pause was "doubtful" as always, Whisper left the false start out of its hearing, and the pause stayed under the 1200 ms stall bar.
+
+## 6. The two takes of 1 November, sloka by sloka
+
+#### 06:41 · CH18-01 · "repeated उवाच सन्या"
+
+**What happened.** Whisper wrote *arcuna uvāccha sanyā sasyamahābāha…*; the five-sound window a‑sany / a‑sasy across two words differs by one sound, the slack allowed. The sloka's own *saṁnyāsasya* with the recogniser's drift, not a slip. You did repeat something in that sloka; the hearing holds no trace of it.
+
+**Now.** A saying under eight sounds must start at a heard word and match exactly. fixed
+
+#### 06:41 · CH18-03 · 93 despite a false start and a pause
+
+**What happened.** Sound check doubtful (teacher fingerprints), the false start absent from the hearing, the pause under the stall bar; only phrasing (weight 5) fell.
+
+**Now.** The advice line says a first-time sloka is better practised alone. The detection itself is still open. open
+
+#### 06:41 · CH18-04 · start and end wrong, three "repeats"
+
+**What happened.** The false start's syllables made the ear reach CH18-03's plan a pāda early, so CH18-04's window began 1.3 s inside CH18-03 (*…tyājyam iti cāpare* read as seven added akṣaras). Whisper then looped at the end: 100 akṣaras for a sloka of 32, three repeats charged.
+
+**Now.** Neighbours' edge words left out; a looped hearing heard again held steady, else not used; a thin hearing heard in halves; the words' "dropped" doubted when the ear counted the stretch whole. fixed
+
+#### 07:03 · all four · cuts a pāda late
+
+**What happened.** The ear ran 2.2 and 3.7 s late after CH18-02 and CH18-03 (breath 520 ms, count three short); CH18-04 counted from inside itself: "27 of 32 dropped". The second opinion was right on all three cuts.
+
+**Now.** The second opinion's segment is each sloka's window; its length fit vouches for the sloka when the timbre falls short. fixed
+
+#### 08:38 · all four · cuts a pāda late again
+
+**What happened.** The second opinion was right on every cut (three methods agreeing, CH18-02 pinned at both ends by its signatures), the ear 3 to 4 s late; the morning's first fix kept the ear's windows because the right windows' contrast sat over the match line (0.885–0.93). CH18-04 was "22 of 32 dropped" by the ear's count once more.
+
+**Now.** The contrast no longer chooses between windows; the second opinion's placement does. fixed
+
+Replayed through the app with the rules as they stand (the words asked for card by card after the take), the 06:41 take came out Good at 89 with no slip, where the morning's run gave 81 and four false slips. The 07:03 replay could not reproduce the morning's second opinion (the replay's ear stopped short, so the last sloka read as unfinished and its cuts shifted), but no sloka came out worse than on the ear's window.
+
+## 7. Where it can still go wrong
+
+- **A sloka skipped or said twice in a recital.** The second opinion assumes every sloka once, in order; the ear's relabelling by words only runs when the words are heard live. When the two disagree by more than six seconds the ear's cut is kept, which may be wrong too.
+- **Live sound checks that never fire.** Restart and next-opening checks compare live frames with the teacher recording's pāda starts; for this learner the distances have never crossed the threshold. A restart you make at a pause is therefore found only if the words catch it, and Whisper tends to drop a false start of a few syllables.
+- **A short echo said on purpose.** A word of under eight sounds said twice is a repeat only when both sayings match to the sound; the recogniser's spelling of one of them can hide it.
+- **A pause inside a pāda under 1.2 s** lowers phrasing but is not a slip.
+- **Signatures age.** A sloka's beginning and ending templates place it in a recital for about a week; older ones fall below the stand-out margin (measured 31 October).
+
+### Next steps in order of value
+
+1. Add the sound locate over the union of the two windows as a third candidate when the ear and the second opinion disagree; it is what settled the question here.
+2. A live close rule for a breath shorter than the learnt one when the count is within a tenth of the plan and the next sloka's opening follows.
+3. Fingerprints from the learner's own solo takes for the live sound checks, instead of the teacher's recording.
+4. Keep the signatures fresh: a solo take now and then, or a refresh from a recital the words place.
+
+Sources: js/app.js, js/dsp/ear.js, js/dsp/segment.js, js/dsp/compare.js, js/textdiff.js, js/quizscore.js · research_notes: offline-boundaries.md, boundaries-by-words.md · takes 20261101-064104-33mt and 20261101-070324-oo8n
+
+The diagrams are drawn by mermaid, loaded from a CDN when this file is opened: without the network they stay as their text source, which still reads as the flow.

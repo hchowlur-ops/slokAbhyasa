@@ -17,6 +17,7 @@ import { extractFeatures, SR, HOP_SEC } from '../js/dsp/features.js';
 import { locate, stretchFeatures } from '../js/dsp/locate.js';
 import { resolveDataDir } from '../datadir.js';
 import { formatEarLog } from './ear-log.mjs';
+import { markdownTwin } from './note-md.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
@@ -174,3 +175,4 @@ fs.mkdirSync(OUT, { recursive: true });
 const outPath = path.join(OUT, `take-${id}.html`);
 fs.writeFileSync(outPath, html);
 console.log(outPath);
+console.log(markdownTwin(outPath, { force: true }));
