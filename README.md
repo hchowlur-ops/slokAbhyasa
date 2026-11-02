@@ -1315,11 +1315,6 @@ tools/note-md.mjs      Markdown twins of the HTML debug notes (debug-notes/<name
 test/                  synthetic signal generators and the DSP tests
 reports/               the research the presets and the details file follow
 RELEASE-NOTES.md       what changed in each packaged version, and since the last one
-SLOKABHYASA_MASTER_PLAN.md            the engineering workflow: PLANNING → DESIGN → DEV → REVIEW, with the gates, the change-type lanes and the index of where everything lives
-SLOKABHYASA_REQUIREMENTS.md           journeys, functional and non-functional requirements, scope, open decisions, known limits
-SLOKABHYASA_ARCHITECTURE.md           module map, workers, every on-disk schema, the HTTP API, the algorithms' constants, structural patterns
-SLOKABHYASA_CODING_STANDARDS.md       how code is written here: modules, naming, comments, UI, tests, tools, docs, commits
-SLOKABHYASA_VERIFICATION_CHECKLIST.md the Definition of Done, the test levels, coverage by lane, the boundary fixtures, the release checklist
 
 Not in the repository (.gitignore), beside the code or wherever local.json points:
 library/               your slokas, in folders if you like: <name>.wav, <name>.json (details),

@@ -24,5 +24,8 @@ desktop.ini
 
 # research and design notes: their own private repository (hchowlur-ops/SlokaAbhyasa-research-notes)
 research_notes/
+# the agents' operating instructions live there too (research_notes/sdlc/CLAUDE.md); this root file only imports them
+/CLAUDE.md
+/CLAUDE.local.md
 tools/bench/package-lock.json
 tools/bench/npm-install.log
