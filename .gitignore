@@ -12,8 +12,9 @@
 /tools/demo/narration/
 /tools/demo/out/
 
-# Node
+# Node (the app has no dependencies; npm test still writes an empty lockfile)
 node_modules/
+/package-lock.json
 npm-debug.log*
 
 # Operating system clutter
