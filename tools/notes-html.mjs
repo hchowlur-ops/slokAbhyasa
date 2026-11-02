@@ -4,6 +4,10 @@
 //     node tools/notes-html.mjs                  → research_notes/**/*.md → *.html, research_notes/index.html
 //     node tools/notes-html.mjs some/folder      → the same for another folder
 //
+// A Markdown twin of an HTML page (a debug note: its first line reads "_Markdown twin of …_",
+// written by tools/note-md.mjs) is listed in the index but never rendered over its page —
+// there the HTML is the source and the .md the copy, the reverse of a research note.
+//
 // No dependencies: a small Markdown renderer (headings, paragraphs, lists with nesting,
 // tables, fenced code, quotes, rules, links, bare URLs, bold, italics, code spans) and the
 // page the reports/ renderer makes: large type, a table of contents in the margin, tables
@@ -316,9 +320,10 @@ for (const md of files) {
   const folder = path.dirname(rel) === '.' ? '' : path.dirname(rel);
   const home = `${'../'.repeat(rel.split('/').length - 1)}index.html`;
   const out = md.replace(/\.md$/i, '.html');
-  fs.writeFileSync(out, page({ title: `${heading} · SlokAbhyasa notes`, meta: `${folder ? `${folder} · ` : ''}research note · SlokAbhyasa`, body: html, toc: tocHtml(headings), home }));
+  const twin = /^_Markdown twin of /.test(text) && fs.existsSync(out); // the page is the source; list it, never rewrite it
+  if (!twin) fs.writeFileSync(out, page({ title: `${heading} · SlokAbhyasa notes`, meta: `${folder ? `${folder} · ` : ''}research note · SlokAbhyasa`, body: html, toc: tocHtml(headings), home }));
   items.push({ folder, rel: rel.replace(/\.md$/i, '.html'), heading, lede });
-  console.log(`${path.relative(ROOT, out)}  (${Math.round(fs.statSync(out).size / 1024)} KB)`);
+  console.log(`${path.relative(ROOT, out)}  ${twin ? '(the HTML page is the source; indexed only)' : `(${Math.round(fs.statSync(out).size / 1024)} KB)`}`);
 }
 let list = '';
 let lastFolder = null;

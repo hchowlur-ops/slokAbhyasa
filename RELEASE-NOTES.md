@@ -28,7 +28,7 @@ last package. The README describes every feature as it stands; this file says wh
   sat at contrast 0.885–0.93, over the line. A speaker line the words place with one chunk
   spanning the whole window is no longer harvested as a template (one cut so at 18.3 s of the
   morning's first take held CH18-01's tail and then pinned CH18-02's start two seconds early).
-- **Debug notes.** `debug-notes/` holds HTML reports written while chasing wrong verdicts:
+- **Debug notes.** `research_notes/debug-notes/` (in the private research-notes repository) holds HTML reports written while chasing wrong verdicts:
   how the app finds mistakes (the pipeline, the ear's state machine, every detector's rules),
   the ear against the second opinion judged by sound over 22 recitals, and one note per take
   of the day — `node tools/debug-note.mjs <session id> [--replay <log>]` writes a take's note:

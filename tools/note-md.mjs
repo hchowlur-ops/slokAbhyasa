@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Markdown twins of the HTML debug notes, for reading by agents and search tools.
 //
-//     node tools/note-md.mjs                  → debug-notes/*.html → *.md where none exists
+//     node tools/note-md.mjs                  → research_notes/debug-notes/*.html → *.md where none exists
 //     node tools/note-md.mjs some/folder      → the same for another folder
 //     node tools/note-md.mjs a-note.html      → one file
 //     node tools/note-md.mjs --force          → rewrite the twins that exist too
@@ -146,7 +146,7 @@ export function markdownTwin(htmlPath, { force = false } = {}) {
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
   const force = args.includes('--force');
-  const target = path.resolve(ROOT, args.find((a) => !a.startsWith('--')) || 'debug-notes');
+  const target = path.resolve(ROOT, args.find((a) => !a.startsWith('--')) || 'research_notes/debug-notes');
   const files = fs.statSync(target).isDirectory() ? fs.readdirSync(target).filter((f) => /\.html?$/i.test(f)).sort().map((f) => path.join(target, f)) : [target];
   let n = 0;
   for (const f of files) { const p = markdownTwin(f, { force }); if (p) { n++; console.log(path.relative(ROOT, p)); } }

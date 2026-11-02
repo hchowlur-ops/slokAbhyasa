@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// A debug note for a take of several slokas, as one HTML file in debug-notes/: the verdicts
+// A debug note for a take of several slokas, as one HTML file in research_notes/debug-notes/ (the private research-notes repository): the verdicts
 // as the session kept them, every sloka's three windows side by side — the ear's stretch,
 // the second opinion's segment (dsp/segment.js), and where the sloka's own library recording
 // lies in the take by sound (dsp/locate.js at five tempos, the search compareAuto runs for
@@ -7,7 +7,7 @@
 // tools/ear-log.mjs reads it, the second opinion in full (speaker lines, signatures, every
 // method's cuts and margins), and, when replay logs are given, what the replay tool found.
 //
-//   node tools/debug-note.mjs <session id, or its last letters> [--out debug-notes] [--replay <log file>]... [--data <dir>]
+//   node tools/debug-note.mjs <session id, or its last letters> [--out research_notes/debug-notes] [--replay <log file>]... [--data <dir>]
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -24,9 +24,9 @@ const args = process.argv.slice(2);
 const opt = (name, def = null) => { const i = args.indexOf(name); return i >= 0 && args[i + 1] != null ? args[i + 1] : def; };
 const opts = (name) => args.map((a, i) => (a === name ? args[i + 1] : null)).filter(Boolean);
 const key = args.find((a, i) => !a.startsWith('--') && !['--out', '--replay', '--data'].includes(args[i - 1]));
-if (!key) { console.error('usage: node tools/debug-note.mjs <session id or its last letters> [--out debug-notes] [--replay <log>]... [--data <dir>]'); process.exit(2); }
+if (!key) { console.error('usage: node tools/debug-note.mjs <session id or its last letters> [--out research_notes/debug-notes] [--replay <log>]... [--data <dir>]'); process.exit(2); }
 const DATA = opt('--data', process.env.SLOKABHYASA_DATA || resolveDataDir(ROOT));
-const OUT = path.resolve(ROOT, opt('--out', 'debug-notes'));
+const OUT = path.resolve(ROOT, opt('--out', 'research_notes/debug-notes'));
 const SESS = path.join(DATA, 'sessions');
 const id = fs.readdirSync(SESS).filter((f) => f.endsWith('.json')).map((f) => f.slice(0, -5)).find((f) => f === key || f.endsWith(key));
 if (!id) { console.error(`no session ${key} in ${SESS}`); process.exit(2); }
