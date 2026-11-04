@@ -1225,7 +1225,22 @@ function renderLearnChapters() {
   host.innerHTML = '';
   const info = learn.info;
   const cov = info && info.coverage;
-  $('#learn-dataset-line').textContent = info ? `${info.work || info.name || 'Reference dataset'}${cov ? ` · ${cov.recorded} of ${cov.total} verses recorded` : ''}` : '';
+  const line = $('#learn-dataset-line');
+  line.textContent = info ? `${info.work || info.name || 'Reference dataset'}${cov ? ` · ${cov.recorded} of ${cov.total} verses recorded` : ''}` : '';
+  // the dataset's licence and attribution, two files the server hands out from the dataset's own folder
+  if (info && learn.dataset) {
+    const note = info.attribution || (info.licence && info.licence.name) || '';
+    for (const [text, file] of [['licence', 'LICENSE'], ['attribution', 'ATTRIBUTION.txt']]) {
+      line.appendChild(document.createTextNode(' · '));
+      const a = document.createElement('a');
+      a.href = `reference/${encodeURIComponent(learn.dataset)}/${file}`;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.textContent = text;
+      if (note) a.title = note;
+      line.appendChild(a);
+    }
+  }
   if (info) {
     for (const c of info.chapters) {
       const bc = cov && cov.byChapter ? cov.byChapter[c.chapter] : null;
@@ -5640,7 +5655,7 @@ const META_LABELS = {
   updatedAt: 'Updated', audio: 'Audio file', pcmSha256: 'PCM SHA-256', channels: 'Channels', bitDepth: 'Bit depth', format: 'Format', software: 'Software', app: 'App',
   version: 'Version', featVersion: 'Analysis version', chandas: 'Chandas', family: 'Family', perPada: 'Syllables per pāda', padas: 'Pādas', syllables: 'Syllables in the text',
   expectedSyllables: 'Syllables the metre expects', exact: 'Exact', form: 'Form', weights: 'Laghu / guru', confidence: 'Confidence', verse: 'Gītā verse', chapter: 'Chapter',
-  at: 'Computed', migrated: 'From before details existed', folder: 'Folder', file: 'File', duration: 'Duration (s)', name: 'Name',
+  at: 'Computed', migrated: 'From before details existed', recoveredFrom: 'Details recovered from', folder: 'Folder', file: 'File', duration: 'Duration (s)', name: 'Name',
   verse: 'Verse (reference dataset)', dataset: 'Dataset', datasetVersion: 'Dataset version', speakerLineRecited: 'Speaker line recited', textHash: 'Text hash', mappedBy: 'Linked by', pinned: 'Text pinned', kind: 'Kind',
 };
 const metaPopup = $('#meta-popup');
@@ -6391,6 +6406,12 @@ function renderLibTags(host, r) {
   if (meta.verse) tag(`Gītā ${meta.verse.id}${r.verseCurrent === false ? ' · text differs from the dataset' : ''}`, r.verseCurrent === false ? 'warn' : 'verse', meta.verse.text && meta.verse.text.deva ? meta.verse.text.deva.join(' ') : '');
   if (meta.migrated) tag('style not set · judged as chant', 'warn');
   else tag(styleMode(meta.style && meta.style.mode).label);
+  // details made afresh because the old file was unreadable: the original is kept beside the WAV
+  if (typeof meta.recoveredFrom === 'string') {
+    const m = /\.broken-(\d{4})(\d{2})(\d{2})-/.exec(meta.recoveredFrom);
+    const day = m ? `${m[1]}-${m[2]}-${m[3]}` : '';
+    tag(`details recovered${day ? ` · ${day}` : ''}`, 'warn', `The details of this sloka were unreadable${day ? ` on ${day}` : ''}; the original is kept beside it as ${meta.recoveredFrom}.`);
+  }
   // a recording whose voice barely rises above the room blurs every comparison against it
   if (meta.measured && meta.measured.snrDb != null && meta.measured.snrDb < 25) tag(`noisy · ${Math.round(meta.measured.snrDb)} dB`, 'warn', `The voice is only ${Math.round(meta.measured.snrDb)} dB above the room noise; evaluations against this recording are less reliable. Record it again in a quiet moment (Learn), then delete this one.`);
   if (meta.text && meta.text.aksharaCount) tag(`${meta.text.aksharaCount} akṣaras`);

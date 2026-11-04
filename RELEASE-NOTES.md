@@ -4,7 +4,37 @@ What changed in each packaged version (`node tools/package.mjs` builds
 `dist/SlokAbhyasa-<version>-windows.zip`), newest first, and what has been built since the
 last package. The README describes every feature as it stands; this file says when it came.
 
-## Unreleased — since 1.6.0 (branch `AcousticAssessment`, 9 October – 1 November 2026)
+## Unreleased — since 1.6.0 (branch `AcousticAssessment`, 9 October – 4 November 2026)
+
+### 4 November 2026
+
+- **Nothing of yours is lost to an interruption, and no other page can reach your
+  recordings.** The structural audit of 2 November found seventeen places writing the data
+  folder's files in place, so a crash or a power cut in the middle of a save could leave a
+  details file, a session, a quiz, `profiles.json` or the library index half-written, and
+  every reader answered such damage with an empty value, four of them then rewriting the
+  file over the only copy: the pace the ear had learnt of a learner over twenty takes, a
+  recording's details, the index itself. Every file is now saved whole or not at all (a
+  temporary beside it, flushed to disk, renamed over it; a temporary left by a save that
+  died is swept at the next start), a file the app cannot read is kept as
+  `<file>.broken-<stamp>` and named on the console instead of being overwritten — a sloka
+  whose details were unreadable gets fresh ones that say "details recovered" in the
+  Library, with the original beside the WAV — and a file that cannot be opened at all makes
+  the request fail rather than read as empty. The library index carries a version
+  (`{ "schemaVersion": "1.0.0", "records": [...] }`; the old plain list is read and
+  rewritten once at start-up), sessions and quizzes carry one too, and a sloka found on disk
+  without an index entry takes its name, date and id from its details rather than its file
+  name. The server also answered any `Host` and `Origin`, so a page from elsewhere open in
+  the same browser could ask it for the library, and it handed out the whole project folder
+  (`/serve.js`, `/local.json`, `/library/index.json`): it now answers only its own address
+  (403 otherwise; a plain link to the app from another page still opens it), a JSON or WAV
+  body must say what it is (415), a body over a route's limit is 413 on a quiet connection
+  instead of a socket reset, a `Host` the parser choked on no longer crashes the request,
+  and only `index.html`, `css/`, `js/`, `assets/` and each dataset's `LICENSE` and
+  `ATTRIBUTION.txt` are served — Learn's dataset line links the last two. A sloka saved
+  from Learn takes its duration and sample rate from the WAV's own header. `PORT=0` asks
+  the system for a free port, printed at start, which the new HTTP-level test of the server
+  uses on a temporary data folder.
 
 ### 1 November 2026
 

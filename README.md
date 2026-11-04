@@ -90,8 +90,28 @@ separated from its sidecar still says what it is. The names of people are kept o
 library altogether, in `profiles.json` at the data root: a sloka refers to a person by id and
 stores only their voice type and age group.
 
-The server binds to localhost only. Microphone access requires a "secure context", which
-localhost is, so do not open `index.html` directly from the file system.
+Every file the app writes is saved **whole or not at all**: the new content goes to a
+temporary name beside the file and is renamed over it only once it is on the disk, so a
+crash, a power cut or a laptop closed in the middle of a save leaves the old file as it
+was, never half a file. A temporary a save left behind is removed the next time the server
+starts. A file the app cannot read (a details file, a session, a quiz, `profiles.json`,
+`badges.json`, the index) is **kept, never overwritten**: it is renamed
+`<file>.broken-<date>-<time>` beside its place and named on the server's console, and the
+app goes on without it. A sloka whose details were unreadable gets fresh ones that say
+"details recovered" in the Library, and the original stays beside the WAV for you to look
+at. `library/index.json` is `{ "schemaVersion": "1.0.0", "records": [...] }`; an index in
+its older form, a plain list, is read and rewritten in this form once at start-up. Sessions
+and quizzes carry `schemaVersion` too; a sloka's details stay at 1.1.0. A sloka found on
+disk without an index entry takes its name, date and id from its details file when it has
+one, so a lost index rebuilds with every name intact.
+
+The server listens on 127.0.0.1 only and **answers only its own address**: a request whose
+`Host` is not this server, or that another page sent (a foreign `Origin`, a cross-site
+fetch), is refused with 403, and a JSON or WAV body must say what it is (`Content-Type`),
+else 415. It hands out only the app's own files (`index.html`, `css/`, `js/`, `assets/`)
+and each reference dataset's `LICENSE` and `ATTRIBUTION.txt`; everything else in the
+project folder, your library included, is 404. Microphone access requires a "secure
+context", which localhost is, so do not open `index.html` directly from the file system.
 
 ## Workflows
 
@@ -102,7 +122,9 @@ recording ("4 of 20 recorded", with a small bar). Open a chapter and its **verse
 as cards in order — the number, the first words, and a tick with the date when a recording
 exists, "not yet" when none does — the colophon last. "Next unrecorded" picks the first
 verse without a recording. One chapter is in view at a time, so a session never crosses a
-chapter boundary. The chapter last opened is remembered.
+chapter boundary. The chapter last opened is remembered. The line under the title names the
+dataset and how much of it is recorded, with links to its **licence** and **attribution**,
+which the server serves from the dataset's own folder.
 
 Choose a verse and the **record card** shows it: "Gītā 12.3 · भक्तियोग · verse 3 of 20",
 the text in the chosen script (with ◡ laghu and — guru when the marks are on), the chandas
@@ -1245,7 +1267,13 @@ derivation, voice measurements, sidecars, bext chunks, profiles) and the library
 Node's built-in test runner. `test/slips.test.js` holds the learner's slips as the
 simulations of 17 October 2026 exercised them: a pāda said twice and a pāda left out, judged
 from the words as Whisper actually wrote them (the compound split, a nasal changed) and from
-the sound of synthetic verses cut the same way.
+the sound of synthetic verses cut the same way. `test/serve.test.js` starts `serve.js`
+itself as a child process on a temporary data folder and a free port (`PORT=0`) and checks,
+at the HTTP level, what the server refuses (a foreign `Host` or `Origin`, a cross-site
+fetch, an unlabelled body, a body over the limit, a path outside the app's files) and what
+it keeps (a damaged `profiles.json` beside its quarantine name, an index in the old form
+rewritten once, a session from before versions still listed, a sloka's name read from its
+details); `test/datafile.test.js` and `test/edge.test.js` cover the two modules it rests on.
 
 ### Simulated slips, end to end
 
@@ -1273,8 +1301,12 @@ Chrome's "slokabhyasa-sim-profile".
 ## Layout
 
 ```
-serve.js               local server: static files + /api/baselines, /api/folders, /api/quizzes, /api/sessions,
-                       /api/assessments, /api/profiles
+serve.js               local server: the app's files + /api/baselines, /api/folders, /api/quizzes, /api/sessions,
+                       /api/assessments, /api/profiles, /api/badges, /api/reference; answers only its own address
+edge.js                which requests the server answers: the Host, Origin and Sec-Fetch-Site checks, the body
+                       labels, the static allowlist (pure, Node-testable)
+datafile.js            how the data folder's files are saved (whole or not at all) and read (damage kept as
+                       .broken-…, never overwritten); the library index in both its forms
 meta-store.js          server side of the details: sidecar files, audio hash, bext chunk, profiles.json
 index.html, css/       the single-page UI
 assets/                the logo (sidebar mark, favicon, README)
@@ -1312,7 +1344,7 @@ tools/second-opinion.mjs  the cuts found from a kept take's whole recording agai
 tools/debug-note.mjs   a debug note for a kept take of several slokas, as HTML in research_notes/debug-notes/ (the private research-notes repository): the verdicts, every sloka's three windows (the ear's, the second opinion's, by sound) and the one used, the second opinion in full, the ear's log, and replay logs when given
 tools/place-by-sound.mjs  a measurement, not part of the app: every recital since a date placed by sound alone, in order (each sloka's reference located in the take, the surest fixed first, the rest in the room their order leaves), by the library recording and by the learner's own solo take, with the ear's and the second opinion's cuts beside them and a tally
 tools/note-md.mjs      Markdown twins of the HTML debug notes (research_notes/debug-notes/<name>.md beside each page) for agents and search tools; writes the missing ones, --force rewrites all; tools/debug-note.mjs calls it for the take notes
-test/                  synthetic signal generators and the DSP tests
+test/                  synthetic signal generators and the DSP tests; serve.test.js starts the real server on a temporary data folder
 reports/               the research the presets and the details file follow
 RELEASE-NOTES.md       what changed in each packaged version, and since the last one
 

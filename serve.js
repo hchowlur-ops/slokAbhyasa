@@ -7,13 +7,19 @@
 //   node serve.js            → http://127.0.0.1:8787
 //   node serve.js --open     → the same, and the browser is opened on it (the launcher of
 //                              the packaged app uses this; see tools/package.mjs)
-//   PORT=9000 node serve.js  → custom port
+//   PORT=9000 node serve.js  → custom port; PORT=0 asks the system for a free one (printed)
+//
+// The server answers only its own address (edge.js: the Host, the Origin and the browser's
+// Sec-Fetch-Site are checked before any route), hands out only the app's own files and each
+// dataset's licence files, and writes every file of the data folder through datafile.js, so
+// an interruption never leaves half a file and a damaged file is kept, never overwritten.
 
 import http from 'node:http';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
+import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 import { trimSilence } from './js/dsp/trim.js';
 import { decodeWav, encodeWavBytes } from './js/wav.js';
@@ -30,6 +36,8 @@ import { transliterateTranscript } from './js/translit.js';
 import { assessmentsFromQuiz, assessmentFromSession, byDateDesc } from './js/reports.js';
 import { chandasForRecord } from './js/chandas.js';
 import { computeBadges, quizBadges, coverageBadges, diffBadges, mergeBadges, DEFAULT_RULE, BADGES_VERSION } from './js/badges.js';
+import { writeFileAtomic, writeJsonAtomic, copyFileAtomic, readJsonFile, readLibraryIndex, writeLibraryIndex, sweepTemp, stamp, SESSION_VERSION, QUIZ_VERSION } from './datafile.js';
+import { HttpError, parsePort, parseRequestUrl, refusal, bodyTypeAllowed, staticTarget } from './edge.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const DATA = resolveDataDir(ROOT);
@@ -42,7 +50,9 @@ const BADGES = path.join(DATA, 'badges.json');
 const REFERENCE_DIRS = resolveReferenceDirs(ROOT);
 initReference(REFERENCE_DIRS, { customDir: path.join(DATA, 'reference') }); // customisations beside the data, the datasets themselves read-only
 const HOST = '127.0.0.1';
-const PORT = Number(process.env.PORT) || 8787;
+const PORT_WANTED = parsePort(process.env.PORT);
+if (PORT_WANTED.warning) console.log(PORT_WANTED.warning);
+let port = PORT_WANTED.port; // the port actually listened on, learnt when the server is up (PORT=0 asks the system for one)
 const MAX_UPLOAD = 512 * 1024 * 1024; // 512 MB
 
 const MIME = {
@@ -66,7 +76,12 @@ async function ensureLibrary() {
   await fsp.mkdir(LIB, { recursive: true });
   await fsp.mkdir(QUIZZES, { recursive: true });
   await fsp.mkdir(SESSIONS, { recursive: true });
-  try { await fsp.access(INDEX); } catch { await fsp.writeFile(INDEX, '[]\n'); }
+  await sweepTemp(DATA); // a save that died left its temporary behind
+  // the index in its old form (a plain list) is rewritten once in the versioned form; a
+  // damaged or missing one starts empty and is rebuilt from the WAVs and their details below
+  const index = await readLibraryIndex(INDEX);
+  if (index.legacy) { await writeLibraryIndex(INDEX, index.records); console.log('library: index.json rewritten in its versioned form'); }
+  else if (index.broken || !(await fileExists(INDEX))) await writeLibraryIndex(INDEX, []);
   await syncIndex();
 }
 
@@ -151,16 +166,21 @@ async function syncIndex() {
       if (!info) { changes.push(`${f} skipped: not a readable WAV`); continue; }
       let stat = null;
       try { stat = await fsp.stat(path.join(LIB, f)); } catch { stat = null; }
-      const id = parsed && !ids.has(parsed.id) ? parsed.id : newId();
+      // the details beside the WAV, when there are some, know the sloka's name, date, source
+      // and id better than its file name does (an index lost and rebuilt keeps every name)
+      let meta = null;
+      try { meta = await readMeta(path.join(LIB, ...f.split('/'))); } catch { meta = null; }
+      const known = meta && typeof meta.id === 'string' && meta.id ? meta.id : parsed ? parsed.id : null;
+      const id = known && !ids.has(known) ? known : newId();
       ids.add(id);
       const rec = {
         id,
-        name: nameFromSlug(parsed ? parsed.slug : base.replace(/\.wav$/i, ''), base),
+        name: meta && typeof meta.name === 'string' && meta.name.trim() ? meta.name.trim().slice(0, 80) : nameFromSlug(parsed ? parsed.slug : base.replace(/\.wav$/i, ''), base),
         file: f,
-        createdAt: (stat ? stat.mtime : new Date()).toISOString(),
+        createdAt: meta && typeof meta.createdAt === 'string' && meta.createdAt ? meta.createdAt : (stat ? stat.mtime : new Date()).toISOString(),
         duration: info.duration,
         sampleRate: info.sampleRate,
-        source: 'file',
+        source: meta && meta.source === 'mic' ? 'mic' : 'file',
       };
       list.push(rec);
       used.add(f);
@@ -190,13 +210,10 @@ async function moveRecord(r, folder) {
   return r;
 }
 
+// The index's records (datafile.js reads both its forms; a damaged file is quarantined and the
+// index rebuilt by syncIndex; a file that cannot be opened throws, and the request fails).
 async function readIndex() {
-  try {
-    const list = JSON.parse(await fsp.readFile(INDEX, 'utf8'));
-    return Array.isArray(list) ? list : [];
-  } catch {
-    return [];
-  }
+  return (await readLibraryIndex(INDEX)).records;
 }
 
 let indexLock = Promise.resolve();
@@ -207,7 +224,7 @@ function withIndex(fn) {
     const before = JSON.stringify(list, null, 2);
     const out = await fn(list);
     const after = JSON.stringify(list, null, 2);
-    if (after !== before) await fsp.writeFile(INDEX, after + '\n');
+    if (after !== before) await writeLibraryIndex(INDEX, list);
     return out;
   });
   indexLock = run.catch(() => {});
@@ -226,12 +243,7 @@ function slug(name) {
   return s || 'sloka';
 }
 
-function newId() {
-  const d = new Date();
-  const p = (n) => String(n).padStart(2, '0');
-  const stamp = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
-  return `${stamp}-${Math.random().toString(36).slice(2, 6)}`;
-}
+const newId = () => `${stamp()}-${Math.random().toString(36).slice(2, 6)}`; // 20261015-071530-ab3f
 
 const audioPath = (rec) => path.join(LIB, ...rec.file.split('/'));
 const featuresPath = (rec) => path.join(LIB, ...rec.file.replace(/\.wav$/i, '.features.json').split('/'));
@@ -239,7 +251,6 @@ const transcriptPath = (rec) => path.join(LIB, ...rec.file.replace(/\.wav$/i, '.
 const textPath = (rec) => path.join(LIB, ...rec.file.replace(/\.wav$/i, '.txt').split('/'));
 // Copies a record's WAV and sidecars into library/backup (the trim's untouched original, when
 // there is one, is left alone: the copy gets a "-replaced-<stamp>" suffix).
-const stamp = () => new Date().toISOString().replace(/[-:]/g, '').replace(/\..*$/, '').replace('T', '-'); // 20261015-071530
 async function backupRecord(rec) {
   const backupDir = path.join(LIB, 'backup');
   let target = path.join(backupDir, ...rec.file.split('/'));
@@ -247,7 +258,7 @@ async function backupRecord(rec) {
   await fsp.mkdir(path.dirname(target), { recursive: true });
   const side = (p, ext) => p.replace(/\.wav$/i, ext);
   const pairs = [[audioPath(rec), target], [featuresPath(rec), side(target, '.features.json')], [transcriptPath(rec), side(target, '.transcript.json')], [textPath(rec), side(target, '.txt')], [side(audioPath(rec), '.json'), side(target, '.json')]];
-  for (const [from, to] of pairs) { if (await fileExists(from)) await fsp.copyFile(from, to); }
+  for (const [from, to] of pairs) { if (await fileExists(from)) await copyFileAtomic(from, to); }
 }
 
 // Reads the stored transcripts (one per language; see js/transcripts.js). If <name>.txt
@@ -271,12 +282,13 @@ async function readTranscripts(rec) {
   let store = null;
   let jStat = null;
   let tStat = null;
-  try { store = normalizeStore(JSON.parse(await fsp.readFile(jp, 'utf8'))); jStat = await fsp.stat(jp); } catch { store = null; }
+  const { value } = await readJsonFile(jp, { expect: 'object' }); // a damaged store is quarantined, then rebuilt from the .txt below when there is one
+  if (value) { try { store = normalizeStore(value); jStat = await fsp.stat(jp); } catch { store = null; } }
   try { tStat = await fsp.stat(tp); } catch { tStat = null; }
-  if (tStat && (!store || tStat.mtimeMs > jStat.mtimeMs + 1500)) {
+  if (tStat && (!store || !jStat || tStat.mtimeMs > jStat.mtimeMs + 1500)) {
     const edited = applyTextEdit(pickTranscript(store), await fsp.readFile(tp, 'utf8'), tStat.mtime.toISOString());
     store = putInStore(store, edited, { primary: true });
-    await fsp.writeFile(jp, JSON.stringify(store)); // JSON is now the newer file until the .txt is edited again
+    await writeJsonAtomic(jp, store, { compact: true }); // JSON is now the newer file until the .txt is edited again
   }
   // Transcripts made before romanised answers were written in their script (Kannada,
   // Telugu, Sanskrit in Latin letters) are rewritten once; a corrected one is left alone.
@@ -299,8 +311,8 @@ async function writeTranscripts(rec, store) {
     await fsp.rm(textPath(rec), { force: true });
     return;
   }
-  await fsp.writeFile(textPath(rec), transcriptToText(pickTranscript(store)));
-  await fsp.writeFile(transcriptPath(rec), JSON.stringify(store));
+  await writeFileAtomic(textPath(rec), transcriptToText(pickTranscript(store)));
+  await writeJsonAtomic(transcriptPath(rec), store, { compact: true });
 }
 
 function publicRecord(rec, meta = undefined) {
@@ -328,8 +340,11 @@ async function renameMeta(rec, name) {
 // Writes the WAV with a fresh bext chunk describing `meta`; the PCM identity is unchanged.
 async function writeWavWithBext(rec, bytes, meta) {
   const out = withBext(bytes, { description: bextDescription(meta), originatorRef: rec.id, date: meta.createdAt || new Date(), sampleRate: (meta.audio && meta.audio.sampleRate) || rec.sampleRate || 48000 });
-  await fsp.writeFile(audioPath(rec), out);
+  await writeFileAtomic(audioPath(rec), out);
 }
+
+// A file's object with its version first (an old file without one gets it on its next save).
+const versioned = (version, obj) => { const { schemaVersion, ...rest } = obj; return { schemaVersion: version, ...rest }; };
 
 // ---------- quizzes ----------
 // One JSON file per quiz in ./quizzes: the picked slokas, the chosen score categories and
@@ -341,9 +356,9 @@ const QUIZ_ID = /^\d{8}-\d{6}-[a-z0-9]{4}$/;
 
 async function readQuiz(id) {
   if (!QUIZ_ID.test(id)) return null;
-  try { return JSON.parse(await fsp.readFile(quizPath(id), 'utf8')); } catch { return null; }
+  return (await readJsonFile(quizPath(id), { expect: 'object' })).value; // a damaged quiz is quarantined and named on the console
 }
-async function writeQuiz(q) { await fsp.writeFile(quizPath(q.id), JSON.stringify(q, null, 2) + '\n'); }
+async function writeQuiz(q) { await writeJsonAtomic(quizPath(q.id), versioned(QUIZ_VERSION, q)); }
 async function listQuizzes() {
   let names = [];
   try { names = await fsp.readdir(QUIZZES); } catch { return []; }
@@ -382,17 +397,16 @@ const cleanItems = (items) => (Array.isArray(items) ? items : [])
 async function handleQuizzes(req, res, parts) {
   const id = parts[2];
   const sub = parts[3];
-  const json = async (limit = 5e6) => { try { return JSON.parse((await readBody(req, limit)).toString('utf8')); } catch { return null; } };
 
   if (!id && req.method === 'GET') return sendJson(res, 200, await listQuizzes());
   if (!id && req.method === 'POST') {
-    const body = await json();
-    if (!body || typeof body !== 'object') return sendJson(res, 400, { error: 'Invalid JSON' });
+    const body = await readJson(req, 5e6);
     const name = String(body.name || '').trim().slice(0, 120);
     const items = cleanItems(body.items);
     if (!name) return sendJson(res, 400, { error: 'A quiz needs a name' });
     if (!items.length) return sendJson(res, 400, { error: 'A quiz needs at least one sloka' });
     const q = {
+      schemaVersion: QUIZ_VERSION,
       id: newId(),
       name,
       createdAt: new Date().toISOString(),
@@ -413,8 +427,8 @@ async function handleQuizzes(req, res, parts) {
 
   // POST /api/quizzes/:id/attempts  {at, takeDuration, categories, score, byCategory, items}
   if (sub === 'attempts' && req.method === 'POST') {
-    const a = await json();
-    if (!a || typeof a !== 'object' || !a.byCategory || typeof a.byCategory !== 'object') return sendJson(res, 400, { error: 'An attempt needs byCategory scores' });
+    const a = await readJson(req, 5e6);
+    if (!a.byCategory || typeof a.byCategory !== 'object') return sendJson(res, 400, { error: 'An attempt needs byCategory scores' });
     const attempt = {
       at: typeof a.at === 'string' ? a.at : new Date().toISOString(),
       takeDuration: Number(a.takeDuration) || 0,
@@ -450,10 +464,10 @@ async function handleQuizzes(req, res, parts) {
     if (!Number.isInteger(n) || n < 1 || n > attempts.length) return sendJson(res, 404, { error: 'No such attempt' });
     const p = attemptAudioPath(id, n);
     if (req.method === 'PUT') {
-      const body = await readBody(req);
+      const body = await readWav(req);
       if (!isWav(body)) return sendJson(res, 400, { error: 'Body must be a RIFF/WAVE file' });
       await fsp.mkdir(path.dirname(p), { recursive: true });
-      await fsp.writeFile(p, body);
+      await writeFileAtomic(p, body);
       attempts[n - 1].audio = path.basename(p);
       await writeQuiz(q);
       return sendJson(res, 200, { ok: true, file: path.relative(QUIZZES, p).replace(/\\/g, '/') });
@@ -463,7 +477,7 @@ async function handleQuizzes(req, res, parts) {
       try { stat = await fsp.stat(p); } catch { return sendJson(res, 404, { error: 'No recording kept for this attempt' }); }
       res.writeHead(200, { 'Content-Type': 'audio/wav', 'Content-Length': stat.size, 'Cache-Control': 'no-store' });
       if (req.method === 'HEAD') return res.end();
-      return fs.createReadStream(p).pipe(res);
+      return sendFile(res, fs.createReadStream(p));
     }
     return sendJson(res, 405, { error: 'Method not allowed' });
   }
@@ -471,8 +485,7 @@ async function handleQuizzes(req, res, parts) {
 
   if (req.method === 'GET') return sendJson(res, 200, q);
   if (req.method === 'PATCH') {
-    const patch = await json(1e6);
-    if (!patch || typeof patch !== 'object') return sendJson(res, 400, { error: 'Invalid JSON' });
+    const patch = await readJson(req, 1e6);
     if (patch.categories !== undefined) q.categories = normalizeCategories(patch.categories);
     if (typeof patch.name === 'string' && patch.name.trim()) q.name = patch.name.trim().slice(0, 120);
     await writeQuiz(q);
@@ -495,9 +508,9 @@ const sessionPath = (id) => path.join(SESSIONS, `${id}.json`);
 const sessionAudioPath = (id) => path.join(SESSIONS, id, 'take.wav');
 async function readSession(id) {
   if (!QUIZ_ID.test(id)) return null;
-  try { return JSON.parse(await fsp.readFile(sessionPath(id), 'utf8')); } catch { return null; }
+  return (await readJsonFile(sessionPath(id), { expect: 'object' })).value; // a damaged session is quarantined and named on the console
 }
-async function writeSession(s) { await fsp.writeFile(sessionPath(s.id), JSON.stringify(s, null, 2) + '\n'); }
+async function writeSession(s) { await writeJsonAtomic(sessionPath(s.id), versioned(SESSION_VERSION, s)); }
 async function listSessions() {
   let names = [];
   try { names = await fsp.readdir(SESSIONS); } catch { return []; }
@@ -529,12 +542,11 @@ function sessionFields(body, s) {
 async function handleSessions(req, res, parts) {
   const id = parts[2];
   const sub = parts[3];
-  const json = async (limit = 5e6) => { try { return JSON.parse((await readBody(req, limit)).toString('utf8')); } catch { return null; } };
   if (!id && req.method === 'GET') return sendJson(res, 200, (await listSessions()).sort(byDateDesc));
   if (!id && req.method === 'POST') {
-    const body = await json();
-    if (!body || typeof body !== 'object') return sendJson(res, 400, { error: 'Invalid JSON' });
+    const body = await readJson(req, 5e6);
     const s = sessionFields(body, {
+      schemaVersion: SESSION_VERSION,
       id: newId(),
       kind: body.kind === 'teach' ? 'teach' : 'evaluation',
       at: typeof body.at === 'string' ? body.at : new Date().toISOString(),
@@ -553,10 +565,10 @@ async function handleSessions(req, res, parts) {
   if (sub === 'audio') {
     const p = sessionAudioPath(id);
     if (req.method === 'PUT') {
-      const body = await readBody(req);
+      const body = await readWav(req);
       if (!isWav(body)) return sendJson(res, 400, { error: 'Body must be a RIFF/WAVE file' });
       await fsp.mkdir(path.dirname(p), { recursive: true });
-      await fsp.writeFile(p, body);
+      await writeFileAtomic(p, body);
       const fresh = (await readSession(id)) || s; // the session as it is now: the ear's log may have been written meanwhile
       fresh.audio = 'take.wav';
       await writeSession(fresh);
@@ -567,7 +579,7 @@ async function handleSessions(req, res, parts) {
       try { stat = await fsp.stat(p); } catch { return sendJson(res, 404, { error: 'No recording kept for this session' }); }
       res.writeHead(200, { 'Content-Type': 'audio/wav', 'Content-Length': stat.size, 'Cache-Control': 'no-store' });
       if (req.method === 'HEAD') return res.end();
-      return fs.createReadStream(p).pipe(res);
+      return sendFile(res, fs.createReadStream(p));
     }
     return sendJson(res, 405, { error: 'Method not allowed' });
   }
@@ -575,10 +587,10 @@ async function handleSessions(req, res, parts) {
   if (sub === 'ear') {
     const p = path.join(SESSIONS, id, 'ear.json');
     if (req.method === 'PUT') {
-      const body = await json(20e6);
-      if (!body || typeof body !== 'object' || !Array.isArray(body.rows)) return sendJson(res, 400, { error: 'Body must be an ear log' });
+      const body = await readJson(req, 20e6);
+      if (!Array.isArray(body.rows)) return sendJson(res, 400, { error: 'Body must be an ear log' });
       await fsp.mkdir(path.dirname(p), { recursive: true });
-      await fsp.writeFile(p, JSON.stringify(body));
+      await writeJsonAtomic(p, body, { compact: true });
       const fresh = (await readSession(id)) || s; // the recording may have been written meanwhile
       fresh.earLog = 'ear.json';
       await writeSession(fresh);
@@ -595,8 +607,7 @@ async function handleSessions(req, res, parts) {
   if (sub) return sendJson(res, 404, { error: 'Not found' });
   if (req.method === 'GET') return sendJson(res, 200, s);
   if (req.method === 'PUT' || req.method === 'PATCH') {
-    const body = await json();
-    if (!body || typeof body !== 'object') return sendJson(res, 400, { error: 'Invalid JSON' });
+    const body = await readJson(req, 5e6);
     sessionFields(body, s);
     await writeSession(s);
     return sendJson(res, 200, s);
@@ -633,9 +644,8 @@ async function handleFolders(req, res) {
     return sendJson(res, 200, (await listFolders()).map((f) => ({ path: f, count: counts.get(f) || 0 })));
   }
   if (req.method === 'POST') {
-    let body;
-    try { body = JSON.parse((await readBody(req, 1e5)).toString('utf8')); } catch { return sendJson(res, 400, { error: 'Invalid JSON' }); }
-    const folder = cleanFolder(body && body.name);
+    const body = await readJson(req, 1e5);
+    const folder = cleanFolder(body.name);
     if (!folder) return sendJson(res, 400, { error: 'That is not a usable folder name' });
     await fsp.mkdir(path.join(LIB, folder), { recursive: true });
     return sendJson(res, 201, { path: folder });
@@ -650,22 +660,61 @@ function send(res, status, body, headers = {}) {
   res.end(body);
 }
 
-function sendJson(res, status, obj) {
-  send(res, status, JSON.stringify(obj), { 'Content-Type': 'application/json; charset=utf-8' });
+function sendJson(res, status, obj, headers = {}) {
+  send(res, status, JSON.stringify(obj), { 'Content-Type': 'application/json; charset=utf-8', ...headers });
 }
 
+// Streams a file into the response. An error once the headers are out (a file removed
+// between its stat and its open, a client gone) ends the response and is logged; before
+// them it is thrown and answered as any other.
+async function sendFile(res, stream) {
+  try { await pipeline(stream, res); } catch (err) {
+    if (!res.headersSent) throw err;
+    res.destroy();
+    console.error(`sending a file → ${err.message}`);
+  }
+}
+
+const limitLabel = (limit) => (limit >= 1e6 ? `${limit / 1e6} MB` : `${limit / 1e3} KB`);
+
+// The whole body, up to `limit` bytes. Past the limit the rest is read and dropped so the
+// 413 can be answered on a quiet connection, instead of a socket reset the client reads as a
+// network failure.
 function readBody(req, limit = MAX_UPLOAD) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let size = 0;
+    let over = false;
     req.on('data', (c) => {
+      if (over) return;
       size += c.length;
-      if (size > limit) { reject(new Error('Upload too large')); req.destroy(); return; }
+      if (size > limit) { over = true; chunks.length = 0; return; }
       chunks.push(c);
     });
-    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('end', () => (over ? reject(new HttpError(413, `The body is too large (limit ${limitLabel(limit)})`)) : resolve(Buffer.concat(chunks))));
     req.on('error', reject);
   });
+}
+
+// Whether the request says it carries a body at all (a POST with none, as a tool may send, is allowed to be empty).
+const declaresBody = (req) => !!(req.headers['transfer-encoding'] || (req.headers['content-length'] && req.headers['content-length'] !== '0'));
+
+// A JSON object body: labelled application/json (else 415), within `limit` (else 413),
+// parsable (else 400) and an object (else 400); an empty body is {} when `allowEmpty`.
+async function readJson(req, limit, { allowEmpty = false } = {}) {
+  if (declaresBody(req) && !bodyTypeAllowed(req.headers['content-type'], 'json')) throw new HttpError(415, 'The body must be JSON (Content-Type: application/json)');
+  const raw = await readBody(req, limit);
+  if (!raw.length) { if (allowEmpty) return {}; throw new HttpError(400, 'The body must be JSON'); }
+  let value;
+  try { value = JSON.parse(raw.toString('utf8')); } catch { throw new HttpError(400, 'The body must be JSON'); }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new HttpError(400, 'The body must be a JSON object');
+  return value;
+}
+
+// A WAV body: labelled as one (else 415), within MAX_UPLOAD; the handler checks the bytes.
+async function readWav(req) {
+  if (!bodyTypeAllowed(req.headers['content-type'], 'wav')) throw new HttpError(415, 'The body must be a WAV file (Content-Type: audio/wav)');
+  return readBody(req, MAX_UPLOAD);
 }
 
 function isWav(buf) {
@@ -695,12 +744,10 @@ async function fileExists(p) {
 // learner's profile id (names stay in profiles.json). Awarded on each attempt, idempotent;
 // rebuilt whole by a recompute (the tool, or a change of the rule).
 async function readBadges() {
-  try {
-    const b = JSON.parse(await fsp.readFile(BADGES, 'utf8'));
-    return { rule: { ...DEFAULT_RULE, ...(b && b.rule && typeof b.rule === 'object' ? { differentDays: !!b.rule.differentDays } : {}) }, badges: b && Array.isArray(b.badges) ? b.badges : [] };
-  } catch { return { rule: { ...DEFAULT_RULE }, badges: [] }; }
+  const { value: b } = await readJsonFile(BADGES, { expect: 'object' }); // a damaged file is quarantined; the badges are derived and come back on the next recompute
+  return { rule: { ...DEFAULT_RULE, ...(b && b.rule && typeof b.rule === 'object' ? { differentDays: !!b.rule.differentDays } : {}) }, badges: b && Array.isArray(b.badges) ? b.badges : [] };
 }
-async function writeBadges(store) { await fsp.writeFile(BADGES, JSON.stringify({ schemaVersion: BADGES_VERSION, rule: store.rule, badges: store.badges }, null, 2) + '\n'); }
+async function writeBadges(store) { await writeJsonAtomic(BADGES, { schemaVersion: BADGES_VERSION, rule: store.rule, badges: store.badges }); }
 let badgesLock = Promise.resolve();
 function withBadges(fn) {
   const run = badgesLock.then(async () => {
@@ -753,12 +800,7 @@ async function handleBadges(req, res, parts, url) {
     return sendJson(res, 200, { rule: store.rule, badges: learner ? store.badges.filter((b) => b.learner === learner) : store.badges });
   }
   if (sub === 'recompute' && req.method === 'POST') return sendJson(res, 200, await recomputeBadges());
-  if (!sub && req.method === 'PATCH') {
-    let body = null;
-    try { body = JSON.parse((await readBody(req, 1e5)).toString('utf8')); } catch { body = null; }
-    if (!body || typeof body !== 'object') return sendJson(res, 400, { error: 'Invalid JSON' });
-    return sendJson(res, 200, await recomputeBadges(body));
-  }
+  if (!sub && req.method === 'PATCH') return sendJson(res, 200, await recomputeBadges(await readJson(req, 1e5)));
   return sendJson(res, 405, { error: 'Method not allowed' });
 }
 
@@ -782,29 +824,27 @@ function withProfiles(fn) {
 async function handleProfiles(req, res, parts) {
   const id = parts[2];
   const sub = parts[3];
-  const json = async () => { try { return JSON.parse((await readBody(req, 1e5)).toString('utf8')); } catch { return null; } };
   // GET / PUT /api/profiles/:id/speaker-lines — the learner's speaker-line templates
   // (js/dsp/speakerlines.js), one document per learner in <data>/speaker-lines
   if (id && sub === 'speaker-lines') {
     if (!/^[a-zA-Z0-9_-]+$/.test(id)) return sendJson(res, 400, { error: 'Bad id' });
     const p = path.join(DATA, 'speaker-lines', `${id}.json`);
     if (req.method === 'GET') {
-      try { return sendJson(res, 200, JSON.parse(await fsp.readFile(p, 'utf8'))); } catch { return sendJson(res, 200, { version: 1, phrases: {} }); }
+      const { value } = await readJsonFile(p, { expect: 'object' }); // a damaged document is quarantined; the templates are learnt again
+      return sendJson(res, 200, value || { version: 1, phrases: {} });
     }
     if (req.method === 'PUT') {
-      let body = null;
-      try { body = JSON.parse((await readBody(req, 4e6)).toString('utf8')); } catch { body = null; }
-      if (!body || typeof body !== 'object' || !body.phrases || typeof body.phrases !== 'object') return sendJson(res, 400, { error: 'Body must be a speaker-lines document' });
+      const body = await readJson(req, 4e6);
+      if (!body.phrases || typeof body.phrases !== 'object') return sendJson(res, 400, { error: 'Body must be a speaker-lines document' });
       await fsp.mkdir(path.dirname(p), { recursive: true });
-      await fsp.writeFile(p, JSON.stringify(body));
+      await writeJsonAtomic(p, body, { compact: true });
       return sendJson(res, 200, { ok: true });
     }
     return sendJson(res, 405, { error: 'Method not allowed' });
   }
   if (!id && req.method === 'GET') return sendJson(res, 200, await readProfiles(PROFILES));
   if (!id && req.method === 'POST') {
-    const body = await json();
-    if (!body) return sendJson(res, 400, { error: 'Invalid JSON' });
+    const body = await readJson(req, 1e5);
     const { profile, error } = sanitizeProfile(body);
     if (error) return sendJson(res, 400, { error });
     await withProfiles((list) => { list.push(profile); });
@@ -812,8 +852,7 @@ async function handleProfiles(req, res, parts) {
   }
   if (!id) return sendJson(res, 405, { error: 'Method not allowed' });
   if (req.method === 'PATCH') {
-    const body = await json();
-    if (!body) return sendJson(res, 400, { error: 'Invalid JSON' });
+    const body = await readJson(req, 1e5);
     const updated = await withProfiles((list) => {
       const i = list.findIndex((p) => p.id === id);
       if (i < 0) return null;
@@ -927,19 +966,14 @@ async function handleReference(req, res, parts) {
   if (sub === 'verses' && arg && sub2 === 'custom') {
     const vid = decodeURIComponent(arg);
     if (!referenceVerse(ds, vid)) return sendJson(res, 404, { error: `No verse "${vid}"` });
-    if (req.method === 'PUT') {
-      let body;
-      try { body = JSON.parse((await readBody(req, 1e6)).toString('utf8')); } catch { return sendJson(res, 400, { error: 'The customisation must be JSON' }); }
-      return sendJson(res, 200, referenceSaveCustom(ds, vid, body));
-    }
+    if (req.method === 'PUT') return sendJson(res, 200, referenceSaveCustom(ds, vid, await readJson(req, 1e6)));
     if (req.method === 'DELETE') return sendJson(res, 200, referenceSaveCustom(ds, vid, null));
     return sendJson(res, 405, { error: 'Method not allowed' });
   }
   // POST /api/reference/:ds/words {ids?} → every linked recording's transcript made of its verse's lines again
   if (sub === 'words') {
     if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
-    let body = {};
-    try { const raw = await readBody(req, 1e6); body = raw.length ? JSON.parse(raw.toString('utf8')) : {}; } catch { return sendJson(res, 400, { error: 'The request must be JSON' }); }
+    const body = await readJson(req, 1e6, { allowEmpty: true });
     const want = Array.isArray(body.ids) ? new Set(body.ids) : null;
     const report = { written: [], skipped: [] };
     for (const rec of await readIndex()) {
@@ -955,8 +989,7 @@ async function handleReference(req, res, parts) {
   }
   if (sub === 'map') {
     if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
-    let body = {};
-    try { const raw = await readBody(req, 1e6); body = raw.length ? JSON.parse(raw.toString('utf8')) : {}; } catch { return sendJson(res, 400, { error: 'The request must be JSON' }); }
+    const body = await readJson(req, 1e6, { allowEmpty: true });
     const want = Array.isArray(body.ids) ? new Set(body.ids) : null;
     const write = body.write !== false;
     const report = { mapped: [], doubtful: [], unmapped: [], linked: 0 };
@@ -1020,11 +1053,14 @@ async function handleApi(req, res, url) {
     return sendJson(res, 200, out);
   }
 
-  // POST /api/baselines?name=&duration=&sampleRate=&source=   (body: WAV bytes)
-  // The sidecar starts with what the file says; the app fills in the rest with PUT …/meta.
+  // POST /api/baselines?name=&source=&folder=   (body: WAV bytes, labelled audio/wav)
+  // The record's duration and sample rate are read from the WAV's own header. The sidecar
+  // starts with what the file says; the app fills in the rest with PUT …/meta.
   if (!id && req.method === 'POST') {
-    const body = await readBody(req);
+    const body = await readWav(req);
     if (!isWav(body)) return sendJson(res, 400, { error: 'Body must be a RIFF/WAVE file' });
+    const info = audioInfo(body);
+    if (!info) return sendJson(res, 400, { error: 'The body must be a WAV file with a readable header' });
     const name = (url.searchParams.get('name') || 'Untitled').trim().slice(0, 80) || 'Untitled';
     const folder = cleanFolder(url.searchParams.get('folder') || '');
     if (folder === null) return sendJson(res, 400, { error: 'That is not a usable folder name' });
@@ -1042,13 +1078,13 @@ async function handleApi(req, res, url) {
       name,
       file: '',
       createdAt: new Date().toISOString(),
-      duration: Number(url.searchParams.get('duration')) || 0,
-      sampleRate: Number(url.searchParams.get('sampleRate')) || 0,
+      duration: info.durationSec,
+      sampleRate: info.sampleRate,
       source: url.searchParams.get('source') === 'file' ? 'file' : 'mic',
     };
     rec.file = `${folder ? folder + '/' : ''}${slug(name)}-${rec.id}.wav`;
     await fsp.mkdir(path.join(LIB, folder), { recursive: true });
-    let meta = sanitizeMeta({ name, source: rec.source }, { id: rec.id, createdAt: rec.createdAt, audio: audioInfo(body) });
+    let meta = sanitizeMeta({ name, source: rec.source }, { id: rec.id, createdAt: rec.createdAt, audio: info });
     await writeWavWithBext(rec, body, meta);
     await writeMeta(audioPath(rec), meta);
     await withIndex((list) => { list.push(rec); });
@@ -1094,11 +1130,11 @@ async function handleApi(req, res, url) {
         'Content-Length': range.end - range.start + 1,
       });
       if (req.method === 'HEAD') return res.end();
-      return fs.createReadStream(p, { start: range.start, end: range.end }).pipe(res);
+      return sendFile(res, fs.createReadStream(p, { start: range.start, end: range.end }));
     }
     res.writeHead(200, { ...headers, 'Content-Length': stat.size });
     if (req.method === 'HEAD') return res.end();
-    return fs.createReadStream(p).pipe(res);
+    return sendFile(res, fs.createReadStream(p));
   }
 
   // GET / PUT /api/baselines/:id/features
@@ -1107,12 +1143,14 @@ async function handleApi(req, res, url) {
     if (req.method === 'GET') {
       if (!(await fileExists(p))) return sendJson(res, 404, { error: 'No cached features' });
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
-      return fs.createReadStream(p).pipe(res);
+      return sendFile(res, fs.createReadStream(p));
     }
     if (req.method === 'PUT') {
+      // the cache can be hundreds of megabytes: the bytes are kept as sent once they parse
+      if (!bodyTypeAllowed(req.headers['content-type'], 'json')) throw new HttpError(415, 'The body must be JSON (Content-Type: application/json)');
       const body = await readBody(req);
       try { JSON.parse(body.toString('utf8')); } catch { return sendJson(res, 400, { error: 'Features must be JSON' }); }
-      await fsp.writeFile(p, body);
+      await writeFileAtomic(p, body);
       return sendJson(res, 200, { ok: true });
     }
     if (req.method === 'DELETE') {
@@ -1134,7 +1172,7 @@ async function handleApi(req, res, url) {
       const backupDir = path.join(LIB, 'backup');
       await fsp.mkdir(backupDir, { recursive: true });
       const backup = path.join(backupDir, rec.file);
-      if (!(await fileExists(backup))) { await fsp.mkdir(path.dirname(backup), { recursive: true }); await fsp.copyFile(audioPath(rec), backup); }
+      if (!(await fileExists(backup))) { await fsp.mkdir(path.dirname(backup), { recursive: true }); await copyFileAtomic(audioPath(rec), backup); }
       const trimmed = encodeWavBytes(t.samples, sampleRate);
       // the sidecar records the edit and follows the new audio
       const meta = (await readMeta(audioPath(rec))) || sanitizeMeta({ name: rec.name, source: rec.source }, { id: rec.id, createdAt: rec.createdAt });
@@ -1169,9 +1207,8 @@ async function handleApi(req, res, url) {
       return sendJson(res, 200, publicStore(store));
     }
     if (req.method === 'PUT') {
-      let body;
-      try { body = JSON.parse((await readBody(req, 5e6)).toString('utf8')); } catch { return sendJson(res, 400, { error: 'Transcript must be JSON' }); }
-      if (!body || typeof body !== 'object' || typeof body.text !== 'string') return sendJson(res, 400, { error: 'Transcript needs a text field' });
+      let body = await readJson(req, 5e6);
+      if (typeof body.text !== 'string') return sendJson(res, 400, { error: 'Transcript needs a text field' });
       if (!body.text.trim() && !(Array.isArray(body.chunks) && body.chunks.some((c) => c && String(c.text || '').trim()))) return sendJson(res, 400, { error: 'An empty transcript is not stored' });
       const primary = url.searchParams.get('primary') !== '0';
       // a linked recording's words are the verse's: a hearing put here lends its timings, no more
@@ -1205,8 +1242,7 @@ async function handleApi(req, res, url) {
     const current = await ensureMeta(rec, audioPath(rec));
     if (req.method === 'DELETE') return sendJson(res, 200, await unlinkVerse(rec, current));
     if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
-    let body;
-    try { body = JSON.parse((await readBody(req, 1e5)).toString('utf8')); } catch { return sendJson(res, 400, { error: 'The link must be JSON' }); }
+    const body = await readJson(req, 1e5);
     const ds = referenceDataset(String(body.dataset || 'gita'));
     if (!ds || ds.errors.length) return sendJson(res, 404, { error: `No reference dataset "${body.dataset || 'gita'}"` });
     const entry = referenceVerse(ds, String(body.id || ''));
@@ -1221,9 +1257,7 @@ async function handleApi(req, res, url) {
     const current = await ensureMeta(rec, audioPath(rec));
     if (req.method === 'GET') return sendJson(res, 200, current);
     if (req.method === 'PUT' || req.method === 'PATCH') {
-      let body;
-      try { body = JSON.parse((await readBody(req, 2e6)).toString('utf8')); } catch { return sendJson(res, 400, { error: 'Metadata must be JSON' }); }
-      if (!body || typeof body !== 'object') return sendJson(res, 400, { error: 'Metadata must be an object' });
+      const body = await readJson(req, 2e6);
       const input = req.method === 'PATCH' ? body : { text: null, voice: null, measured: null, capture: null, ...body };
       const meta = sanitizeMeta(input, current);
       meta.name = rec.name; // the name is the library's
@@ -1240,9 +1274,8 @@ async function handleApi(req, res, url) {
 
   // POST /api/baselines/:id/move  {folder}
   if (sub === 'move' && req.method === 'POST') {
-    let body;
-    try { body = JSON.parse((await readBody(req, 1e5)).toString('utf8')); } catch { return sendJson(res, 400, { error: 'Invalid JSON' }); }
-    const folder = cleanFolder(body && body.folder);
+    const body = await readJson(req, 1e5);
+    const folder = cleanFolder(body.folder);
     if (folder === null) return sendJson(res, 400, { error: 'That is not a usable folder name' });
     if (!folder) return sendJson(res, 400, { error: 'Slokas are kept in folders: choose or create one' });
     const moved = await withIndex(async (l) => { const r = l.find((x) => x.id === id); return r ? moveRecord(r, folder) : null; });
@@ -1257,8 +1290,7 @@ async function handleApi(req, res, url) {
 
   // PATCH /api/baselines/:id  {name}
   if (req.method === 'PATCH') {
-    let patch;
-    try { patch = JSON.parse((await readBody(req, 1e6)).toString('utf8')); } catch { return sendJson(res, 400, { error: 'Invalid JSON' }); }
+    const patch = await readJson(req, 1e6);
     const name = String(patch.name || '').trim().slice(0, 80);
     if (!name) return sendJson(res, 400, { error: 'Name is required' });
     const updated = await withIndex(async (l) => {
@@ -1310,16 +1342,28 @@ async function handleApi(req, res, url) {
 
 // ---------- static ----------
 
+// Serves the app's own files (index.html, css/, js/, assets/) from the project folder and a
+// dataset's LICENSE and ATTRIBUTION.txt from the dataset's own folder (edge.js staticTarget
+// decides; a dataset dropped into the data folder works too). Everything else is 404.
 async function handleStatic(req, res, url) {
   if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, 'Method not allowed');
-  let rel = decodeURIComponent(url.pathname);
-  if (rel === '/' || rel === '') rel = '/index.html';
-  const abs = path.normalize(path.join(ROOT, rel));
-  if (!abs.startsWith(ROOT + path.sep) || path.basename(abs).startsWith('.')) return send(res, 403, 'Forbidden');
+  const target = staticTarget(url.pathname);
+  if (!target) return send(res, 404, 'Not found');
+  let abs;
+  let type;
+  if (target.kind === 'app') {
+    abs = path.normalize(path.join(ROOT, ...target.rel.split('/')));
+    if (!abs.startsWith(ROOT + path.sep)) return send(res, 404, 'Not found'); // belt and braces: the mapping admits no way out
+    type = MIME[path.extname(abs).toLowerCase()] || 'application/octet-stream';
+  } else {
+    const ds = referenceList().find((d) => d.id === target.dataset);
+    if (!ds) return send(res, 404, 'Not found');
+    abs = path.join(ds.dir, target.file);
+    type = 'text/plain; charset=utf-8'; // LICENSE has no extension: shown in the browser, not downloaded
+  }
   let stat;
   try { stat = await fsp.stat(abs); } catch { return send(res, 404, 'Not found'); }
-  if (stat.isDirectory()) return send(res, 404, 'Not found');
-  const type = MIME[path.extname(abs).toLowerCase()] || 'application/octet-stream';
+  if (!stat.isFile()) return send(res, 404, 'Not found');
   // Cross-origin isolation lets the speech model use multi-threaded WebAssembly.
   // "credentialless" keeps plain cross-origin loads working without CORP headers.
   res.writeHead(200, {
@@ -1330,47 +1374,57 @@ async function handleStatic(req, res, url) {
     'Cross-Origin-Embedder-Policy': 'credentialless',
   });
   if (req.method === 'HEAD') return res.end();
-  fs.createReadStream(abs).pipe(res);
+  return sendFile(res, fs.createReadStream(abs));
 }
 
 // ---------- server ----------
 
+// Every request: the target read against the fixed base, the edge's refusals, then the
+// route. A typed error (edge.js HttpError: 400, 403, 413, 415) is answered with its status
+// and sentence; anything else is a 500 with the error logged. A 413 closes the connection
+// after the answer. Once the headers are out, a failure can only end the response.
 const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host || HOST}`);
+  let url = null;
   try {
+    url = parseRequestUrl(req.url, port);
+    const refused = refusal(req.headers, port, req.method);
+    if (refused) throw refused;
     if (url.pathname.startsWith('/api/')) await handleApi(req, res, url);
     else await handleStatic(req, res, url);
   } catch (err) {
-    console.error(`${req.method} ${url.pathname} →`, err);
-    if (!res.headersSent) sendJson(res, 500, { error: err.message || 'Server error' });
-    else res.end();
+    const status = err instanceof HttpError ? err.status : 500;
+    if (status === 500) console.error(`${req.method} ${url ? url.pathname : req.url} →`, err);
+    else if (status === 403) console.log(`${req.method} ${url ? url.pathname : req.url} refused: ${err.message} (Host ${req.headers.host || '-'}, Origin ${req.headers.origin || '-'})`);
+    if (res.headersSent) { res.destroy(); return; }
+    sendJson(res, status, { error: err.message || 'Server error' }, status === 413 ? { Connection: 'close' } : {});
   }
 });
 
-const URL_HOME = `http://${HOST}:${PORT}/`;
+const urlHome = () => `http://${HOST}:${port}/`;
 const OPEN = process.argv.includes('--open');
 
 // Opens the page in the default browser, without waiting for it.
 function openBrowser() {
   // (the empty argument is start's window title; Node passes it to cmd as "")
-  const cmd = process.platform === 'win32' ? ['cmd', ['/c', 'start', '', URL_HOME]]
-    : process.platform === 'darwin' ? ['open', [URL_HOME]] : ['xdg-open', [URL_HOME]];
-  try { spawn(cmd[0], cmd[1], { stdio: 'ignore', detached: true }).unref(); } catch { console.log(`Open ${URL_HOME} in your browser.`); }
+  const cmd = process.platform === 'win32' ? ['cmd', ['/c', 'start', '', urlHome()]]
+    : process.platform === 'darwin' ? ['open', [urlHome()]] : ['xdg-open', [urlHome()]];
+  try { spawn(cmd[0], cmd[1], { stdio: 'ignore', detached: true }).unref(); } catch { console.log(`Open ${urlHome()} in your browser.`); }
 }
 
 await ensureLibrary();
 server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
     // Started twice (a double double-click, say): the first one is still serving.
-    console.log(`SlokAbhyasa is already running at ${URL_HOME}${OPEN ? ' — opening it.' : ''}`);
+    console.log(`SlokAbhyasa is already running at ${urlHome()}${OPEN ? ' — opening it.' : ''}`);
     if (OPEN) openBrowser();
     process.exit(0);
   }
   console.error(`The server could not start: ${err.message}`);
   process.exit(1);
 });
-server.listen(PORT, HOST, () => {
-  console.log(`SlokAbhyasa is running at ${URL_HOME}`);
+server.listen(PORT_WANTED.port, HOST, () => {
+  port = server.address().port;
+  console.log(`SlokAbhyasa is running at ${urlHome()}`);
   console.log(`Slokas are stored in ${LIB} (and its subfolders); quizzes in ${QUIZZES}`);
   if (OPEN) openBrowser();
 });

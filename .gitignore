@@ -3,6 +3,9 @@
 /library/
 /quizzes/
 /local.json
+# a save in progress, and a file the app could not read, kept beside its place (datafile.js)
+*.tmp-*
+*.broken-*
 
 # Built packages (tools/package.mjs) and the Node runtime it downloads
 /dist/
