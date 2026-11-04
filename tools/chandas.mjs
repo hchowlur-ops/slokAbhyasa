@@ -7,11 +7,14 @@
 //   node tools/chandas.mjs            every sloka
 //   node tools/chandas.mjs CH12-04    one sloka, by name (or part of it) or id
 //   node tools/chandas.mjs --dry      show, write nothing
+// Refuses to run (except --dry) while the server is up (PORT, default 8787): it has the details in hand.
 
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveDataDir } from '../datadir.js';
+import { readLibraryIndex, assertServerStopped } from '../datafile.js';
+import { parsePort } from '../edge.js';
 import { readMeta, writeMeta } from '../meta-store.js';
 import { normalizeStore } from '../js/transcripts.js';
 import { chandasForRecord, chandasLabel } from '../js/chandas.js';
@@ -23,7 +26,8 @@ const args = process.argv.slice(2);
 const dry = args.includes('--dry');
 const want = args.find((a) => !a.startsWith('--'));
 
-const index = JSON.parse(await fsp.readFile(path.join(LIB, 'index.json'), 'utf8'));
+if (!dry) await assertServerStopped(parsePort(process.env.PORT).port);
+const index = (await readLibraryIndex(path.join(LIB, 'index.json'))).records;
 const records = want ? index.filter((r) => r.id === want || r.name.toLowerCase().includes(want.toLowerCase())) : index.slice().sort((a, b) => (a.folder || '').localeCompare(b.folder || '') || a.name.localeCompare(b.name));
 if (!records.length) { console.error(`No sloka matches "${want}".`); process.exit(1); }
 let written = 0;

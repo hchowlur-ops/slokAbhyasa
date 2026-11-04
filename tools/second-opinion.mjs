@@ -17,6 +17,7 @@ import { segmentTake } from '../js/dsp/segment.js';
 import { phraseOfText, findSpeakerLines, assignSpeakerLines, templateCount, twoPassMarkers } from '../js/dsp/speakerlines.js';
 import { aksharaPlan } from '../js/chandas.js';
 import { resolveDataDir } from '../datadir.js';
+import { readLibraryIndexSync } from '../datafile.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
@@ -25,7 +26,7 @@ const flag = (name) => args.includes(name);
 const DATA = opt('--data', process.env.SLOKABHYASA_DATA || resolveDataDir(ROOT));
 const SESS = path.join(DATA, 'sessions');
 const LIB = path.join(DATA, 'library');
-const index = JSON.parse(fs.readFileSync(path.join(LIB, 'index.json'), 'utf8'));
+const index = readLibraryIndexSync(path.join(LIB, 'index.json')).records;
 const profiles = (() => { try { const p = JSON.parse(fs.readFileSync(path.join(DATA, 'profiles.json'), 'utf8')); return Array.isArray(p) ? p : p.profiles || Object.values(p); } catch { return []; } })();
 const r2 = (x) => (x == null || !Number.isFinite(x) ? '—' : (Math.round(x * 100) / 100).toFixed(2));
 const sgn = (x) => (x == null || !Number.isFinite(x) ? '—' : `${x > 0 ? '+' : ''}${(Math.round(x * 100) / 100).toFixed(2)}`);

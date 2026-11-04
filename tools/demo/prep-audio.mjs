@@ -11,12 +11,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveDataDir } from '../../datadir.js';
+import { readLibraryIndexSync } from '../../datafile.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const LIB = path.join(resolveDataDir(path.resolve(here, '..', '..')), 'library');
 const AUDIO = path.join(here, 'audio');
 fs.mkdirSync(AUDIO, { recursive: true });
-const index = JSON.parse(fs.readFileSync(path.join(LIB, 'index.json'), 'utf8'));
+const index = readLibraryIndexSync(path.join(LIB, 'index.json')).records;
 const wav = (name) => { const r = index.find((x) => x.name.toLowerCase() === name.toLowerCase()); if (!r) throw new Error(`no sloka named ${name}`); return path.join(LIB, ...r.file.split('/')); };
 const ff = (...args) => execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', ...args], { stdio: 'inherit' });
 const out = (f) => path.join(AUDIO, f);

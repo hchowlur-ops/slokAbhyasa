@@ -20,6 +20,7 @@ import { compareAuto, MISMATCH_CONTRAST } from '../js/dsp/compare.js';
 import { locate } from '../js/dsp/locate.js';
 import { compareModeFor } from '../js/meta.js';
 import { resolveDataDir } from '../datadir.js';
+import { readLibraryIndex } from '../datafile.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DATA = resolveDataDir(ROOT);
@@ -31,7 +32,7 @@ const flag = (name) => args.includes(`--${name}`);
 const opt = (name) => { const a = args.find((x) => x.startsWith(`--${name}=`)); return a ? a.slice(name.length + 3) : null; };
 const positional = args.filter((a) => !a.startsWith('--'));
 
-const index = JSON.parse(await fsp.readFile(path.join(LIB, 'index.json'), 'utf8'));
+const index = (await readLibraryIndex(path.join(LIB, 'index.json'))).records;
 const findSloka = (key) => index.find((r) => r.id === key) || index.find((r) => r.name.toLowerCase() === key.toLowerCase()) || index.find((r) => r.name.toLowerCase().includes(key.toLowerCase()));
 const readMeta = async (r) => { try { return JSON.parse(await fsp.readFile(path.join(LIB, ...r.file.replace(/\.wav$/i, '.json').split('/')), 'utf8')); } catch { return null; } };
 const loadWav = async (p) => { const d = decodeWav(new Uint8Array(await fsp.readFile(p))); return { ...d, duration: d.samples.length / d.sampleRate }; };

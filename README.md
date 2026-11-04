@@ -751,7 +751,8 @@ everything is anuṣṭubh except 2.5–8, 20, 22, 29, 70; 8.9–11, 28; 9.20–
 15. The result is kept in the sloka's details (`chandas`: family, name, syllables per pāda,
 how many the text has, the laghu/guru pattern, where the text came from) and is recomputed
 whenever a transcript or the typed text is stored; `node tools/chandas.mjs` does the whole
-library at once (`--dry` to look). The Library tags each sloka with it, in amber when the
+library at once (`--dry` to look; otherwise it refuses to run while the server is up, since
+the server has the details in hand). The Library tags each sloka with it, in amber when the
 text's count is not the metre's (a transcript that lost a syllable).
 
 The chandas is used in three places. A **hint** under the sloka in Self Evaluation and
@@ -956,8 +957,8 @@ it is for and on which days it was earned — and shown on **Home** for the chos
 (with the date and the slokas), beside a mastered quiz in the Quiz list, and counted in
 the Reports strip. Badges are derived data: they live in `badges.json` beside the
 recordings, by profile id (names stay in `profiles.json`), and
-`node tools/badges.mjs --recompute` rebuilds the file from the attempts at any time
-(`node tools/badges.mjs` lists them). A quiz edited or deleted afterwards keeps the badge
+`node tools/badges.mjs --recompute` rebuilds the file from the attempts at any time, with
+the server stopped (`node tools/badges.mjs` lists them). A quiz edited or deleted afterwards keeps the badge
 it earned, with the slokas it was earned with.
 
 ### Settings
@@ -1044,7 +1045,7 @@ has the usual `<name>-<id>.wav` form), and an entry whose WAV is gone is removed
 "Trim silence in all slokas" applies the same start/end trimming to everything already in
 the library (for recordings made before trimming existed, or imported files). The untouched
 original of each changed file is kept in `library/backup/`. The same job can be run without
-the browser:
+the browser, with the server stopped (the tool refuses to run beside it, except `--dry-run`):
 
 ```
 node tools/trim-library.mjs            # trim in place
@@ -1118,7 +1119,8 @@ to the Gītā** button links every unlinked recording whose name reads so (a rec
 transcript does not match the verse's words is listed as doubtful and left alone; one
 whose name names nothing, such as `Ch12-Starting`, is listed too); and **Details › Link…**
 links one by hand (or changes or removes the link). `node tools/map-verses.mjs` does the
-same from the command line (`--dry` to look first). When the dataset is updated and a
+same from the command line (`--dry` to look first; otherwise with the server stopped, as
+the tool refuses to run beside it). When the dataset is updated and a
 verse's text changes, the card says so ("text differs from the dataset"); the recording
 keeps the text it was made against until it is linked again.
 
@@ -1333,8 +1335,8 @@ js/dsp/                features, alignment, locating a part inside a longer reco
                        scoring, silence trimming (pure, Node-testable)
 js/visualizer.js       waveforms and the comparison chart
 datadir.js             where the data folder is (local.json / SLOKABHYASA_DATA, else the project folder)
-tools/trim-library.mjs command-line trimming of every WAV in the library
-tools/badges.mjs       lists the badges on file, or rebuilds them from the quizzes' attempts (--recompute)
+tools/trim-library.mjs command-line trimming of every WAV in the library (refuses to run while the server is up)
+tools/badges.mjs       lists the badges on file, or rebuilds them from the quizzes' attempts (--recompute, with the server stopped)
 tools/analyse-attempt.mjs  re-runs a kept quiz recording through the comparison and prints what it saw
 tools/evaluate-set.mjs  scores the evaluation set of deliberate errors (research_notes) against its labels
 tools/bench/           benchmarks of the speech and encoder models on this machine: a page, a headless runner, a Node runner

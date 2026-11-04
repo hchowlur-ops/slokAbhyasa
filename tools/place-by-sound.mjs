@@ -20,6 +20,7 @@ import { resample } from '../js/dsp/resample.js';
 import { extractFeatures, SR, HOP_SEC } from '../js/dsp/features.js';
 import { locate, stretchFeatures, sliceFeatures } from '../js/dsp/locate.js';
 import { resolveDataDir } from '../datadir.js';
+import { readLibraryIndexSync } from '../datafile.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
@@ -74,8 +75,7 @@ export function placeOrdered(H, refs) {
 const cutsOf = (placed) => placed.slice(1).map((B, i) => { const A = placed[i]; return A && B ? (A.to + B.from) / 2 : null; });
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const lib = JSON.parse(fs.readFileSync(path.join(DATA, 'library/index.json'), 'utf8'));
-  const libArr = Array.isArray(lib) ? lib : lib.items || Object.values(lib);
+  const libArr = readLibraryIndexSync(path.join(DATA, 'library', 'index.json')).records;
   const libById = new Map(libArr.map((r) => [r.id, r]));
   const cache = new Map();
   const featCached = (p) => { if (!cache.has(p)) cache.set(p, featuresOf(p)); return cache.get(p); };

@@ -12,11 +12,14 @@
 //   node tools/map-verses.mjs --dry           report, write nothing
 //   node tools/map-verses.mjs --doubtful      link the doubtful ones too
 //   node tools/map-verses.mjs --words         the words of every linked recording from its verse again
+// Refuses to run (except --dry) while the server is up (PORT, default 8787): it has the details in hand.
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { resolveDataDir, resolveReferenceDirs } from '../datadir.js';
+import { readLibraryIndex, writeFileAtomic, writeJsonAtomic, assertServerStopped } from '../datafile.js';
+import { parsePort } from '../edge.js';
 import { readMeta, writeMeta, sanitizeMeta } from '../meta-store.js';
 import { normalizeStore } from '../js/transcripts.js';
 import { chandasForRecord } from '../js/chandas.js';
@@ -38,7 +41,8 @@ const dsId = (args.find((a) => a.startsWith('--dataset=')) || '--dataset=gita').
 initReference(resolveReferenceDirs(ROOT), { customDir: path.join(DATA, 'reference') });
 const ds = dataset(dsId);
 if (!ds || ds.errors.length) { console.error(`No usable reference dataset "${dsId}"${ds ? `: ${ds.errors.join('; ')}` : ''}`); process.exit(1); }
-const index = JSON.parse(await fsp.readFile(path.join(LIB, 'index.json'), 'utf8'));
+if (!dry) await assertServerStopped(parsePort(process.env.PORT).port);
+const index = (await readLibraryIndex(path.join(LIB, 'index.json'))).records;
 const records = want ? index.filter((r) => r.id === want || r.name.toLowerCase().includes(want.toLowerCase())) : index;
 if (!records.length) { console.error(`No sloka matches "${want}".`); process.exit(1); }
 const folderOf = (file) => { const d = path.posix.dirname(String(file || '').replace(/\\/g, '/')); return d === '.' ? '' : d; };
@@ -55,8 +59,8 @@ for (const r of records) {
     try { store = normalizeStore(JSON.parse(await fsp.readFile(tp, 'utf8'))); } catch { store = null; }
     const next = putInStore(store, verseTranscript(entry, { speakerLine, previous: pickTranscript(store, 'sanskrit') }), { primary: true });
     const vt = pickTranscript(next, 'sanskrit');
-    try { await fsp.writeFile(wav.replace(/\.wav$/i, '.txt'), vt.chunks.length ? vt.chunks.map((c) => c.text).join('\n') : vt.text); } catch { /* the .txt is a courtesy */ }
-    await fsp.writeFile(tp, JSON.stringify(next)); // the JSON last, so it stays the newer twin
+    try { await writeFileAtomic(wav.replace(/\.wav$/i, '.txt'), vt.chunks.length ? vt.chunks.map((c) => c.text).join('\n') : vt.text); } catch { /* the .txt is a courtesy */ }
+    await writeJsonAtomic(tp, next, { compact: true }); // the JSON last, so it stays the newer twin
     return next;
   };
   if (meta.verse) {

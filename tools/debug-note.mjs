@@ -16,6 +16,7 @@ import { resample } from '../js/dsp/resample.js';
 import { extractFeatures, SR, HOP_SEC } from '../js/dsp/features.js';
 import { locate, stretchFeatures } from '../js/dsp/locate.js';
 import { resolveDataDir } from '../datadir.js';
+import { readLibraryIndexSync } from '../datafile.js';
 import { formatEarLog } from './ear-log.mjs';
 import { markdownTwin } from './note-md.mjs';
 
@@ -34,8 +35,7 @@ const session = JSON.parse(fs.readFileSync(path.join(SESS, `${id}.json`), 'utf8'
 const earPath = path.join(SESS, id, 'ear.json');
 const log = fs.existsSync(earPath) ? JSON.parse(fs.readFileSync(earPath, 'utf8')) : null;
 const wav = path.join(SESS, id, 'take.wav');
-const lib = JSON.parse(fs.readFileSync(path.join(DATA, 'library/index.json'), 'utf8'));
-const libArr = Array.isArray(lib) ? lib : lib.items || Object.values(lib);
+const libArr = readLibraryIndexSync(path.join(DATA, 'library', 'index.json')).records;
 const libById = new Map(libArr.map((r) => [r.id, r]));
 
 const r2 = (x) => (x == null || !Number.isFinite(Number(x)) ? '—' : (Math.round(Number(x) * 100) / 100).toFixed(2));
