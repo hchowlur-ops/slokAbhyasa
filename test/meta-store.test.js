@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { encodeWavBytes, decodeWav } from '../js/wav.js';
 import { parseWavHeader } from '../js/libutil.js';
-import { pcmSha256, audioInfo, withBext, makeBext, sanitizeMeta, ensureMeta, readMeta, moveMeta, sanitizeProfile, bextDescription, sanitizeVerse } from '../meta-store.js';
+import { pcmSha256, audioInfo, withBext, makeBext, sanitizeMeta, ensureMeta, readMeta, moveMeta, sanitizeProfile, bextDescription, sanitizeVerse, readProfiles, writeProfiles } from '../meta-store.js';
 
 const tone = (sec = 0.5, sr = 16000) => {
   const x = new Float32Array(Math.round(sec * sr));
@@ -114,6 +114,91 @@ test('sidecars: created for a sloka without one, carrying the audio hash; they m
   } finally {
     await fsp.rm(dir, { recursive: true, force: true });
   }
+});
+
+const quiet = async (fn) => { const warn = console.warn; console.warn = () => {}; try { return await fn(); } finally { console.warn = warn; } };
+const broken = async (dir) => (await fsp.readdir(dir)).filter((n) => n.includes('.broken-'));
+
+test('garbage in a details file is kept as .broken-… and fresh details say where they came from', async () => {
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'slokabhyasa-meta-'));
+  try {
+    const wav = path.join(dir, 'ch12-03-20260101-120000-abcd.wav');
+    const json = wav.replace(/\.wav$/, '.json');
+    await fsp.writeFile(wav, asBuffer(encodeWavBytes(tone(), 16000)));
+    await fsp.writeFile(json, '{"schemaVersion": "1.1.0", "name": "CH12-03", "spe');
+    const rec = { id: '20260101-120000-abcd', name: 'CH12-03', source: 'mic', createdAt: '2026-01-01T12:00:00Z' };
+    const meta = await quiet(() => ensureMeta(rec, wav));
+    const kept = await broken(dir);
+    assert.equal(kept.length, 1, 'the file is quarantined, not left to be read again');
+    assert.equal(await fsp.readFile(path.join(dir, kept[0]), 'utf8'), '{"schemaVersion": "1.1.0", "name": "CH12-03", "spe', 'its bytes are intact');
+    assert.equal(meta.migrated, true, 'fresh details, nothing guessed about the speaker');
+    assert.equal(meta.recoveredFrom, kept[0]);
+    assert.equal(meta.audio.pcmSha256.length, 64, 'with the audio hash');
+    assert.equal(meta.id, rec.id);
+    const onDisk = await readMeta(wav);
+    assert.equal(onDisk.recoveredFrom, kept[0]);
+    assert.deepEqual(await broken(dir), kept, 'the second read makes no second quarantine');
+    // the provenance stays through an edit of the text, when the migrated mark goes
+    const edited = sanitizeMeta({ text: { body: 'ये त्वक्षरमनिर्देश्यमव्यक्तं पर्युपासते ।' } }, onDisk);
+    assert.equal(edited.recoveredFrom, kept[0]);
+    assert.equal(edited.migrated, undefined);
+    assert.equal(sanitizeMeta({ name: 'X' }, { id: 'x' }).recoveredFrom, undefined, 'details that were never recovered carry no such field');
+    // a plain read of damage: no details, the file quarantined for whoever reads next, and
+    // the details made afresh after that still say where they came from
+    const other = path.join(dir, 'ch12-05-20260101-120000-abcg.wav');
+    await fsp.writeFile(other.replace(/\.wav$/, '.json'), 'not json');
+    assert.equal(await quiet(() => readMeta(other)), null);
+    assert.equal((await broken(dir)).length, 2);
+    const later = await ensureMeta({ id: '20260101-120000-abcg', name: 'CH12-05', source: 'mic' }, other);
+    assert.ok(later.recoveredFrom && later.recoveredFrom.startsWith('ch12-05-20260101-120000-abcg.json.broken-'), later.recoveredFrom);
+  } finally { await fsp.rm(dir, { recursive: true, force: true }); }
+});
+
+test('a folder in the details file\'s place makes ensureMeta throw and leaves no new file', async () => {
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'slokabhyasa-meta-'));
+  try {
+    const wav = path.join(dir, 'ch12-04-20260101-120000-abce.wav');
+    await fsp.writeFile(wav, asBuffer(encodeWavBytes(tone(), 16000)));
+    await fsp.mkdir(wav.replace(/\.wav$/, '.json'));
+    await assert.rejects(ensureMeta({ id: '20260101-120000-abce', name: 'CH12-04', source: 'mic' }, wav));
+    await assert.rejects(readMeta(wav));
+    assert.deepEqual((await fsp.readdir(dir)).sort(), ['ch12-04-20260101-120000-abce.json', 'ch12-04-20260101-120000-abce.wav']);
+  } finally { await fsp.rm(dir, { recursive: true, force: true }); }
+});
+
+test('a details file in the 1.0.0 shape, before the verse link and the chandas, still loads with those null', async () => {
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'slokabhyasa-meta-'));
+  try {
+    const wav = path.join(dir, 'gayatri-20260101-120000-abcf.wav');
+    const old = { schemaVersion: '1.0.0', id: '20260101-120000-abcf', name: 'gayatri', source: 'file', createdAt: '2026-01-01T12:00:00Z', speaker: { profileId: 'p1', voiceType: 'female', ageGroup: '40to59' }, style: { mode: 'vedic_accented', tradition: null, pitchPrescribed: true }, text: null, voice: null, measured: null, capture: null, edit: { trimStartSec: 0, trimEndSec: 0 }, consent: { givenBy: 'self', shareScope: 'private' }, notes: null, audio: { pcmSha256: 'abc' }, software: { app: 'SlokAbhyasa', version: '1.5.0' }, updatedAt: '2026-01-01T12:00:00Z' };
+    await fsp.writeFile(wav.replace(/\.wav$/, '.json'), JSON.stringify(old, null, 2));
+    const meta = await ensureMeta({ id: old.id, name: old.name, source: 'file' }, wav);
+    assert.equal(meta.updatedAt, old.updatedAt, 'read as it is, not rewritten');
+    const m = sanitizeMeta({}, meta);
+    assert.equal(m.verse, null);
+    assert.equal(m.chandas, null);
+    assert.equal(m.speaker.profileId, 'p1');
+    assert.equal(m.style.mode, 'vedic_accented');
+    assert.equal(m.audio.pcmSha256, 'abc');
+    assert.equal(m.schemaVersion, '1.1.0', 'the shape written back is the current one');
+  } finally { await fsp.rm(dir, { recursive: true, force: true }); }
+});
+
+test('a damaged profiles.json is kept as .broken-…, the list is empty, and the next save does not destroy it', async () => {
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'slokabhyasa-profiles-'));
+  try {
+    const file = path.join(dir, 'profiles.json');
+    await fsp.writeFile(file, '{"schemaVersion": "1.0.0", "profiles": [{"id": "p-1", "name": "An');
+    assert.deepEqual(await quiet(() => readProfiles(file)), []);
+    const kept = await broken(dir);
+    assert.equal(kept.length, 1);
+    await writeProfiles(file, [sanitizeProfile({ name: 'Ananya' }).profile]);
+    assert.equal((await readProfiles(file)).length, 1);
+    assert.deepEqual(await broken(dir), kept);
+    assert.ok((await fsp.readFile(path.join(dir, kept[0]), 'utf8')).endsWith('"An'));
+    assert.deepEqual(await readProfiles(path.join(dir, 'none.json')), [], 'no file: no profiles, nothing made');
+    assert.deepEqual((await fsp.readdir(dir)).filter((n) => n.includes('.tmp-')), [], 'no temporary left by the save');
+  } finally { await fsp.rm(dir, { recursive: true, force: true }); }
 });
 
 test('profiles: a name is required, vocabularies are checked, ids and dates are kept on edit', () => {

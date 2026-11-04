@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { validateDataset, combinedEntry, coverage as coverageOf, verseHashInput, mergeCustom, sanitizeCustom } from './js/verses.js';
+import { readJsonFileSync, writeJsonAtomicSync } from './datafile.js';
 
 let searchDirs = [];
 let customDir = null; // <data>/reference: where <id>.custom.json lives — the dataset's own folder is never written
@@ -83,16 +84,17 @@ export function datasets() {
 
 // ---------- customisations ----------
 export const customPath = (id) => (customDir ? path.join(customDir, `${id}.custom.json`) : null);
-// { version, verses: { "12.3": { deva, iast, speaker, translations, notes, variants } } }, re-read when the file changes
+// { version, verses: { "12.3": { deva, iast, speaker, translations, notes, variants } } }, re-read when the file changes.
+// A file that cannot be read is kept beside its place as <id>.custom.json.broken-<stamp>
+// (datafile.js) and the customisations are empty until the next save.
 export function customOf(id) {
   const f = customPath(id);
   if (!f) return { version: 1, verses: {} };
   const m = statMs(f);
   const c = customs.get(id);
   if (c && c.mtimeMs === m) return c.data;
-  let data = { version: 1, verses: {} };
-  if (m !== null) { try { data = JSON.parse(fs.readFileSync(f, 'utf8')); } catch { data = { version: 1, verses: {} }; } }
-  if (!data || typeof data !== 'object') data = { version: 1, verses: {} };
+  let data = m !== null ? readJsonFileSync(f, { expect: 'object' }).value : null;
+  if (!data) data = { version: 1, verses: {} };
   if (!data.verses || typeof data.verses !== 'object') data.verses = {};
   customs.set(id, { mtimeMs: m, data });
   return data;
@@ -104,7 +106,7 @@ export function saveCustom(rec, id, fields) {
   const data = customOf(rec.id);
   if (clean) data.verses[id] = clean; else delete data.verses[id];
   fs.mkdirSync(customDir, { recursive: true });
-  fs.writeFileSync(customPath(rec.id), JSON.stringify(data, null, 2) + '\n');
+  writeJsonAtomicSync(customPath(rec.id), data);
   customs.delete(rec.id);
   return verse(rec, id);
 }

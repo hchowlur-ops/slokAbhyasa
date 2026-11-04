@@ -9,10 +9,12 @@
 
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
+import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { newBaselineMeta, deriveText, SCHEMA_VERSION, AGE_GROUPS, VOICE_TYPES, STYLE_MODES, DEFAULT_STYLE_MODE } from './js/meta.js';
 import { parseWavHeader } from './js/libutil.js';
 import { FEAT_VERSION } from './js/dsp/features.js';
+import { readJsonFile, writeJsonAtomic } from './datafile.js';
 
 export const APP_NAME = 'SlokAbhyasa';
 export const APP_VERSION = (() => { try { return JSON.parse(fs.readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version || '0'; } catch { return '0'; } })();
@@ -107,18 +109,17 @@ export function withBext(wavBytes, fields) {
 
 const metaFile = (wavPath) => wavPath.replace(/\.wav$/i, '.json');
 
+// The details beside a WAV, or null when there are none. A file that cannot be read as
+// details is kept beside the WAV as <name>.json.broken-<stamp> (datafile.js) and counts as
+// none; a file that cannot be opened at all throws, so no caller rewrites it.
+const readMetaFile = (wavPath) => readJsonFile(metaFile(wavPath), { expect: 'object' });
 export async function readMeta(wavPath) {
-  try {
-    const m = JSON.parse(await fsp.readFile(metaFile(wavPath), 'utf8'));
-    return m && typeof m === 'object' && !Array.isArray(m) ? m : null;
-  } catch {
-    return null;
-  }
+  return (await readMetaFile(wavPath)).value;
 }
 
 export async function writeMeta(wavPath, meta) {
   meta.updatedAt = new Date().toISOString();
-  await fsp.writeFile(metaFile(wavPath), JSON.stringify(meta, null, 2) + '\n');
+  await writeJsonAtomic(metaFile(wavPath), meta);
   return meta;
 }
 
@@ -144,10 +145,21 @@ export function migratedMeta(rec, wavBytes) {
   return meta;
 }
 
+// The newest quarantined copy of a details file beside its place, or null: whichever reader
+// quarantined it, the details made afresh afterwards can still say where they came from.
+async function newestQuarantine(file) {
+  const prefix = `${path.basename(file)}.broken-`;
+  let names = [];
+  try { names = await fsp.readdir(path.dirname(file)); } catch { return null; }
+  const found = names.filter((n) => n.startsWith(prefix)).sort();
+  return found.length ? path.join(path.dirname(file), found[found.length - 1]) : null;
+}
+
 // Makes sure a record has a sidecar; returns it. The audio is read only when a sidecar has
-// to be created (for its hash).
+// to be created (for its hash). Fresh details made because the old file was unreadable say
+// so in `recoveredFrom`: the quarantined file's name, kept beside the WAV for a person.
 export async function ensureMeta(rec, wavPath) {
-  const have = await readMeta(wavPath);
+  const { value: have, broken } = await readMetaFile(wavPath);
   if (have) {
     let changed = false;
     if (have.id !== rec.id) { have.id = rec.id; changed = true; }
@@ -157,7 +169,10 @@ export async function ensureMeta(rec, wavPath) {
   }
   let bytes = null;
   try { bytes = await fsp.readFile(wavPath); } catch { bytes = null; }
-  return writeMeta(wavPath, migratedMeta(rec, bytes));
+  const meta = migratedMeta(rec, bytes);
+  const from = broken || (await newestQuarantine(metaFile(wavPath)));
+  if (from) meta.recoveredFrom = path.basename(from);
+  return writeMeta(wavPath, meta);
 }
 
 // Validates the parts of a sidecar a client may set. Server-owned fields (id, audio,
@@ -238,6 +253,7 @@ export function sanitizeMeta(body, current) {
   base.audio = cur.audio || null;
   base.software = cur.software || software();
   if (cur.migrated && !b.speaker && !b.text) base.migrated = true;
+  if (typeof cur.recoveredFrom === 'string') base.recoveredFrom = cur.recoveredFrom; // provenance: stays through every edit
   return base;
 }
 
@@ -258,17 +274,15 @@ export function bextDescription(meta) {
 
 export const PROFILES_VERSION = '1.0.0';
 
+// The profiles on file, or none. A damaged file is quarantined beside its place (datafile.js)
+// and the list is empty until a profile is saved; a file that cannot be opened throws.
 export async function readProfiles(file) {
-  try {
-    const p = JSON.parse(await fsp.readFile(file, 'utf8'));
-    return p && Array.isArray(p.profiles) ? p.profiles.filter((x) => x && typeof x.id === 'string') : [];
-  } catch {
-    return [];
-  }
+  const { value: p } = await readJsonFile(file, { expect: 'object' });
+  return p && Array.isArray(p.profiles) ? p.profiles.filter((x) => x && typeof x.id === 'string') : [];
 }
 
 export async function writeProfiles(file, profiles) {
-  await fsp.writeFile(file, JSON.stringify({ schemaVersion: PROFILES_VERSION, profiles }, null, 2) + '\n');
+  await writeJsonAtomic(file, { schemaVersion: PROFILES_VERSION, profiles });
 }
 
 export function sanitizeProfile(body, current = null) {

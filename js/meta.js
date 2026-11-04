@@ -8,7 +8,7 @@
 import { HOP_SEC, stToHz } from './dsp/features.js';
 import { percentile } from './dsp/util.js';
 
-export const SCHEMA_VERSION = '1.1.0'; // 1.1.0: `verse`, the link to a reference dataset's verse; text origin 'reference'
+export const SCHEMA_VERSION = '1.1.0'; // 1.1.0: `verse`, the link to a reference dataset's verse; text origin 'reference'. Optional since 4 November 2026, without a move: `recoveredFrom`, the quarantined file's name when the details were made afresh because the old file was unreadable (meta-store.js ensureMeta); the next change of shape is 1.2.0 and lists it
 
 // Age buckets drawn where the voice changes (boys' octave drop at 12–15, women's 3 st after
 // 40) and where the law draws its line (a child is under 18); never a birth date.

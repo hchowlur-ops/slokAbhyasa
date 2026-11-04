@@ -140,27 +140,29 @@ function quarantineSync(file) {
 }
 
 // Reads a JSON file with three outcomes: missing → { value: null, broken: null }; unreadable
-// as JSON (or not an object or list) → the file is quarantined and the result is
-// { value: null, broken: <its new path> }; any other failure (held open, no permission, a
-// folder in the file's place) → thrown, so the caller never mistakes it for an empty file.
-export async function readJsonFile(file) {
+// as JSON (or not an object or list, or not the shape `expect` names: 'object' or 'list')
+// → the file is quarantined and the result is { value: null, broken: <its new path> }; any
+// other failure (held open, no permission, a folder in the file's place) → thrown, so the
+// caller never mistakes it for an empty file.
+const shaped = (value, expect) => value !== undefined && (expect === 'object' ? !Array.isArray(value) : expect === 'list' ? Array.isArray(value) : true);
+export async function readJsonFile(file, { expect = null } = {}) {
   let text;
   try { text = await fsp.readFile(file, 'utf8'); } catch (err) {
     if (err.code === 'ENOENT') return { value: null, broken: null };
     throw err;
   }
   const value = parseJsonValue(text);
-  if (value !== undefined) return { value, broken: null };
+  if (shaped(value, expect)) return { value, broken: null };
   return { value: null, broken: await quarantine(file) };
 }
-export function readJsonFileSync(file) {
+export function readJsonFileSync(file, { expect = null } = {}) {
   let text;
   try { text = fs.readFileSync(file, 'utf8'); } catch (err) {
     if (err.code === 'ENOENT') return { value: null, broken: null };
     throw err;
   }
   const value = parseJsonValue(text);
-  if (value !== undefined) return { value, broken: null };
+  if (shaped(value, expect)) return { value, broken: null };
   return { value: null, broken: quarantineSync(file) };
 }
 

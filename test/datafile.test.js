@@ -101,6 +101,16 @@ test('a sound JSON file reads as its value; a byte-order mark from Notepad is no
     assert.deepEqual(parseJsonValue('[1, 2]'), [1, 2]);
     assert.equal(parseJsonValue('1'), undefined);
     assert.equal(parseJsonValue('{'), undefined);
+    // a file of the wrong shape (a list where details are expected) is damage too
+    const g = path.join(dir, 'ch12-03.json');
+    await fsp.writeFile(g, '[]');
+    assert.deepEqual(await readJsonFile(g, { expect: 'list' }), { value: [], broken: null });
+    const [wrong] = await quiet(() => readJsonFile(g, { expect: 'object' }));
+    assert.equal(wrong.value, null);
+    assert.equal(await fsp.readFile(wrong.broken, 'utf8'), '[]');
+    await fsp.writeFile(g, '{}');
+    const [wrongSync] = await quiet(() => readJsonFileSync(g, { expect: 'list' }));
+    assert.ok(wrongSync.broken);
   } finally { await fsp.rm(dir, { recursive: true, force: true }); }
 });
 
