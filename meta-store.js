@@ -14,7 +14,7 @@ import { createHash } from 'node:crypto';
 import { newBaselineMeta, deriveText, SCHEMA_VERSION, AGE_GROUPS, VOICE_TYPES, STYLE_MODES, DEFAULT_STYLE_MODE } from './js/meta.js';
 import { parseWavHeader } from './js/libutil.js';
 import { FEAT_VERSION } from './js/dsp/features.js';
-import { readJsonFile, writeJsonAtomic } from './datafile.js';
+import { readJsonFile, writeJsonAtomic, renameFile, quarantineFile, higherVersion } from './datafile.js';
 
 export const APP_NAME = 'SlokAbhyasa';
 export const APP_VERSION = (() => { try { return JSON.parse(fs.readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version || '0'; } catch { return '0'; } })();
@@ -111,8 +111,9 @@ const metaFile = (wavPath) => wavPath.replace(/\.wav$/i, '.json');
 
 // The details beside a WAV, or null when there are none. A file that cannot be read as
 // details is kept beside the WAV as <name>.json.broken-<stamp> (datafile.js) and counts as
-// none; a file that cannot be opened at all throws, so no caller rewrites it.
-const readMetaFile = (wavPath) => readJsonFile(metaFile(wavPath), { expect: 'object' });
+// none; a file that cannot be opened at all, or one written by a newer version of the app,
+// throws, so no caller rewrites it.
+const readMetaFile = (wavPath) => readJsonFile(metaFile(wavPath), { expect: 'object', known: SCHEMA_VERSION });
 export async function readMeta(wavPath) {
   return (await readMetaFile(wavPath)).value;
 }
@@ -127,8 +128,11 @@ export async function removeMeta(wavPath) {
   await fsp.rm(metaFile(wavPath), { force: true });
 }
 
+// Moves the details with their WAV. No details yet → nothing to do; a rename refused for any
+// other reason throws (review of 4 November 2026, finding 4: a swallowed failure orphaned the details).
 export async function moveMeta(oldWavPath, newWavPath) {
-  try { await fsp.rename(metaFile(oldWavPath), metaFile(newWavPath)); } catch { /* no sidecar yet */ }
+  try { await fsp.access(metaFile(oldWavPath)); } catch { return; }
+  await renameFile(metaFile(oldWavPath), metaFile(newWavPath));
 }
 
 const software = () => ({ app: APP_NAME, version: APP_VERSION, featVersion: FEAT_VERSION });
@@ -274,15 +278,22 @@ export function bextDescription(meta) {
 
 export const PROFILES_VERSION = '1.0.0';
 
-// The profiles on file, or none. A damaged file is quarantined beside its place (datafile.js)
-// and the list is empty until a profile is saved; a file that cannot be opened throws.
+// The profiles on file with the file's version: { profiles, version }. A damaged file, or one
+// whose `profiles` is not a list, is quarantined beside its place (datafile.js) and the list
+// is empty until a profile is saved; a file that cannot be opened, or one written by a newer
+// version of the app, throws.
+export async function readProfilesFile(file) {
+  const { value: p } = await readJsonFile(file, { expect: 'object', known: PROFILES_VERSION });
+  if (p && p.profiles !== undefined && !Array.isArray(p.profiles)) { await quarantineFile(file, { why: 'is not a profiles file (its list is not a list)' }); return { profiles: [], version: null }; }
+  return { profiles: p && Array.isArray(p.profiles) ? p.profiles.filter((x) => x && typeof x.id === 'string') : [], version: p && typeof p.schemaVersion === 'string' ? p.schemaVersion : null };
+}
 export async function readProfiles(file) {
-  const { value: p } = await readJsonFile(file, { expect: 'object' });
-  return p && Array.isArray(p.profiles) ? p.profiles.filter((x) => x && typeof x.id === 'string') : [];
+  return (await readProfilesFile(file)).profiles;
 }
 
-export async function writeProfiles(file, profiles) {
-  await writeJsonAtomic(file, { schemaVersion: PROFILES_VERSION, profiles });
+// Writes the list; a file of the same major and a later minor keeps its version.
+export async function writeProfiles(file, profiles, { version = null } = {}) {
+  await writeJsonAtomic(file, { schemaVersion: higherVersion(PROFILES_VERSION, version), profiles });
 }
 
 export function sanitizeProfile(body, current = null) {

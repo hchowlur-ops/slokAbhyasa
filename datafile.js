@@ -22,11 +22,53 @@ import crypto from 'node:crypto';
 export const RENAME_TRIES = 5; // with the wait below, a quarter of a second of patience for a rename refused by a scanner's hold
 export const RENAME_WAIT_MS = 50; // a virus scanner's hold on a freshly written small file lasts tens of milliseconds; a rule of thumb, not a measurement (design of 3 November 2026): if the console ever shows a refused rename, measure and revisit
 export const TEMP_MAX_AGE_MS = 60 * 1000; // a save takes milliseconds; a temporary a minute old belongs to a process that died
+export const FRESH_MS = 5000; // a file changed this recently may still be being written by another program (an editor's save, a sync tool): it is read again, never quarantined (review of 4 November 2026, finding 16)
+export const FRESH_RETRY_MS = 200; // the wait before that second read; an editor's save is over in a few milliseconds
 export const INDEX_VERSION = '1.0.0'; // library/index.json: the first version it carries; before it, a plain list
 export const SESSION_VERSION = '1.0.0'; // sessions/<id>.json: a file without a version is this one
 export const QUIZ_VERSION = '1.0.0'; // quizzes/<id>.json: the same
 
 const RETRY_CODES = new Set(['EPERM', 'EBUSY', 'EACCES']); // what Windows answers while another process holds the file
+
+// The final rename was refused after every try: the file is held by another program (a
+// recording being played is held by the server itself). The old file is whole; nothing was
+// written. The server answers 409 with a sentence.
+export class FileHeldError extends Error {
+  constructor(file, cause) {
+    super(`${file} is held by another program: ${cause.message}`);
+    this.file = file;
+    this.code = cause.code;
+    this.cause = cause;
+  }
+}
+
+// A file written by a newer version of the app than this one, by its schemaVersion's major
+// number: not read, since its shape may be misunderstood, and never rewritten. The server
+// answers 409 with the sentence; the console says which file.
+export class NewerFileError extends Error {
+  constructor(file, version) {
+    super(`${path.basename(file)} was written by a newer SlokAbhyasa (${version}): update the app`);
+    this.file = file;
+    this.version = version;
+    this.code = 'ENEWER';
+  }
+}
+
+// ---------- versions ----------
+
+// The major number of a schemaVersion; a missing one is the first version, 1.
+export const majorOf = (v) => { const m = /^(\d+)\./.exec(String(v || '')); return m ? Number(m[1]) : 1; };
+// Whether a file's version is beyond what this code knows: a higher major.
+export const versionTooNew = (version, known) => majorOf(version) > majorOf(known);
+// The version to write back: the known one, or the file's own when it is the same major and
+// newer (a later minor added fields this code keeps without understanding them).
+export function higherVersion(known, found) {
+  if (typeof found !== 'string' || majorOf(found) !== majorOf(known)) return known;
+  const parts = (v) => v.split('.').map((x) => Number(x) || 0);
+  const [, km = 0, kp = 0] = parts(known);
+  const [, fm = 0, fp = 0] = parts(found);
+  return fm > km || (fm === km && fp > kp) ? found : known;
+}
 const TEMP_RE = /\.tmp-\d+-[a-z0-9]{6}$/;
 const SWEPT_FOLDERS = ['library', 'quizzes', 'sessions', 'speaker-lines', 'reference']; // the data folder's own subfolders; the data folder is the project folder by default, so nothing else is walked
 
@@ -47,22 +89,27 @@ const sleepSync = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),
 
 // ---------- writing ----------
 
-async function renameWithRetries(from, to) {
+// A rename with the retries a Windows hold needs; refused after the last try → FileHeldError.
+export async function renameFile(from, to) {
   for (let attempt = 1; ; attempt++) {
     try { await fsp.rename(from, to); return; } catch (err) {
-      if (attempt >= RENAME_TRIES || !RETRY_CODES.has(err.code)) throw err;
+      if (!RETRY_CODES.has(err.code)) throw err;
+      if (attempt >= RENAME_TRIES) throw new FileHeldError(to, err);
       await sleep(RENAME_WAIT_MS);
     }
   }
 }
-function renameWithRetriesSync(from, to) {
+export function renameFileSync(from, to) {
   for (let attempt = 1; ; attempt++) {
     try { fs.renameSync(from, to); return; } catch (err) {
-      if (attempt >= RENAME_TRIES || !RETRY_CODES.has(err.code)) throw err;
+      if (!RETRY_CODES.has(err.code)) throw err;
+      if (attempt >= RENAME_TRIES) throw new FileHeldError(to, err);
       sleepSync(RENAME_WAIT_MS);
     }
   }
 }
+const renameWithRetries = renameFile;
+const renameWithRetriesSync = renameFileSync;
 
 // Writes `data` (a string or bytes) so that `file` is either the old content or the new,
 // never a mix: a temporary beside it, flushed to disk, then renamed over it. On any failure
@@ -123,47 +170,74 @@ export function parseJsonValue(text) {
 
 // Moves a file the app could not read out of the way, keeping its bytes for a person, and
 // says so on the console. Returns the new path. A name already taken (two quarantines in one
-// second) gets a short random tail rather than being overwritten.
-async function quarantine(file) {
+// second) gets a short random tail rather than being overwritten. Also for a file that parses
+// but is not the shape its reader expects (a profiles file whose list is a string).
+export async function quarantineFile(file, { why = 'could not be read as JSON' } = {}) {
   let broken = brokenName(file);
   try { await fsp.access(broken); broken = `${broken}-${crypto.randomBytes(2).toString('hex')}`; } catch { /* the usual case: the name is free */ }
   await fsp.rename(file, broken);
-  console.warn(`${file} could not be read as JSON: kept as ${path.basename(broken)}`);
+  console.warn(`${file} ${why}: kept as ${path.basename(broken)}`);
   return broken;
 }
-function quarantineSync(file) {
+export function quarantineFileSync(file, { why = 'could not be read as JSON' } = {}) {
   let broken = brokenName(file);
   if (fs.existsSync(broken)) broken = `${broken}-${crypto.randomBytes(2).toString('hex')}`;
   fs.renameSync(file, broken);
-  console.warn(`${file} could not be read as JSON: kept as ${path.basename(broken)}`);
+  console.warn(`${file} ${why}: kept as ${path.basename(broken)}`);
   return broken;
 }
+const quarantine = quarantineFile;
+const quarantineSync = quarantineFileSync;
+
+// A file that changed in the last FRESH_MS may be mid-save by another program.
+const isFresh = (st, now) => now - st.mtimeMs < FRESH_MS;
+const stillWriting = (file) => Object.assign(new Error(`${file} could not be read as JSON and changed in the last ${FRESH_MS / 1000} s, so it may still be being written: not read, not renamed`), { code: 'EFRESH', file });
 
 // Reads a JSON file with three outcomes: missing → { value: null, broken: null }; unreadable
 // as JSON (or not an object or list, or not the shape `expect` names: 'object' or 'list')
 // → the file is quarantined and the result is { value: null, broken: <its new path> }; any
 // other failure (held open, no permission, a folder in the file's place) → thrown, so the
-// caller never mistakes it for an empty file.
+// caller never mistakes it for an empty file. Two more rules: an unreadable file that changed
+// in the last FRESH_MS is read once more after FRESH_RETRY_MS and, still unreadable, thrown
+// rather than quarantined, since another program may be writing it; and a file whose
+// schemaVersion's major is above `known` throws NewerFileError, never read, never rewritten.
 const shaped = (value, expect) => value !== undefined && (expect === 'object' ? !Array.isArray(value) : expect === 'list' ? Array.isArray(value) : true);
-export async function readJsonFile(file, { expect = null } = {}) {
-  let text;
-  try { text = await fsp.readFile(file, 'utf8'); } catch (err) {
-    if (err.code === 'ENOENT') return { value: null, broken: null };
-    throw err;
+const checkVersion = (file, value, known) => { if (known && value && !Array.isArray(value) && versionTooNew(value.schemaVersion, known)) throw new NewerFileError(file, value.schemaVersion); };
+export async function readJsonFile(file, { expect = null, known = null } = {}) {
+  for (let attempt = 1; ; attempt++) {
+    let text;
+    try { text = await fsp.readFile(file, 'utf8'); } catch (err) {
+      if (err.code === 'ENOENT') return { value: null, broken: null };
+      throw err;
+    }
+    const value = parseJsonValue(text);
+    if (shaped(value, expect)) { checkVersion(file, value, known); return { value, broken: null }; }
+    let st = null;
+    try { st = await fsp.stat(file); } catch { st = null; }
+    if (st && isFresh(st, Date.now())) {
+      if (attempt === 1) { await sleep(FRESH_RETRY_MS); continue; }
+      throw stillWriting(file);
+    }
+    return { value: null, broken: await quarantine(file) };
   }
-  const value = parseJsonValue(text);
-  if (shaped(value, expect)) return { value, broken: null };
-  return { value: null, broken: await quarantine(file) };
 }
-export function readJsonFileSync(file, { expect = null } = {}) {
-  let text;
-  try { text = fs.readFileSync(file, 'utf8'); } catch (err) {
-    if (err.code === 'ENOENT') return { value: null, broken: null };
-    throw err;
+export function readJsonFileSync(file, { expect = null, known = null } = {}) {
+  for (let attempt = 1; ; attempt++) {
+    let text;
+    try { text = fs.readFileSync(file, 'utf8'); } catch (err) {
+      if (err.code === 'ENOENT') return { value: null, broken: null };
+      throw err;
+    }
+    const value = parseJsonValue(text);
+    if (shaped(value, expect)) { checkVersion(file, value, known); return { value, broken: null }; }
+    let st = null;
+    try { st = fs.statSync(file); } catch { st = null; }
+    if (st && isFresh(st, Date.now())) {
+      if (attempt === 1) { sleepSync(FRESH_RETRY_MS); continue; }
+      throw stillWriting(file);
+    }
+    return { value: null, broken: quarantineSync(file) };
   }
-  const value = parseJsonValue(text);
-  if (shaped(value, expect)) return { value, broken: null };
-  return { value: null, broken: quarantineSync(file) };
 }
 
 // ---------- the library index ----------
@@ -177,22 +251,25 @@ export function indexFromJson(value) {
 
 // Returns { records, version, legacy }: `legacy` is true for a plain list, which is version
 // 1.0.0 without saying so. A parsable file in neither form is quarantined like damage: the
-// server rebuilds the index from the WAV files and their details anyway.
+// server rebuilds the index from the WAV files and their details anyway. An index whose
+// major version is above this code's throws NewerFileError.
 const emptyIndex = (broken) => ({ records: [], version: INDEX_VERSION, legacy: false, broken });
-function indexResult(value, broken) {
+function indexResult(file, value, broken) {
   if (value === null) return emptyIndex(broken);
   const records = indexFromJson(value);
   if (!records) return null; // parsable, but in neither form
   const legacy = Array.isArray(value);
-  return { records, version: legacy ? INDEX_VERSION : typeof value.schemaVersion === 'string' ? value.schemaVersion : INDEX_VERSION, legacy, broken: null };
+  const version = legacy ? INDEX_VERSION : typeof value.schemaVersion === 'string' ? value.schemaVersion : INDEX_VERSION;
+  if (versionTooNew(version, INDEX_VERSION)) throw new NewerFileError(file, version);
+  return { records, version, legacy, broken: null };
 }
 export async function readLibraryIndex(file) {
   const { value, broken } = await readJsonFile(file);
-  return indexResult(value, broken) || emptyIndex(await quarantine(file));
+  return indexResult(file, value, broken) || emptyIndex(await quarantine(file, { why: 'is not a library index' }));
 }
 export function readLibraryIndexSync(file) {
   const { value, broken } = readJsonFileSync(file);
-  return indexResult(value, broken) || emptyIndex(quarantineSync(file));
+  return indexResult(file, value, broken) || emptyIndex(quarantineSync(file, { why: 'is not a library index' }));
 }
 export const writeLibraryIndex = (file, records) => writeJsonAtomic(file, { schemaVersion: INDEX_VERSION, records });
 export const writeLibraryIndexSync = (file, records) => writeJsonAtomicSync(file, { schemaVersion: INDEX_VERSION, records });

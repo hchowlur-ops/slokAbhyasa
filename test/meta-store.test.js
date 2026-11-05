@@ -1,11 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { encodeWavBytes, decodeWav } from '../js/wav.js';
 import { parseWavHeader } from '../js/libutil.js';
-import { pcmSha256, audioInfo, withBext, makeBext, sanitizeMeta, ensureMeta, readMeta, moveMeta, sanitizeProfile, bextDescription, sanitizeVerse, readProfiles, writeProfiles } from '../meta-store.js';
+import { pcmSha256, audioInfo, withBext, makeBext, sanitizeMeta, ensureMeta, readMeta, moveMeta, sanitizeProfile, bextDescription, sanitizeVerse, readProfiles, readProfilesFile, writeProfiles } from '../meta-store.js';
 
 const tone = (sec = 0.5, sr = 16000) => {
   const x = new Float32Array(Math.round(sec * sr));
@@ -118,6 +119,8 @@ test('sidecars: created for a sloka without one, carrying the audio hash; they m
 
 const quiet = async (fn) => { const warn = console.warn; console.warn = () => {}; try { return await fn(); } finally { console.warn = warn; } };
 const broken = async (dir) => (await fsp.readdir(dir)).filter((n) => n.includes('.broken-'));
+// a damaged file written a moment ago counts as "still being written"; these cases age it, as damage from long ago
+const aged = async (file, content) => { await fsp.writeFile(file, content); const old = new Date(Date.now() - 120000); await fsp.utimes(file, old, old); };
 
 test('garbage in a details file is kept as .broken-… and fresh details say where they came from', async () => {
   const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'slokabhyasa-meta-'));
@@ -125,7 +128,7 @@ test('garbage in a details file is kept as .broken-… and fresh details say whe
     const wav = path.join(dir, 'ch12-03-20260101-120000-abcd.wav');
     const json = wav.replace(/\.wav$/, '.json');
     await fsp.writeFile(wav, asBuffer(encodeWavBytes(tone(), 16000)));
-    await fsp.writeFile(json, '{"schemaVersion": "1.1.0", "name": "CH12-03", "spe');
+    await aged(json, '{"schemaVersion": "1.1.0", "name": "CH12-03", "spe');
     const rec = { id: '20260101-120000-abcd', name: 'CH12-03', source: 'mic', createdAt: '2026-01-01T12:00:00Z' };
     const meta = await quiet(() => ensureMeta(rec, wav));
     const kept = await broken(dir);
@@ -146,7 +149,7 @@ test('garbage in a details file is kept as .broken-… and fresh details say whe
     // a plain read of damage: no details, the file quarantined for whoever reads next, and
     // the details made afresh after that still say where they came from
     const other = path.join(dir, 'ch12-05-20260101-120000-abcg.wav');
-    await fsp.writeFile(other.replace(/\.wav$/, '.json'), 'not json');
+    await aged(other.replace(/\.wav$/, '.json'), 'not json');
     assert.equal(await quiet(() => readMeta(other)), null);
     assert.equal((await broken(dir)).length, 2);
     const later = await ensureMeta({ id: '20260101-120000-abcg', name: 'CH12-05', source: 'mic' }, other);
@@ -188,7 +191,7 @@ test('a damaged profiles.json is kept as .broken-…, the list is empty, and the
   const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'slokabhyasa-profiles-'));
   try {
     const file = path.join(dir, 'profiles.json');
-    await fsp.writeFile(file, '{"schemaVersion": "1.0.0", "profiles": [{"id": "p-1", "name": "An');
+    await aged(file, '{"schemaVersion": "1.0.0", "profiles": [{"id": "p-1", "name": "An');
     assert.deepEqual(await quiet(() => readProfiles(file)), []);
     const kept = await broken(dir);
     assert.equal(kept.length, 1);
@@ -198,6 +201,31 @@ test('a damaged profiles.json is kept as .broken-…, the list is empty, and the
     assert.ok((await fsp.readFile(path.join(dir, kept[0]), 'utf8')).endsWith('"An'));
     assert.deepEqual(await readProfiles(path.join(dir, 'none.json')), [], 'no file: no profiles, nothing made');
     assert.deepEqual((await fsp.readdir(dir)).filter((n) => n.includes('.tmp-')), [], 'no temporary left by the save');
+    // the wrong shape (a list that is not a list) is damage too, kept and not written over
+    await aged(file, '{"schemaVersion": "1.0.0", "profiles": "Ananya"}');
+    assert.deepEqual(await quiet(() => readProfilesFile(file)), { profiles: [], version: null });
+    assert.equal((await broken(dir)).length, 2);
+    // a later minor keeps its version through a save; a newer major is refused
+    await fsp.writeFile(file, '{"schemaVersion": "1.4.0", "profiles": []}');
+    const { version } = await readProfilesFile(file);
+    await writeProfiles(file, [], { version });
+    assert.equal(JSON.parse(await fsp.readFile(file, 'utf8')).schemaVersion, '1.4.0');
+    await fsp.writeFile(file, '{"schemaVersion": "2.0.0", "profiles": []}');
+    await assert.rejects(readProfiles(file), /newer SlokAbhyasa \(2\.0\.0\)/);
+    assert.ok(fs.existsSync(file), 'not renamed');
+  } finally { await fsp.rm(dir, { recursive: true, force: true }); }
+});
+
+test('moveMeta: nothing to move is fine; a rename that fails for any other reason throws instead of orphaning the details', async () => {
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'slokabhyasa-move-'));
+  try {
+    const wav = path.join(dir, 'a-20260101-120000-abcd.wav');
+    await moveMeta(wav, path.join(dir, 'b.wav')); // no details yet
+    await fsp.writeFile(wav.replace(/\.wav$/, '.json'), '{"id": "x"}');
+    await assert.rejects(moveMeta(wav, path.join(dir, 'missing-folder', 'b.wav')), (err) => err.code === 'ENOENT');
+    assert.ok(fs.existsSync(wav.replace(/\.wav$/, '.json')), 'the details stayed where they were');
+    await moveMeta(wav, path.join(dir, 'b.wav'));
+    assert.ok(fs.existsSync(path.join(dir, 'b.json')));
   } finally { await fsp.rm(dir, { recursive: true, force: true }); }
 });
 

@@ -103,15 +103,30 @@ at. `library/index.json` is `{ "schemaVersion": "1.0.0", "records": [...] }`; an
 its older form, a plain list, is read and rewritten in this form once at start-up. Sessions
 and quizzes carry `schemaVersion` too; a sloka's details stay at 1.1.0. A sloka found on
 disk without an index entry takes its name, date and id from its details file when it has
-one, so a lost index rebuilds with every name intact.
+one, so a lost index rebuilds with every name intact. A file is claimed by one record only,
+so a copy made and deleted with Explorer never leaves two slokas on one recording. A rename
+or a move in the Library renames the sidecars first and the WAV last, refuses a target that
+already exists, and one cut short is repaired at the next listing: details with no WAV
+beside them are found by the id they carry and brought back. A recording that is being
+played cannot be replaced: Trim answers that it is in use, and the save is refused whole
+rather than half done.
+
+**A build of SlokAbhyasa from before 4 November 2026 must not be started on this data
+folder.** It reads the versioned index as empty, rebuilds it from file names, and loses
+typed names and, for files without an id in their name, their ids. The other way round the
+app protects itself: a file written by a newer build than the one running is named on the
+console and left alone, not read and not rewritten, and the server refuses to start on an
+index it cannot read, with one sentence saying which file.
 
 The server listens on 127.0.0.1 only and **answers only its own address**: a request whose
 `Host` is not this server, or that another page sent (a foreign `Origin`, a cross-site
-fetch), is refused with 403, and a JSON or WAV body must say what it is (`Content-Type`),
-else 415. It hands out only the app's own files (`index.html`, `css/`, `js/`, `assets/`)
-and each reference dataset's `LICENSE` and `ATTRIBUTION.txt`; everything else in the
-project folder, your library included, is 404. Microphone access requires a "secure
-context", which localhost is, so do not open `index.html` directly from the file system.
+fetch, a page on another local port), is refused with 403, no other site can put the app
+in a frame, and a JSON or WAV body must say what it is (`Content-Type`), else 415. It hands
+out only the app's own files (`index.html`, `css/`, `js/`, `assets/`) and each reference
+dataset's `LICENSE` and `ATTRIBUTION.txt`; everything else in the project folder, your
+library included, is 404. It takes its port before it looks at the library, so a second
+start by mistake touches nothing. Microphone access requires a "secure context", which
+localhost is, so do not open `index.html` directly from the file system.
 
 ## Workflows
 

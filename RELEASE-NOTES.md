@@ -4,7 +4,34 @@ What changed in each packaged version (`node tools/package.mjs` builds
 `dist/SlokAbhyasa-<version>-windows.zip`), newest first, and what has been built since the
 last package. The README describes every feature as it stands; this file says when it came.
 
-## Unreleased — since 1.6.0 (branch `AcousticAssessment`, 9 October – 4 November 2026)
+## Unreleased — since 1.6.0 (branch `AcousticAssessment`, 9 October – 5 November 2026)
+
+### 5 November 2026
+
+- **The review's fixes.** An independent review of the day before found one way to lose a
+  recording and several smaller gaps; the first two of its groups are fixed. A copy of a
+  sloka made and deleted with Explorer could leave two records on one WAV, and deleting the
+  apparent duplicate deleted the only recording: a file is now claimed by one record only.
+  Two saves of one sloka's details, or one quiz, at the same moment could lose one of them,
+  and the app sends such pairs itself: every change to a sloka's files, a quiz or a session
+  now runs under its own lock. A rename or a move renamed the WAV first, so an interruption
+  orphaned the details; it now renames the sidecars first and the WAV last, refuses a target
+  that already exists, undoes a rename refused mid-way, and a rename cut short is repaired at
+  the next listing by the id the details carry. A second server started on a busy port did
+  its housekeeping on the folder the first was serving: the port is taken first now, and
+  requests wait until the library is in order. A recording being played could not be
+  replaced and Trim answered a raw error: it answers "in use, try again", and a details edit
+  that could not refresh the WAV's bext chunk says so on the console. No other site can put
+  the app in a frame; a page on another local port no longer counts as the app; a bad
+  percent-encoding in a reference path is 400, not 500; a download the browser drops (the
+  player seeking) no longer writes a console line. A file written by a newer build than the
+  one running is left alone and named on the console rather than rewritten as the older
+  form, and the server refuses to start on an index it cannot read, with one sentence. A
+  file that cannot be read but changed in the last five seconds is read again and then
+  refused, not quarantined, since another program may be writing it; a transcript store, a
+  profiles or a badges file that parses but has the wrong shape is quarantined like damage
+  instead of being written over. And the README says plainly that a build from before
+  4 November must not be started on this data folder.
 
 ### 4 November 2026
 

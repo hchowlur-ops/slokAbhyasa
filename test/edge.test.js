@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { HttpError, parsePort, parseRequestUrl, hostAllowed, originAllowed, siteAllowed, refusal, bodyTypeAllowed, staticTarget, DEFAULT_PORT } from '../edge.js';
+import { HttpError, parsePort, parseRequestUrl, hostAllowed, originAllowed, siteAllowed, refusal, bodyTypeAllowed, staticTarget, decodePathPart, NO_FRAME_HEADERS, DEFAULT_PORT } from '../edge.js';
 
 const P = 8787;
 const refused = (fn, status) => assert.throws(fn, (err) => err instanceof HttpError && err.status === status);
@@ -56,13 +56,20 @@ test('originAllowed: absent is a direct request; the own origins pass; null, a f
   assert.equal(originAllowed('', P), false);
 });
 
-test('siteAllowed: absent, none, same-origin and same-site pass; cross-site does not', () => {
+test('siteAllowed: absent, none and same-origin pass; same-site (a page on another local port) and cross-site do not', () => {
   assert.equal(siteAllowed(undefined), true);
   assert.equal(siteAllowed('none'), true);
   assert.equal(siteAllowed('same-origin'), true);
-  assert.equal(siteAllowed('same-site'), true);
+  assert.equal(siteAllowed('same-site'), false, 'a dev server or a notebook on another port of localhost is not this app');
   assert.equal(siteAllowed('cross-site'), false);
   assert.equal(siteAllowed('anything-else'), false);
+});
+
+test('decodePathPart decodes a dataset or verse id and answers 400, not 500, on a bad encoding; the no-frame headers are the two the browsers honour', () => {
+  assert.equal(decodePathPart('12.3'), '12.3');
+  assert.equal(decodePathPart('g%C4%ABt%C4%81'), 'gītā');
+  refused(() => decodePathPart('%E0'), 400);
+  assert.deepEqual({ ...NO_FRAME_HEADERS }, { 'X-Frame-Options': 'DENY', 'Content-Security-Policy': "frame-ancestors 'none'" });
 });
 
 test('refusal: the first failing check, as a 403 with its sentence; a link to the app from another page still opens it', () => {

@@ -59,19 +59,29 @@ export function originAllowed(origin, port) {
   return OWN_NAMES.some((n) => o === `http://${n}:${port}` || (port === 80 && o === `http://${n}`));
 }
 
-const OWN_SITES = new Set(['none', 'same-origin', 'same-site']);
+const OWN_SITES = new Set(['none', 'same-origin']); // not same-site: a page on any other local port is same-site by the browser's rule and is not this app (review of 4 November 2026, finding 10)
 
 // Sec-Fetch-Site, which the browser sets and a page cannot forge: absent (an older browser,
-// a tool) or one of the three own values is allowed; cross-site is not.
+// a tool), none (the address bar) or same-origin is allowed; same-site and cross-site are not.
 export function siteAllowed(secFetchSite) {
   if (secFetchSite === undefined || secFetchSite === null) return true;
   return OWN_SITES.has(String(secFetchSite).trim().toLowerCase());
 }
 
+// Headers on every answer: no page of any other site may put the app in a frame, where a
+// click lined up over Trim or Delete would do the deed (review of 4 November 2026, finding 8).
+export const NO_FRAME_HEADERS = Object.freeze({ 'X-Frame-Options': 'DENY', 'Content-Security-Policy': "frame-ancestors 'none'" });
+
+// A percent-encoded part of a path (a dataset id, a verse id): decoded, or a 400 when the
+// encoding is bad, never a 500.
+export function decodePathPart(s) {
+  try { return decodeURIComponent(String(s)); } catch { throw new HttpError(400, 'That path cannot be read'); }
+}
+
 // The first refusal for a request, or null. A GET navigation (a link to the app from any
 // other page, a bookmark page on disk) is cross-site by the browser's rule and must open the
 // app, so the site check skips it: a navigation cannot read the answer, and a form posted
-// across sites carries an Origin and a form body, which the other checks refuse.
+// across sites carries an Origin in every browser since 2019, which the origin check refuses.
 export function refusal(headers, port, method = 'GET') {
   const h = headers || {};
   if (!hostAllowed(h.host, port)) return new HttpError(403, 'This server answers only its own address');

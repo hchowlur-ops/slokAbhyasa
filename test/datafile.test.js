@@ -6,14 +6,18 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import {
-  writeFileAtomic, writeFileAtomicSync, writeJsonAtomic, writeJsonAtomicSync, copyFileAtomic,
+  writeFileAtomic, writeFileAtomicSync, writeJsonAtomic, writeJsonAtomicSync, copyFileAtomic, renameFile, quarantineFile,
   readJsonFile, readJsonFileSync, parseJsonValue, indexFromJson, readLibraryIndex, readLibraryIndexSync,
   writeLibraryIndex, writeLibraryIndexSync, sweepTemp, serverRunning, stamp, tempName, brokenName, isTempName,
-  INDEX_VERSION, TEMP_MAX_AGE_MS,
+  majorOf, versionTooNew, higherVersion, FileHeldError, NewerFileError,
+  INDEX_VERSION, TEMP_MAX_AGE_MS, FRESH_MS,
 } from '../datafile.js';
 
 const scratch = () => fsp.mkdtemp(path.join(os.tmpdir(), 'slokabhyasa-datafile-'));
 const names = async (dir) => (await fsp.readdir(dir)).sort();
+// A damaged file written a moment ago reads as "still being written"; the cases that expect
+// a quarantine age the file first, as a file damaged long ago would be.
+const aged = async (file, content) => { await fsp.writeFile(file, content); const old = new Date(Date.now() - 2 * FRESH_MS); await fsp.utimes(file, old, old); };
 const noTemporaries = async (dir) => assert.deepEqual((await names(dir)).filter(isTempName), [], 'no temporary file is left behind');
 const quiet = async (fn) => { const warn = console.warn; const log = console.log; const lines = []; console.warn = (s) => lines.push(s); console.log = (s) => lines.push(s); try { return [await fn(), lines]; } finally { console.warn = warn; console.log = log; } };
 
@@ -68,7 +72,7 @@ test('a damaged JSON file is renamed .broken-… with its bytes intact, and the 
   const dir = await scratch();
   try {
     const f = path.join(dir, 'ch12-03.json');
-    await fsp.writeFile(f, '{"name": "CH12-03", "spe');
+    await aged(f, '{"name": "CH12-03", "spe');
     const [r, lines] = await quiet(() => readJsonFile(f));
     assert.equal(r.value, null);
     assert.ok(/\.broken-\d{8}-\d{6}$/.test(r.broken), r.broken);
@@ -78,14 +82,14 @@ test('a damaged JSON file is renamed .broken-… with its bytes intact, and the 
     assert.ok(lines[0].includes(path.basename(r.broken)));
     // the sync twin, on a file holding a bare number
     const g = path.join(dir, 'number.json');
-    await fsp.writeFile(g, '42');
+    await aged(g, '42');
     const [s] = await quiet(() => readJsonFileSync(g));
     assert.equal(s.value, null);
     assert.equal(await fsp.readFile(s.broken, 'utf8'), '42');
     // and on a string, and on null
-    await fsp.writeFile(g, '"text"');
+    await aged(g, '"text"');
     assert.notEqual((await quiet(() => readJsonFile(g)))[0].broken, null);
-    await fsp.writeFile(g, 'null');
+    await aged(g, 'null');
     assert.notEqual((await quiet(() => readJsonFile(g)))[0].broken, null);
     assert.equal((await names(dir)).filter((n) => n.includes('.broken-')).length, 4, 'four quarantines, none overwriting another');
   } finally { await fsp.rm(dir, { recursive: true, force: true }); }
@@ -103,14 +107,100 @@ test('a sound JSON file reads as its value; a byte-order mark from Notepad is no
     assert.equal(parseJsonValue('{'), undefined);
     // a file of the wrong shape (a list where details are expected) is damage too
     const g = path.join(dir, 'ch12-03.json');
-    await fsp.writeFile(g, '[]');
+    await aged(g, '[]');
     assert.deepEqual(await readJsonFile(g, { expect: 'list' }), { value: [], broken: null });
     const [wrong] = await quiet(() => readJsonFile(g, { expect: 'object' }));
     assert.equal(wrong.value, null);
     assert.equal(await fsp.readFile(wrong.broken, 'utf8'), '[]');
-    await fsp.writeFile(g, '{}');
+    await aged(g, '{}');
     const [wrongSync] = await quiet(() => readJsonFileSync(g, { expect: 'list' }));
     assert.ok(wrongSync.broken);
+  } finally { await fsp.rm(dir, { recursive: true, force: true }); }
+});
+
+test('an unreadable file that changed a moment ago is read again, then refused, never renamed: another program may be writing it', async () => {
+  const dir = await scratch();
+  try {
+    const f = path.join(dir, 'profiles.json');
+    await fsp.writeFile(f, '{"schemaVersion": "1.0.0", "profi');
+    const t0 = performance.now();
+    await assert.rejects(readJsonFile(f), (err) => err.code === 'EFRESH' && /still be being written/.test(err.message));
+    assert.ok(performance.now() - t0 >= 150, 'it waited for a second read');
+    assert.throws(() => readJsonFileSync(f), (err) => err.code === 'EFRESH');
+    assert.deepEqual(await names(dir), ['profiles.json'], 'nothing renamed, nothing made');
+    // a 0-byte file the same, while fresh; an old one is damage like any other
+    const g = path.join(dir, 'badges.json');
+    await fsp.writeFile(g, '');
+    await assert.rejects(readJsonFile(g), (err) => err.code === 'EFRESH');
+    await aged(g, '');
+    const [r] = await quiet(() => readJsonFile(g));
+    assert.ok(r.broken, 'an empty file from long ago is quarantined');
+    // a file completed between the first and the second read is read
+    const h = path.join(dir, 'late.json');
+    await fsp.writeFile(h, '{"a":');
+    const read = readJsonFile(h);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await fsp.writeFile(h, '{"a": 1}');
+    assert.deepEqual(await read, { value: { a: 1 }, broken: null });
+  } finally { await fsp.rm(dir, { recursive: true, force: true }); }
+});
+
+test('a file written by a newer app, by its major version, is neither read nor rewritten; a later minor is read', async () => {
+  const dir = await scratch();
+  try {
+    const f = path.join(dir, 'ch12-03.json');
+    await fsp.writeFile(f, '{ "schemaVersion": "2.0.0", "name": "x" }');
+    await assert.rejects(readJsonFile(f, { expect: 'object', known: '1.1.0' }), (err) => err instanceof NewerFileError && /newer SlokAbhyasa \(2\.0\.0\)/.test(err.message));
+    assert.throws(() => readJsonFileSync(f, { expect: 'object', known: '1.1.0' }), NewerFileError);
+    assert.deepEqual(await names(dir), ['ch12-03.json'], 'kept as it is');
+    await fsp.writeFile(f, '{ "schemaVersion": "1.3.0", "name": "x" }');
+    assert.equal((await readJsonFile(f, { expect: 'object', known: '1.1.0' })).value.name, 'x');
+    assert.equal((await readJsonFile(f, { expect: 'object' })).value.name, 'x', 'no known version: no check');
+    const idx = path.join(dir, 'index.json');
+    await fsp.writeFile(idx, '{ "schemaVersion": "2.0.0", "records": [] }');
+    await assert.rejects(readLibraryIndex(idx), NewerFileError);
+    assert.throws(() => readLibraryIndexSync(idx), NewerFileError);
+    assert.ok(fs.existsSync(idx));
+    // the helpers
+    assert.equal(majorOf('2.0.0'), 2);
+    assert.equal(majorOf(undefined), 1, 'no version is the first version');
+    assert.equal(majorOf('junk'), 1);
+    assert.equal(versionTooNew('2.0.0', '1.0.0'), true);
+    assert.equal(versionTooNew('1.9.0', '1.0.0'), false);
+    assert.equal(versionTooNew(undefined, '1.0.0'), false);
+    assert.equal(higherVersion('1.0.0', '1.2.0'), '1.2.0', 'a later minor of the same major is kept');
+    assert.equal(higherVersion('1.1.0', '1.0.0'), '1.1.0');
+    assert.equal(higherVersion('1.0.0', undefined), '1.0.0');
+    assert.equal(higherVersion('1.0.0', '0.9.0'), '1.0.0', 'another major: the known one');
+  } finally { await fsp.rm(dir, { recursive: true, force: true }); }
+});
+
+test('a rename refused by a hold on the target fails after the retries with FileHeldError, the old file whole; quarantineFile is the reader\'s quarantine', async () => {
+  const dir = await scratch();
+  try {
+    const f = path.join(dir, 'take.wav');
+    await fsp.writeFile(f, 'old');
+    const held = fs.openSync(f, 'r'); // what the server holds while it streams a recording
+    try {
+      // Windows refuses to replace an open file; elsewhere the rename goes through
+      if (process.platform === 'win32') {
+        const t0 = performance.now();
+        await assert.rejects(writeFileAtomic(f, 'new'), (err) => err instanceof FileHeldError && err.file === f);
+        assert.ok(performance.now() - t0 >= 200, 'the five tries were made');
+        assert.equal(await fsp.readFile(f, 'utf8'), 'old');
+        await noTemporaries(dir);
+        await assert.rejects(renameFile(path.join(dir, 'other'), f).catch(async (err) => { if (err.code === 'ENOENT') throw new FileHeldError(f, err); throw err; }), FileHeldError);
+      } else {
+        await writeFileAtomic(f, 'new');
+        assert.equal(await fsp.readFile(f, 'utf8'), 'new');
+      }
+    } finally { fs.closeSync(held); }
+    await writeFileAtomic(f, 'newer');
+    assert.equal(await fsp.readFile(f, 'utf8'), 'newer', 'once the hold is gone the save goes through');
+    const g = path.join(dir, 'shape.json');
+    await fsp.writeFile(g, '{ "profiles": "x" }');
+    const [broken] = await quiet(() => quarantineFile(g, { why: 'is not a profiles file' }));
+    assert.ok(broken.includes('.broken-') && !fs.existsSync(g));
   } finally { await fsp.rm(dir, { recursive: true, force: true }); }
 });
 
@@ -205,12 +295,12 @@ test('the index loader reads the old plain list as 1.0.0 and the new object form
     assert.deepEqual(await readLibraryIndex(f), { records: [], version: INDEX_VERSION, legacy: false, broken: null });
     assert.ok(!fs.existsSync(f));
     // parsable but neither form: quarantined, the bytes kept
-    await fsp.writeFile(f, '{ "items": [] }');
+    await aged(f, '{ "items": [] }');
     const [odd] = await quiet(() => readLibraryIndex(f));
     assert.deepEqual(odd.records, []);
     assert.ok(odd.broken && odd.broken.includes('.broken-'), odd.broken);
     assert.equal(await fsp.readFile(odd.broken, 'utf8'), '{ "items": [] }');
-    await fsp.writeFile(f, '[1');
+    await aged(f, '[1');
     const [bad] = await quiet(() => readLibraryIndexSync(f));
     assert.ok(bad.broken, 'the sync twin quarantines too');
     assert.ok(!fs.existsSync(f));

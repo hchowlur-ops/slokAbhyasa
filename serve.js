@@ -30,14 +30,14 @@ import crypto from 'node:crypto';
 import { initReference, datasets as referenceList, dataset as referenceDataset, verse as referenceVerse, verseHash as referenceVerseHash, chapter as referenceChapter, coverage as referenceCoverage, saveCustom as referenceSaveCustom } from './reference.js';
 import { parseVerseId, verseLink, linkHashInput, verseBody, mapNameToVerse, verseTranscript, heardTranscript } from './js/verses.js';
 import { compareWords, tokenize } from './js/textdiff.js';
-import { readMeta, writeMeta, removeMeta, moveMeta, ensureMeta, sanitizeMeta, audioInfo, withBext, bextDescription, readProfiles, writeProfiles, sanitizeProfile } from './meta-store.js';
+import { readMeta, writeMeta, removeMeta, ensureMeta, sanitizeMeta, audioInfo, withBext, bextDescription, readProfiles, readProfilesFile, writeProfiles, sanitizeProfile } from './meta-store.js';
 import { normalizeStore, pickTranscript, putInStore, removeFromStore, shiftStore, transcriptToText, applyTextEdit, publicStore } from './js/transcripts.js';
 import { transliterateTranscript } from './js/translit.js';
 import { assessmentsFromQuiz, assessmentFromSession, byDateDesc } from './js/reports.js';
 import { chandasForRecord } from './js/chandas.js';
 import { computeBadges, quizBadges, coverageBadges, diffBadges, mergeBadges, DEFAULT_RULE, BADGES_VERSION } from './js/badges.js';
-import { writeFileAtomic, writeJsonAtomic, copyFileAtomic, readJsonFile, readLibraryIndex, writeLibraryIndex, sweepTemp, stamp, SESSION_VERSION, QUIZ_VERSION } from './datafile.js';
-import { HttpError, parsePort, parseRequestUrl, refusal, bodyTypeAllowed, staticTarget } from './edge.js';
+import { writeFileAtomic, writeJsonAtomic, copyFileAtomic, renameFile, quarantineFile, readJsonFile, readLibraryIndex, writeLibraryIndex, sweepTemp, stamp, higherVersion, FileHeldError, NewerFileError, SESSION_VERSION, QUIZ_VERSION } from './datafile.js';
+import { HttpError, parsePort, parseRequestUrl, refusal, bodyTypeAllowed, staticTarget, decodePathPart, NO_FRAME_HEADERS } from './edge.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const DATA = resolveDataDir(ROOT);
@@ -135,9 +135,50 @@ async function wavInfo(rel) {
   }
 }
 
+const SIDECAR_EXTS = ['.json', '.features.json', '.transcript.json', '.txt']; // what travels with a WAV, by its base name
+const baseOf = (file) => String(file).replace(/\.wav$/i, ''); // a record's file without its extension (relative, posix)
+const absOf = (rel) => path.join(LIB, ...rel.split('/'));
+
+// Details files with no WAV beside them, by the id they carry: what a rename or a move cut
+// short between its files leaves behind (the WAV renamed and the rest not, or the reverse).
+// Only such orphans are read, so a sound library costs one folder listing each.
+async function listOrphanSidecars() {
+  const orphans = new Map();
+  for (const folder of await listFolders()) {
+    let entries = [];
+    try { entries = await fsp.readdir(path.join(LIB, folder), { withFileTypes: true }); } catch { continue; }
+    const files = entries.filter((e) => e.isFile()).map((e) => e.name);
+    const wavBases = new Set(files.filter((n) => /\.wav$/i.test(n)).map((n) => baseOf(n).toLowerCase()));
+    for (const name of files) {
+      if (!/\.json$/i.test(name) || /\.(features|transcript)\.json$/i.test(name) || (folder === '' && name === 'index.json')) continue;
+      const base = name.replace(/\.json$/i, '');
+      if (wavBases.has(base.toLowerCase())) continue;
+      let value = null;
+      try { value = (await readJsonFile(path.join(LIB, folder, name), { expect: 'object' })).value; } catch { value = null; }
+      if (value && typeof value.id === 'string' && value.id && !orphans.has(value.id)) orphans.set(value.id, folder ? `${folder}/${base}` : base);
+    }
+  }
+  return orphans;
+}
+
+// Brings the sidecars found as `orphanBase` back beside the WAV at `base`: each that exists
+// and whose place is free is renamed; one that cannot be moved is left for the next sync.
+async function adoptSidecars(base, orphanBase, name) {
+  let moved = 0;
+  for (const ext of SIDECAR_EXTS) {
+    const from = absOf(orphanBase + ext);
+    const to = absOf(base + ext);
+    if (!(await fileExists(from)) || (await fileExists(to))) continue;
+    try { await renameFile(from, to); moved++; } catch (err) { console.log(`library: ${path.basename(from)} could not be brought back beside ${path.basename(to)}: ${err.message}`); }
+  }
+  if (moved) console.log(`library: the details of "${name}" found as ${orphanBase}.json and brought back beside ${base}.wav`);
+}
+
 // Brings index.json in line with the files on disk, so slokas can be organised into
 // folders (or dropped in) with Explorer: entries follow a WAV that moved, WAVs without an
 // entry are added, entries whose WAV is gone are removed. Sidecar files travel by name.
+// A file is claimed by one record only, first to last, so a copy made and deleted with
+// Explorer can never leave two records on one WAV (review of 4 November 2026, finding 1).
 async function syncIndex() {
   const files = await listWavFiles();
   const have = new Set(files);
@@ -146,14 +187,21 @@ async function syncIndex() {
   const changes = [];
   await withIndex(async (list) => {
     const used = new Set();
-    for (let i = list.length - 1; i >= 0; i--) {
-      const r = list[i];
+    const kept = [];
+    for (const r of list) {
       const file = String(r.file || '').replace(/\\/g, '/');
-      if (have.has(file)) { r.file = file; used.add(file); continue; }
+      if (have.has(file) && !used.has(file)) { r.file = file; used.add(file); kept.push(r); continue; }
+      if (have.has(file)) { changes.push(`"${r.name}" dropped: ${file} already belongs to another sloka`); continue; }
       const moved = byBase.get(path.posix.basename(file));
-      if (moved && !used.has(moved)) { changes.push(`"${r.name}" moved to ${folderOf(moved) || 'the top level'}`); r.file = moved; used.add(moved); continue; }
+      if (moved && !used.has(moved)) { changes.push(`"${r.name}" moved to ${folderOf(moved) || 'the top level'}`); r.file = moved; used.add(moved); kept.push(r); continue; }
       changes.push(`"${r.name}" removed: ${file} is gone`);
-      list.splice(i, 1);
+    }
+    list.length = 0;
+    list.push(...kept);
+    // the sidecars a rename or a move cut short are brought back beside their WAV by id
+    const orphans = await listOrphanSidecars();
+    for (const r of list) {
+      if (orphans.has(r.id) && !(await fileExists(metaPath(r)))) { await adoptSidecars(baseOf(r.file), orphans.get(r.id), r.name); orphans.delete(r.id); }
     }
     const ids = new Set(list.map((r) => r.id));
     for (const f of files) {
@@ -166,6 +214,7 @@ async function syncIndex() {
       if (!info) { changes.push(`${f} skipped: not a readable WAV`); continue; }
       let stat = null;
       try { stat = await fsp.stat(path.join(LIB, f)); } catch { stat = null; }
+      if (parsed && orphans.has(parsed.id) && !(await fileExists(absOf(`${baseOf(f)}.json`)))) { await adoptSidecars(baseOf(f), orphans.get(parsed.id), parsed.slug); orphans.delete(parsed.id); }
       // the details beside the WAV, when there are some, know the sloka's name, date, source
       // and id better than its file name does (an index lost and rebuilt keeps every name)
       let meta = null;
@@ -195,19 +244,32 @@ async function syncIndex() {
   return changes.length;
 }
 
-// Moves a sloka's WAV and sidecar files into `folder` (created if needed).
-async function moveRecord(r, folder) {
+// Renames a record's files to `newFile` (a move or a rename): a target already there is
+// refused, the sidecars go first and the WAV last, so an interruption leaves the WAV where
+// the index says it is and its sidecars where the sync's orphan repair finds them by id, and
+// a rename refused mid-way is undone (review of 4 November 2026, findings 4 and 5).
+async function renameFiles(r, newFile) {
   const oldRec = { ...r };
-  const newFile = folder ? `${folder}/${path.posix.basename(r.file)}` : path.posix.basename(r.file);
-  if (newFile === r.file) return r;
   const newRec = { ...r, file: newFile };
-  await fsp.mkdir(path.join(LIB, folder), { recursive: true });
-  for (const fn of [audioPath, featuresPath, transcriptPath, textPath]) {
-    if (await fileExists(fn(oldRec))) await fsp.rename(fn(oldRec), fn(newRec));
+  const pairs = [[featuresPath(oldRec), featuresPath(newRec)], [transcriptPath(oldRec), transcriptPath(newRec)], [textPath(oldRec), textPath(newRec)], [metaPath(oldRec), metaPath(newRec)], [audioPath(oldRec), audioPath(newRec)]];
+  for (const [, to] of pairs) if (await fileExists(to)) throw new HttpError(409, `A file named ${path.basename(to)} is already in that folder`);
+  await fsp.mkdir(path.dirname(audioPath(newRec)), { recursive: true });
+  const done = [];
+  try {
+    for (const [from, to] of pairs) { if (await fileExists(from)) { await renameFile(from, to); done.push([to, from]); } }
+  } catch (err) {
+    for (const [to, from] of done.reverse()) { try { await renameFile(to, from); } catch { /* the sync's orphan repair takes it from here */ } }
+    throw err;
   }
-  await moveMeta(audioPath(oldRec), audioPath(newRec));
   r.file = newFile;
   return r;
+}
+
+// Moves a sloka's WAV and sidecar files into `folder` (created if needed).
+async function moveRecord(r, folder) {
+  const newFile = folder ? `${folder}/${path.posix.basename(r.file)}` : path.posix.basename(r.file);
+  if (newFile === r.file) return r;
+  return renameFiles(r, newFile);
 }
 
 // The index's records (datafile.js reads both its forms; a damaged file is quarantined and the
@@ -231,6 +293,26 @@ function withIndex(fn) {
   return run;
 }
 
+// ---------- one writer at a time per file ----------
+// A read-modify-write of a sloka's files, a quiz or a session runs after the previous one on
+// the same key, so two saves at once never lose one another: the app sends a sloka's voice
+// measurements as it loads while an edit of its speaker is saved (review of 4 November 2026,
+// finding 3: one of two concurrent saves lost in 8 of 8 rounds). Keys: sloka:<id> (its
+// details, transcripts and WAV), quiz:<id>, session:<id>. A sloka's lock is taken after the
+// index's, never before it, so the two can never wait on each other.
+const fileLocks = new Map();
+function withLock(key, fn) {
+  const prev = fileLocks.get(key) || Promise.resolve();
+  const run = prev.then(fn, fn);
+  const settled = run.catch(() => {});
+  fileLocks.set(key, settled);
+  settled.then(() => { if (fileLocks.get(key) === settled) fileLocks.delete(key); });
+  return run;
+}
+const withSloka = (id, fn) => withLock(`sloka:${id}`, fn);
+const withQuiz = (id, fn) => withLock(`quiz:${id}`, fn);
+const withSession = (id, fn) => withLock(`session:${id}`, fn);
+
 function slug(name) {
   const s = String(name || '')
     .normalize('NFKD')
@@ -246,6 +328,7 @@ function slug(name) {
 const newId = () => `${stamp()}-${Math.random().toString(36).slice(2, 6)}`; // 20261015-071530-ab3f
 
 const audioPath = (rec) => path.join(LIB, ...rec.file.split('/'));
+const metaPath = (rec) => path.join(LIB, ...rec.file.replace(/\.wav$/i, '.json').split('/'));
 const featuresPath = (rec) => path.join(LIB, ...rec.file.replace(/\.wav$/i, '.features.json').split('/'));
 const transcriptPath = (rec) => path.join(LIB, ...rec.file.replace(/\.wav$/i, '.transcript.json').split('/'));
 const textPath = (rec) => path.join(LIB, ...rec.file.replace(/\.wav$/i, '.txt').split('/'));
@@ -283,7 +366,11 @@ async function readTranscripts(rec) {
   let jStat = null;
   let tStat = null;
   const { value } = await readJsonFile(jp, { expect: 'object' }); // a damaged store is quarantined, then rebuilt from the .txt below when there is one
-  if (value) { try { store = normalizeStore(value); jStat = await fsp.stat(jp); } catch { store = null; } }
+  if (value) {
+    try { store = normalizeStore(value); } catch { store = null; }
+    if (store) { try { jStat = await fsp.stat(jp); } catch { jStat = null; } }
+    else await quarantineFile(jp, { why: 'is not a transcript store (no transcript in it)' }); // parsable, the wrong shape: kept, never written over
+  }
   try { tStat = await fsp.stat(tp); } catch { tStat = null; }
   if (tStat && (!store || !jStat || tStat.mtimeMs > jStat.mtimeMs + 1500)) {
     const edited = applyTextEdit(pickTranscript(store), await fsp.readFile(tp, 'utf8'), tStat.mtime.toISOString());
@@ -343,8 +430,9 @@ async function writeWavWithBext(rec, bytes, meta) {
   await writeFileAtomic(audioPath(rec), out);
 }
 
-// A file's object with its version first (an old file without one gets it on its next save).
-const versioned = (version, obj) => { const { schemaVersion, ...rest } = obj; return { schemaVersion: version, ...rest }; };
+// A file's object with its version first (an old file without one gets it on its next save;
+// one of the same major and a later minor keeps its own).
+const versioned = (version, obj) => { const { schemaVersion, ...rest } = obj; return { schemaVersion: higherVersion(version, schemaVersion), ...rest }; };
 
 // ---------- quizzes ----------
 // One JSON file per quiz in ./quizzes: the picked slokas, the chosen score categories and
@@ -356,19 +444,24 @@ const QUIZ_ID = /^\d{8}-\d{6}-[a-z0-9]{4}$/;
 
 async function readQuiz(id) {
   if (!QUIZ_ID.test(id)) return null;
-  return (await readJsonFile(quizPath(id), { expect: 'object' })).value; // a damaged quiz is quarantined and named on the console
+  return (await readJsonFile(quizPath(id), { expect: 'object', known: QUIZ_VERSION })).value; // a damaged quiz is quarantined and named on the console; one from a newer app throws
 }
 async function writeQuiz(q) { await writeJsonAtomic(quizPath(q.id), versioned(QUIZ_VERSION, q)); }
-async function listQuizzes() {
+// Every quiz on file; one that cannot be read is skipped with a console line, not the whole list.
+async function allQuizzes() {
   let names = [];
   try { names = await fsp.readdir(QUIZZES); } catch { return []; }
   const out = [];
   for (const n of names) {
     if (!n.endsWith('.json')) continue;
-    const q = await readQuiz(n.slice(0, -5));
-    if (q) out.push(quizSummary(q));
+    let q = null;
+    try { q = await readQuiz(n.slice(0, -5)); } catch (err) { console.warn(`quizzes: ${n} skipped: ${err.message}`); continue; }
+    if (q) out.push(q);
   }
-  return out.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  return out;
+}
+async function listQuizzes() {
+  return (await allQuizzes()).map(quizSummary).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
 }
 function quizSummary(q) {
   const attempts = Array.isArray(q.attempts) ? q.attempts : [];
@@ -424,6 +517,8 @@ async function handleQuizzes(req, res, parts) {
 
   const q = await readQuiz(id);
   if (!q) return sendJson(res, 404, { error: 'No such quiz' });
+  // a change to the quiz reads it again under its lock, so two at once never lose one another
+  const changeQuiz = (fn) => withQuiz(id, async () => { const cur = await readQuiz(id); if (!cur) throw new HttpError(404, 'No such quiz'); await fn(cur); await writeQuiz(cur); return cur; });
 
   // POST /api/quizzes/:id/attempts  {at, takeDuration, categories, score, byCategory, items}
   if (sub === 'attempts' && req.method === 'POST') {
@@ -447,13 +542,11 @@ async function handleQuizzes(req, res, parts) {
     if (a.learner && typeof a.learner === 'object') {
       attempt.learner = { profileId: typeof a.learner.profileId === 'string' ? a.learner.profileId.slice(0, 40) : null, voiceType: String(a.learner.voiceType || 'preferNotToSay').slice(0, 20), ageGroup: String(a.learner.ageGroup || 'unspecified').slice(0, 20) };
     }
-    q.attempts = Array.isArray(q.attempts) ? q.attempts : [];
-    q.attempts.push(attempt);
-    await writeQuiz(q);
+    const saved = await changeQuiz((cur) => { cur.attempts = Array.isArray(cur.attempts) ? cur.attempts : []; cur.attempts.push(attempt); });
     // a badge earned or raised by this attempt (see js/badges.js) comes back with the quiz
     let awards = [];
-    try { awards = await awardBadges(q); } catch (err) { console.warn(`Badges could not be awarded: ${err.message}`); }
-    return sendJson(res, 201, { ...q, awards });
+    try { awards = await awardBadges(saved); } catch (err) { console.warn(`Badges could not be awarded: ${err.message}`); }
+    return sendJson(res, 201, { ...saved, awards });
   }
   // PUT /api/quizzes/:id/attempts/:n/audio  (body: WAV bytes) — the take of attempt n (1-based),
   // kept as quizzes/<id>/attempt-<n>.wav so a scoring can be looked into afterwards.
@@ -466,10 +559,13 @@ async function handleQuizzes(req, res, parts) {
     if (req.method === 'PUT') {
       const body = await readWav(req);
       if (!isWav(body)) return sendJson(res, 400, { error: 'Body must be a RIFF/WAVE file' });
-      await fsp.mkdir(path.dirname(p), { recursive: true });
-      await writeFileAtomic(p, body);
-      attempts[n - 1].audio = path.basename(p);
-      await writeQuiz(q);
+      await changeQuiz(async (cur) => {
+        const list = Array.isArray(cur.attempts) ? cur.attempts : [];
+        if (n > list.length) throw new HttpError(404, 'No such attempt');
+        await fsp.mkdir(path.dirname(p), { recursive: true });
+        await writeFileAtomic(p, body);
+        list[n - 1].audio = path.basename(p);
+      });
       return sendJson(res, 200, { ok: true, file: path.relative(QUIZZES, p).replace(/\\/g, '/') });
     }
     if (req.method === 'GET' || req.method === 'HEAD') {
@@ -486,14 +582,17 @@ async function handleQuizzes(req, res, parts) {
   if (req.method === 'GET') return sendJson(res, 200, q);
   if (req.method === 'PATCH') {
     const patch = await readJson(req, 1e6);
-    if (patch.categories !== undefined) q.categories = normalizeCategories(patch.categories);
-    if (typeof patch.name === 'string' && patch.name.trim()) q.name = patch.name.trim().slice(0, 120);
-    await writeQuiz(q);
-    return sendJson(res, 200, q);
+    const cur = await changeQuiz((cur) => {
+      if (patch.categories !== undefined) cur.categories = normalizeCategories(patch.categories);
+      if (typeof patch.name === 'string' && patch.name.trim()) cur.name = patch.name.trim().slice(0, 120);
+    });
+    return sendJson(res, 200, cur);
   }
   if (req.method === 'DELETE') {
-    await fsp.rm(quizPath(id), { force: true });
-    await fsp.rm(path.join(QUIZZES, id), { recursive: true, force: true }); // its kept recordings
+    await withQuiz(id, async () => {
+      await fsp.rm(quizPath(id), { force: true });
+      await fsp.rm(path.join(QUIZZES, id), { recursive: true, force: true }); // its kept recordings
+    });
     return sendJson(res, 200, { ok: true });
   }
   return sendJson(res, 405, { error: 'Method not allowed' });
@@ -508,16 +607,18 @@ const sessionPath = (id) => path.join(SESSIONS, `${id}.json`);
 const sessionAudioPath = (id) => path.join(SESSIONS, id, 'take.wav');
 async function readSession(id) {
   if (!QUIZ_ID.test(id)) return null;
-  return (await readJsonFile(sessionPath(id), { expect: 'object' })).value; // a damaged session is quarantined and named on the console
+  return (await readJsonFile(sessionPath(id), { expect: 'object', known: SESSION_VERSION })).value; // a damaged session is quarantined and named on the console; one from a newer app throws
 }
 async function writeSession(s) { await writeJsonAtomic(sessionPath(s.id), versioned(SESSION_VERSION, s)); }
+// Every session on file; one that cannot be read is skipped with a console line, not the whole list.
 async function listSessions() {
   let names = [];
   try { names = await fsp.readdir(SESSIONS); } catch { return []; }
   const out = [];
   for (const n of names) {
     if (!n.endsWith('.json')) continue;
-    const s = await readSession(n.slice(0, -5));
+    let s = null;
+    try { s = await readSession(n.slice(0, -5)); } catch (err) { console.warn(`sessions: ${n} skipped: ${err.message}`); continue; }
     if (s) out.push(s);
   }
   return out;
@@ -561,17 +662,20 @@ async function handleSessions(req, res, parts) {
   if (!id) return sendJson(res, 405, { error: 'Method not allowed' });
   const s = await readSession(id);
   if (!s) return sendJson(res, 404, { error: 'No such session' });
+  // a change to the session reads it again under its lock: the recording, the ear's log and
+  // the scores arrive within moments of each other and must not lose one another
+  const changeSession = (fn) => withSession(id, async () => { const cur = (await readSession(id)) || s; await fn(cur); await writeSession(cur); return cur; });
   // PUT / GET /api/sessions/:id/audio — the recording of the take
   if (sub === 'audio') {
     const p = sessionAudioPath(id);
     if (req.method === 'PUT') {
       const body = await readWav(req);
       if (!isWav(body)) return sendJson(res, 400, { error: 'Body must be a RIFF/WAVE file' });
-      await fsp.mkdir(path.dirname(p), { recursive: true });
-      await writeFileAtomic(p, body);
-      const fresh = (await readSession(id)) || s; // the session as it is now: the ear's log may have been written meanwhile
-      fresh.audio = 'take.wav';
-      await writeSession(fresh);
+      await changeSession(async (cur) => {
+        await fsp.mkdir(path.dirname(p), { recursive: true });
+        await writeFileAtomic(p, body);
+        cur.audio = 'take.wav';
+      });
       return sendJson(res, 200, { ok: true });
     }
     if (req.method === 'GET' || req.method === 'HEAD') {
@@ -589,11 +693,11 @@ async function handleSessions(req, res, parts) {
     if (req.method === 'PUT') {
       const body = await readJson(req, 20e6);
       if (!Array.isArray(body.rows)) return sendJson(res, 400, { error: 'Body must be an ear log' });
-      await fsp.mkdir(path.dirname(p), { recursive: true });
-      await writeJsonAtomic(p, body, { compact: true });
-      const fresh = (await readSession(id)) || s; // the recording may have been written meanwhile
-      fresh.earLog = 'ear.json';
-      await writeSession(fresh);
+      await changeSession(async (cur) => {
+        await fsp.mkdir(path.dirname(p), { recursive: true });
+        await writeJsonAtomic(p, body, { compact: true });
+        cur.earLog = 'ear.json';
+      });
       return sendJson(res, 200, { ok: true });
     }
     if (req.method === 'GET') {
@@ -608,13 +712,13 @@ async function handleSessions(req, res, parts) {
   if (req.method === 'GET') return sendJson(res, 200, s);
   if (req.method === 'PUT' || req.method === 'PATCH') {
     const body = await readJson(req, 5e6);
-    sessionFields(body, s);
-    await writeSession(s);
-    return sendJson(res, 200, s);
+    return sendJson(res, 200, await changeSession((cur) => { sessionFields(body, cur); }));
   }
   if (req.method === 'DELETE') {
-    await fsp.rm(sessionPath(id), { force: true });
-    await fsp.rm(path.join(SESSIONS, id), { recursive: true, force: true });
+    await withSession(id, async () => {
+      await fsp.rm(sessionPath(id), { force: true });
+      await fsp.rm(path.join(SESSIONS, id), { recursive: true, force: true });
+    });
     return sendJson(res, 200, { ok: true });
   }
   return sendJson(res, 405, { error: 'Method not allowed' });
@@ -625,13 +729,7 @@ async function handleSessions(req, res, parts) {
 async function handleAssessments(req, res) {
   if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
   const out = [];
-  let names = [];
-  try { names = await fsp.readdir(QUIZZES); } catch { names = []; }
-  for (const n of names) {
-    if (!n.endsWith('.json')) continue;
-    const q = await readQuiz(n.slice(0, -5));
-    if (q) out.push(...assessmentsFromQuiz(q));
-  }
+  for (const q of await allQuizzes()) out.push(...assessmentsFromQuiz(q));
   for (const s of await listSessions()) out.push(assessmentFromSession(s));
   return sendJson(res, 200, out.sort(byDateDesc));
 }
@@ -664,14 +762,16 @@ function sendJson(res, status, obj, headers = {}) {
   send(res, status, JSON.stringify(obj), { 'Content-Type': 'application/json; charset=utf-8', ...headers });
 }
 
-// Streams a file into the response. An error once the headers are out (a file removed
-// between its stat and its open, a client gone) ends the response and is logged; before
-// them it is thrown and answered as any other.
+// Streams a file into the response. An error once the headers are out ends the response: a
+// client gone (the audio element seeks by dropping its request; a tab closed) is silent, a
+// file removed between its stat and its open is logged; before the headers it is thrown and
+// answered as any other.
+const CLIENT_GONE = new Set(['ERR_STREAM_PREMATURE_CLOSE', 'ECONNRESET', 'EPIPE']); // the browser dropped the connection
 async function sendFile(res, stream) {
   try { await pipeline(stream, res); } catch (err) {
     if (!res.headersSent) throw err;
     res.destroy();
-    console.error(`sending a file → ${err.message}`);
+    if (!CLIENT_GONE.has(err.code)) console.error(`sending a file → ${err.message}`);
   }
 }
 
@@ -744,10 +844,11 @@ async function fileExists(p) {
 // learner's profile id (names stay in profiles.json). Awarded on each attempt, idempotent;
 // rebuilt whole by a recompute (the tool, or a change of the rule).
 async function readBadges() {
-  const { value: b } = await readJsonFile(BADGES, { expect: 'object' }); // a damaged file is quarantined; the badges are derived and come back on the next recompute
-  return { rule: { ...DEFAULT_RULE, ...(b && b.rule && typeof b.rule === 'object' ? { differentDays: !!b.rule.differentDays } : {}) }, badges: b && Array.isArray(b.badges) ? b.badges : [] };
+  const { value: b } = await readJsonFile(BADGES, { expect: 'object', known: BADGES_VERSION }); // a damaged file is quarantined; the badges are derived and come back on the next recompute
+  if (b && b.badges !== undefined && !Array.isArray(b.badges)) { await quarantineFile(BADGES, { why: 'is not a badges file (its list is not a list)' }); return { rule: { ...DEFAULT_RULE }, badges: [], version: null }; }
+  return { rule: { ...DEFAULT_RULE, ...(b && b.rule && typeof b.rule === 'object' ? { differentDays: !!b.rule.differentDays } : {}) }, badges: b && Array.isArray(b.badges) ? b.badges : [], version: b && typeof b.schemaVersion === 'string' ? b.schemaVersion : null };
 }
-async function writeBadges(store) { await writeJsonAtomic(BADGES, { schemaVersion: BADGES_VERSION, rule: store.rule, badges: store.badges }); }
+async function writeBadges(store) { await writeJsonAtomic(BADGES, { schemaVersion: higherVersion(BADGES_VERSION, store.version), rule: store.rule, badges: store.badges }); }
 let badgesLock = Promise.resolve();
 function withBadges(fn) {
   const run = badgesLock.then(async () => {
@@ -765,13 +866,6 @@ async function verseIdsIndex() {
   const map = new Map();
   for (const r of await readIndex()) { const item = await withMeta(r); map.set(r.id, item.meta && item.meta.verse && item.meta.verse.id ? [item.meta.verse.id] : []); }
   return map;
-}
-async function allQuizzes() {
-  let names = [];
-  try { names = await fsp.readdir(QUIZZES); } catch { return []; }
-  const out = [];
-  for (const n of names) { if (!n.endsWith('.json')) continue; const q = await readQuiz(n.slice(0, -5)); if (q) out.push(q); }
-  return out;
 }
 async function awardBadges(quiz) {
   return withBadges(async (store) => {
@@ -811,10 +905,10 @@ async function handleBadges(req, res, parts, url) {
 let profilesLock = Promise.resolve();
 function withProfiles(fn) {
   const run = profilesLock.then(async () => {
-    const list = await readProfiles(PROFILES);
+    const { profiles: list, version } = await readProfilesFile(PROFILES);
     const before = JSON.stringify(list);
     const out = await fn(list);
-    if (JSON.stringify(list) !== before) await writeProfiles(PROFILES, list);
+    if (JSON.stringify(list) !== before) await writeProfiles(PROFILES, list, { version });
     return out;
   });
   profilesLock = run.catch(() => {});
@@ -960,11 +1054,11 @@ async function guessVerse(rec, ds) {
 async function handleReference(req, res, parts) {
   const [, , dsId, sub, arg, sub2] = parts;
   if (!dsId) { if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' }); return sendJson(res, 200, referenceList().map(({ dir, ...d }) => d)); }
-  const ds = referenceDataset(decodeURIComponent(dsId));
+  const ds = referenceDataset(decodePathPart(dsId));
   if (!ds) return sendJson(res, 404, { error: `No reference dataset "${dsId}"` });
   if (ds.errors.length) return sendJson(res, 409, { error: 'The dataset has errors and is not served', errors: ds.errors });
   if (sub === 'verses' && arg && sub2 === 'custom') {
-    const vid = decodeURIComponent(arg);
+    const vid = decodePathPart(arg);
     if (!referenceVerse(ds, vid)) return sendJson(res, 404, { error: `No verse "${vid}"` });
     if (req.method === 'PUT') return sendJson(res, 200, referenceSaveCustom(ds, vid, await readJson(req, 1e6)));
     if (req.method === 'DELETE') return sendJson(res, 200, referenceSaveCustom(ds, vid, null));
@@ -978,12 +1072,14 @@ async function handleReference(req, res, parts) {
     const report = { written: [], skipped: [] };
     for (const rec of await readIndex()) {
       if (want && !want.has(rec.id)) continue;
-      const meta = await readMeta(audioPath(rec));
-      const link = meta && meta.verse;
-      const entry = link && link.dataset === ds.id ? referenceVerse(ds, link.id) : null;
-      if (!entry) { report.skipped.push({ id: rec.id, name: rec.name, reason: link ? 'its verse is not in this dataset' : 'not linked' }); continue; }
-      await wordsFromVerse(rec, entry, link.speakerLineRecited);
-      report.written.push({ id: rec.id, name: rec.name, verse: link.id });
+      await withSloka(rec.id, async () => {
+        const meta = await readMeta(audioPath(rec));
+        const link = meta && meta.verse;
+        const entry = link && link.dataset === ds.id ? referenceVerse(ds, link.id) : null;
+        if (!entry) { report.skipped.push({ id: rec.id, name: rec.name, reason: link ? 'its verse is not in this dataset' : 'not linked' }); return; }
+        await wordsFromVerse(rec, entry, link.speakerLineRecited);
+        report.written.push({ id: rec.id, name: rec.name, verse: link.id });
+      });
     }
     return sendJson(res, 200, report);
   }
@@ -995,13 +1091,15 @@ async function handleReference(req, res, parts) {
     const report = { mapped: [], doubtful: [], unmapped: [], linked: 0 };
     for (const rec of await readIndex()) {
       if (want && !want.has(rec.id)) continue;
-      const meta = await ensureMeta(rec, audioPath(rec));
-      if (meta.verse) continue; // linked already
-      const g = await guessVerse(rec, ds);
-      if (!g.entry) { report.unmapped.push({ id: rec.id, name: rec.name, folder: folderOf(rec.file), reason: 'the name does not name a verse of the dataset' }); continue; }
-      const row = { id: rec.id, name: rec.name, folder: folderOf(rec.file), verse: g.entry.id, by: g.guess.by, similarity: g.similarity, firstLine: g.entry.deva[0] };
-      if (g.doubtful) { report.doubtful.push(row); if (!(write && body.writeDoubtful)) continue; } else report.mapped.push(row);
-      if (write) { await linkToVerse(rec, meta, ds, g.entry, { mappedBy: 'migration' }); report.linked++; }
+      await withSloka(rec.id, async () => {
+        const meta = await ensureMeta(rec, audioPath(rec));
+        if (meta.verse) return; // linked already
+        const g = await guessVerse(rec, ds);
+        if (!g.entry) { report.unmapped.push({ id: rec.id, name: rec.name, folder: folderOf(rec.file), reason: 'the name does not name a verse of the dataset' }); return; }
+        const row = { id: rec.id, name: rec.name, folder: folderOf(rec.file), verse: g.entry.id, by: g.guess.by, similarity: g.similarity, firstLine: g.entry.deva[0] };
+        if (g.doubtful) { report.doubtful.push(row); if (!(write && body.writeDoubtful)) return; } else report.mapped.push(row);
+        if (write) { await linkToVerse(rec, meta, ds, g.entry, { mappedBy: 'migration' }); report.linked++; }
+      });
     }
     return sendJson(res, 200, report);
   }
@@ -1023,7 +1121,7 @@ async function handleReference(req, res, parts) {
     return sendJson(res, 200, { ...ch, entries });
   }
   if (sub === 'verses' && arg) {
-    const v = referenceVerse(ds, decodeURIComponent(arg));
+    const v = referenceVerse(ds, decodePathPart(arg));
     if (!v) return sendJson(res, 404, { error: `No verse "${arg}"` });
     return sendJson(res, 200, v);
   }
@@ -1085,17 +1183,16 @@ async function handleApi(req, res, url) {
     rec.file = `${folder ? folder + '/' : ''}${slug(name)}-${rec.id}.wav`;
     await fsp.mkdir(path.join(LIB, folder), { recursive: true });
     let meta = sanitizeMeta({ name, source: rec.source }, { id: rec.id, createdAt: rec.createdAt, audio: info });
-    await writeWavWithBext(rec, body, meta);
-    await writeMeta(audioPath(rec), meta);
+    await withSloka(rec.id, async () => { await writeWavWithBext(rec, body, meta); await writeMeta(audioPath(rec), meta); });
     await withIndex((list) => { list.push(rec); });
-    if (chosen) meta = await linkToVerse(rec, meta, chosen.ds, chosen.entry, { speakerLineRecited: chosen.speakerLineRecited, mappedBy: 'learn' });
+    if (chosen) meta = await withSloka(rec.id, () => linkToVerse(rec, meta, chosen.ds, chosen.entry, { speakerLineRecited: chosen.speakerLineRecited, mappedBy: 'learn' }));
     // ?autolink=1: a name that names a verse of a dataset here links the recording to it
     else if (url.searchParams.get('autolink') === '1') {
       for (const d of referenceList()) {
         const ds = referenceDataset(d.id);
         if (!ds || ds.errors.length) continue;
         const g = await guessVerse(rec, ds);
-        if (g.entry) { meta = await linkToVerse(rec, meta, ds, g.entry, { mappedBy: 'name' }); break; }
+        if (g.entry) { meta = await withSloka(rec.id, () => linkToVerse(rec, meta, ds, g.entry, { mappedBy: 'name' })); break; }
       }
     }
     return sendJson(res, 201, publicRecord(rec, meta));
@@ -1162,35 +1259,39 @@ async function handleApi(req, res, url) {
 
   // POST /api/baselines/:id/trim  → trims silence at both ends of the stored WAV
   if (sub === 'trim' && req.method === 'POST') {
-    let bytes;
-    try { bytes = await fsp.readFile(audioPath(rec)); } catch { return sendJson(res, 404, { error: 'Audio file missing on disk' }); }
-    const { samples, sampleRate } = decodeWav(bytes);
-    const t = trimSilence(samples, sampleRate);
-    const duration = t.samples.length / sampleRate;
-    if (t.changed) {
-      // Keep the untouched original (first version only) in library/backup.
-      const backupDir = path.join(LIB, 'backup');
-      await fsp.mkdir(backupDir, { recursive: true });
-      const backup = path.join(backupDir, rec.file);
-      if (!(await fileExists(backup))) { await fsp.mkdir(path.dirname(backup), { recursive: true }); await copyFileAtomic(audioPath(rec), backup); }
-      const trimmed = encodeWavBytes(t.samples, sampleRate);
-      // the sidecar records the edit and follows the new audio
-      const meta = (await readMeta(audioPath(rec))) || sanitizeMeta({ name: rec.name, source: rec.source }, { id: rec.id, createdAt: rec.createdAt });
-      meta.edit = { trimStartSec: Number((((meta.edit && meta.edit.trimStartSec) || 0) + t.removedStart).toFixed(3)), trimEndSec: Number((((meta.edit && meta.edit.trimEndSec) || 0) + t.removedEnd).toFixed(3)) };
-      meta.audio = audioInfo(Buffer.from(trimmed.buffer, trimmed.byteOffset, trimmed.byteLength));
-      if (meta.measured) meta.measured.durationSec = Number(duration.toFixed(2));
-      if (meta.voice) { meta.voice.leadSilenceSec = Math.max(0, Number((((meta.voice.leadSilenceSec || 0) - t.removedStart)).toFixed(2))); meta.voice.trailSilenceSec = Math.max(0, Number((((meta.voice.trailSilenceSec || 0) - t.removedEnd)).toFixed(2))); }
-      await writeWavWithBext(rec, trimmed, meta);
-      await writeMeta(audioPath(rec), meta);
-      await fsp.rm(featuresPath(rec), { force: true });
-      // Stored transcripts keep their words; only their timestamps shift.
-      try {
-        const store = await readTranscripts(rec);
-        if (store) await writeTranscripts(rec, shiftStore(store, t.removedStart, duration));
-      } catch { /* no transcript */ }
-      await withIndex((l) => { const r = l.find((x) => x.id === id); if (r) { r.duration = duration; r.sampleRate = sampleRate; } });
-    }
-    return sendJson(res, 200, { changed: t.changed, removedStart: t.removedStart, removedEnd: t.removedEnd, duration });
+    // the sloka's files under its lock; the index after, never inside it (the index's lock comes first)
+    const out = await withSloka(id, async () => {
+      let bytes;
+      try { bytes = await fsp.readFile(audioPath(rec)); } catch { return { status: 404, body: { error: 'Audio file missing on disk' } }; }
+      const { samples, sampleRate } = decodeWav(bytes);
+      const t = trimSilence(samples, sampleRate);
+      const duration = t.samples.length / sampleRate;
+      if (t.changed) {
+        // Keep the untouched original (first version only) in library/backup.
+        const backupDir = path.join(LIB, 'backup');
+        await fsp.mkdir(backupDir, { recursive: true });
+        const backup = path.join(backupDir, rec.file);
+        if (!(await fileExists(backup))) { await fsp.mkdir(path.dirname(backup), { recursive: true }); await copyFileAtomic(audioPath(rec), backup); }
+        const trimmed = encodeWavBytes(t.samples, sampleRate);
+        // the sidecar records the edit and follows the new audio
+        const meta = (await readMeta(audioPath(rec))) || sanitizeMeta({ name: rec.name, source: rec.source }, { id: rec.id, createdAt: rec.createdAt });
+        meta.edit = { trimStartSec: Number((((meta.edit && meta.edit.trimStartSec) || 0) + t.removedStart).toFixed(3)), trimEndSec: Number((((meta.edit && meta.edit.trimEndSec) || 0) + t.removedEnd).toFixed(3)) };
+        meta.audio = audioInfo(Buffer.from(trimmed.buffer, trimmed.byteOffset, trimmed.byteLength));
+        if (meta.measured) meta.measured.durationSec = Number(duration.toFixed(2));
+        if (meta.voice) { meta.voice.leadSilenceSec = Math.max(0, Number((((meta.voice.leadSilenceSec || 0) - t.removedStart)).toFixed(2))); meta.voice.trailSilenceSec = Math.max(0, Number((((meta.voice.trailSilenceSec || 0) - t.removedEnd)).toFixed(2))); }
+        await writeWavWithBext(rec, trimmed, meta); // refused while the recording is being played: a 409, nothing written (FileHeldError)
+        await writeMeta(audioPath(rec), meta);
+        await fsp.rm(featuresPath(rec), { force: true });
+        // Stored transcripts keep their words; only their timestamps shift.
+        try {
+          const store = await readTranscripts(rec);
+          if (store) await writeTranscripts(rec, shiftStore(store, t.removedStart, duration));
+        } catch { /* no transcript */ }
+      }
+      return { status: 200, body: { changed: t.changed, removedStart: t.removedStart, removedEnd: t.removedEnd, duration }, changed: t.changed, duration, sampleRate };
+    });
+    if (out.changed) await withIndex((l) => { const r = l.find((x) => x.id === id); if (r) { r.duration = out.duration; r.sampleRate = out.sampleRate; } });
+    return sendJson(res, out.status, out.body);
   }
 
   // GET / PUT / DELETE /api/baselines/:id/transcript — the transcripts, one per language.
@@ -1211,26 +1312,32 @@ async function handleApi(req, res, url) {
       if (typeof body.text !== 'string') return sendJson(res, 400, { error: 'Transcript needs a text field' });
       if (!body.text.trim() && !(Array.isArray(body.chunks) && body.chunks.some((c) => c && String(c.text || '').trim()))) return sendJson(res, 400, { error: 'An empty transcript is not stored' });
       const primary = url.searchParams.get('primary') !== '0';
-      // a linked recording's words are the verse's: a hearing put here lends its timings, no more
-      const linkMeta = await readMeta(audioPath(rec)).catch(() => null);
-      if (linkMeta && linkMeta.verse && body.from !== 'reference' && body.language === 'sanskrit') {
-        const lds = referenceDataset(linkMeta.verse.dataset);
-        const entry = lds && !lds.errors.length ? referenceVerse(lds, linkMeta.verse.id) : null;
-        if (entry) body = verseTranscript(entry, { speakerLine: linkMeta.verse.speakerLineRecited, previous: body });
-      }
-      const current = await readTranscripts(rec);
-      // a background result only fills a gap: it never replaces a transcript that exists
-      // (least of all one someone corrected); "Transcribe again" is a primary put
-      const kept = !primary && !!pickTranscript(current, body.language);
-      const store = kept ? current : putInStore(current, body, { primary });
-      if (!kept) await writeTranscripts(rec, store);
-      const meta = kept ? null : await refreshChandas(rec, store); // the metre follows the words
+      const { kept, store, meta } = await withSloka(id, async () => {
+        // a linked recording's words are the verse's: a hearing put here lends its timings, no more
+        const linkMeta = await readMeta(audioPath(rec)).catch(() => null);
+        if (linkMeta && linkMeta.verse && body.from !== 'reference' && body.language === 'sanskrit') {
+          const lds = referenceDataset(linkMeta.verse.dataset);
+          const entry = lds && !lds.errors.length ? referenceVerse(lds, linkMeta.verse.id) : null;
+          if (entry) body = verseTranscript(entry, { speakerLine: linkMeta.verse.speakerLineRecited, previous: body });
+        }
+        const current = await readTranscripts(rec);
+        // a background result only fills a gap: it never replaces a transcript that exists
+        // (least of all one someone corrected); "Transcribe again" is a primary put
+        const kept = !primary && !!pickTranscript(current, body.language);
+        const store = kept ? current : putInStore(current, body, { primary });
+        if (!kept) await writeTranscripts(rec, store);
+        const meta = kept ? null : await refreshChandas(rec, store); // the metre follows the words
+        return { kept, store, meta };
+      });
       return sendJson(res, 200, { ok: true, kept: !!kept, textFile: path.basename(textPath(rec)), ...publicStore(store), ...(meta ? { meta } : {}) });
     }
     if (req.method === 'DELETE') {
       const language = url.searchParams.get('language');
-      const store = language ? removeFromStore(await readTranscripts(rec), language) : null;
-      await writeTranscripts(rec, store);
+      const store = await withSloka(id, async () => {
+        const next = language ? removeFromStore(await readTranscripts(rec), language) : null;
+        await writeTranscripts(rec, next);
+        return next;
+      });
       return sendJson(res, 200, { ok: true, ...(publicStore(store) || { available: [] }) });
     }
     return sendJson(res, 405, { error: 'Method not allowed' });
@@ -1239,34 +1346,37 @@ async function handleApi(req, res, url) {
   // POST /api/baselines/:id/verse  {dataset, id, speakerLineRecited?}  → links the recording to that verse
   // DELETE /api/baselines/:id/verse                                   → unlinks it (a text from the dataset goes with it)
   if (sub === 'verse') {
-    const current = await ensureMeta(rec, audioPath(rec));
-    if (req.method === 'DELETE') return sendJson(res, 200, await unlinkVerse(rec, current));
+    if (req.method === 'DELETE') return sendJson(res, 200, await withSloka(id, async () => unlinkVerse(rec, await ensureMeta(rec, audioPath(rec)))));
     if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
     const body = await readJson(req, 1e5);
     const ds = referenceDataset(String(body.dataset || 'gita'));
     if (!ds || ds.errors.length) return sendJson(res, 404, { error: `No reference dataset "${body.dataset || 'gita'}"` });
     const entry = referenceVerse(ds, String(body.id || ''));
     if (!entry) return sendJson(res, 404, { error: `No verse "${body.id}"` });
-    return sendJson(res, 200, await linkToVerse(rec, current, ds, entry, { speakerLineRecited: body.speakerLineRecited !== false, mappedBy: 'manual' }));
+    return sendJson(res, 200, await withSloka(id, async () => linkToVerse(rec, await ensureMeta(rec, audioPath(rec)), ds, entry, { speakerLineRecited: body.speakerLineRecited !== false, mappedBy: 'manual' })));
   }
 
   // GET / PUT / PATCH /api/baselines/:id/meta  — the metadata sidecar. PUT replaces what
   // the app may set (speaker, style, text, voice, measured, capture, consent, notes);
   // PATCH changes only the keys given. id, audio and software stay the server's.
   if (sub === 'meta') {
-    const current = await ensureMeta(rec, audioPath(rec));
-    if (req.method === 'GET') return sendJson(res, 200, current);
+    if (req.method === 'GET') return sendJson(res, 200, await ensureMeta(rec, audioPath(rec)));
     if (req.method === 'PUT' || req.method === 'PATCH') {
       const body = await readJson(req, 2e6);
-      const input = req.method === 'PATCH' ? body : { text: null, voice: null, measured: null, capture: null, ...body };
-      const meta = sanitizeMeta(input, current);
-      meta.name = rec.name; // the name is the library's
-      meta.chandas = chandasForRecord({ name: rec.name, meta, store: await readTranscripts(rec) }); // the metre follows the text
-      await writeMeta(audioPath(rec), meta);
-      // the bext chunk describes the sloka; refresh it when what it says has changed
-      if (bextDescription(meta) !== bextDescription(current)) {
-        try { await writeWavWithBext(rec, await fsp.readFile(audioPath(rec)), meta); } catch { /* audio missing */ }
-      }
+      const meta = await withSloka(id, async () => {
+        const current = await ensureMeta(rec, audioPath(rec));
+        const input = req.method === 'PATCH' ? body : { text: null, voice: null, measured: null, capture: null, ...body };
+        const next = sanitizeMeta(input, current);
+        next.name = rec.name; // the name is the library's
+        next.chandas = chandasForRecord({ name: rec.name, meta: next, store: await readTranscripts(rec) }); // the metre follows the text
+        await writeMeta(audioPath(rec), next);
+        // the bext chunk describes the sloka; refresh it when what it says has changed (a
+        // recording being played is held, and the refresh waits for the next change)
+        if (bextDescription(next) !== bextDescription(current)) {
+          try { await writeWavWithBext(rec, await fsp.readFile(audioPath(rec)), next); } catch (err) { console.warn(`library: the bext chunk of "${rec.name}" was not refreshed: ${err.message}`); }
+        }
+        return next;
+      });
       return sendJson(res, 200, meta);
     }
     return sendJson(res, 405, { error: 'Method not allowed' });
@@ -1278,7 +1388,7 @@ async function handleApi(req, res, url) {
     const folder = cleanFolder(body.folder);
     if (folder === null) return sendJson(res, 400, { error: 'That is not a usable folder name' });
     if (!folder) return sendJson(res, 400, { error: 'Slokas are kept in folders: choose or create one' });
-    const moved = await withIndex(async (l) => { const r = l.find((x) => x.id === id); return r ? moveRecord(r, folder) : null; });
+    const moved = await withIndex(async (l) => { const r = l.find((x) => x.id === id); return r ? withSloka(id, () => moveRecord(r, folder)) : null; });
     if (!moved) return sendJson(res, 404, { error: 'No such sloka' });
     return sendJson(res, 200, publicRecord(moved));
   }
@@ -1296,20 +1406,13 @@ async function handleApi(req, res, url) {
     const updated = await withIndex(async (l) => {
       const r = l.find((x) => x.id === id);
       if (!r) return null;
-      const folder = folderOf(r.file);
-      const newFile = `${folder ? folder + '/' : ''}${slug(name)}-${r.id}.wav`;
-      if (newFile !== r.file) {
-        const oldRec = { ...r };
-        const newRec = { ...r, file: newFile };
-        if (await fileExists(audioPath(oldRec))) await fsp.rename(audioPath(oldRec), audioPath(newRec));
-        if (await fileExists(featuresPath(oldRec))) await fsp.rename(featuresPath(oldRec), featuresPath(newRec));
-        if (await fileExists(transcriptPath(oldRec))) await fsp.rename(transcriptPath(oldRec), transcriptPath(newRec));
-        if (await fileExists(textPath(oldRec))) await fsp.rename(textPath(oldRec), textPath(newRec));
-        await moveMeta(audioPath(oldRec), audioPath(newRec));
-        r.file = newFile;
-      }
-      r.name = name;
-      await renameMeta(r, name);
+      await withSloka(id, async () => {
+        const folder = folderOf(r.file);
+        const newFile = `${folder ? folder + '/' : ''}${slug(name)}-${r.id}.wav`;
+        if (newFile !== r.file) await renameFiles(r, newFile);
+        r.name = name;
+        await renameMeta(r, name);
+      });
       return r;
     });
     if (!updated) return sendJson(res, 404, { error: 'No such sloka' });
@@ -1323,16 +1426,19 @@ async function handleApi(req, res, url) {
     const backup = url.searchParams.get('backup') === '1';
     await withIndex(async (l) => {
       const idx = l.findIndex((x) => x.id === id);
-      if (idx >= 0) {
-        const r = l[idx];
+      if (idx < 0) return;
+      const r = l[idx];
+      // the sync never leaves two records on one file; should a stale index say so, nothing is deleted
+      if (l.some((x) => x !== r && x.file === r.file)) throw new HttpError(409, 'Another sloka points at the same file: open the Library once to sort them out, then try again');
+      await withSloka(id, async () => {
         if (backup) await backupRecord(r);
         await fsp.rm(audioPath(r), { force: true });
         await fsp.rm(featuresPath(r), { force: true });
         await fsp.rm(transcriptPath(r), { force: true });
         await fsp.rm(textPath(r), { force: true });
         await removeMeta(audioPath(r));
-        l.splice(idx, 1);
-      }
+      });
+      l.splice(idx, 1);
     });
     return sendJson(res, 200, { ok: true });
   }
@@ -1379,24 +1485,33 @@ async function handleStatic(req, res, url) {
 
 // ---------- server ----------
 
-// Every request: the target read against the fixed base, the edge's refusals, then the
-// route. A typed error (edge.js HttpError: 400, 403, 413, 415) is answered with its status
-// and sentence; anything else is a 500 with the error logged. A 413 closes the connection
-// after the answer. Once the headers are out, a failure can only end the response.
+// Every request: the headers that forbid framing, the target read against the fixed base,
+// the edge's refusals, a wait until the library is in order, then the route. A typed error
+// (edge.js HttpError: 400, 403, 413, 415) is answered with its status and sentence; a file
+// held by another program or written by a newer app is a 409; anything else is a 500 with
+// the error logged. A 413 closes the connection after the answer. Once the headers are out,
+// a failure can only end the response.
+let signalReady;
+const ready = new Promise((resolve) => { signalReady = resolve; });
 const server = http.createServer(async (req, res) => {
   let url = null;
   try {
+    for (const [name, value] of Object.entries(NO_FRAME_HEADERS)) res.setHeader(name, value);
     url = parseRequestUrl(req.url, port);
     const refused = refusal(req.headers, port, req.method);
     if (refused) throw refused;
+    await ready;
     if (url.pathname.startsWith('/api/')) await handleApi(req, res, url);
     else await handleStatic(req, res, url);
   } catch (err) {
-    const status = err instanceof HttpError ? err.status : 500;
-    if (status === 500) console.error(`${req.method} ${url ? url.pathname : req.url} →`, err);
-    else if (status === 403) console.log(`${req.method} ${url ? url.pathname : req.url} refused: ${err.message} (Host ${req.headers.host || '-'}, Origin ${req.headers.origin || '-'})`);
+    const status = err instanceof HttpError ? err.status : err instanceof FileHeldError || err instanceof NewerFileError ? 409 : 500;
+    const message = err instanceof FileHeldError ? `${path.basename(err.file)} is in use (being played, or open in another program): try again in a moment` : err.message || 'Server error';
+    const where = `${req.method} ${url ? url.pathname : req.url}`;
+    if (status === 500) console.error(`${where} →`, err);
+    else if (status === 403) console.log(`${where} refused: ${message} (Host ${req.headers.host || '-'}, Origin ${req.headers.origin || '-'})`);
+    else if (status === 409) console.log(`${where} refused: ${message}`);
     if (res.headersSent) { res.destroy(); return; }
-    sendJson(res, status, { error: err.message || 'Server error' }, status === 413 ? { Connection: 'close' } : {});
+    sendJson(res, status, { error: message }, status === 413 ? { Connection: 'close' } : {});
   }
 });
 
@@ -1411,10 +1526,10 @@ function openBrowser() {
   try { spawn(cmd[0], cmd[1], { stdio: 'ignore', detached: true }).unref(); } catch { console.log(`Open ${urlHome()} in your browser.`); }
 }
 
-await ensureLibrary();
 server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
-    // Started twice (a double double-click, say): the first one is still serving.
+    // Started twice (a double double-click, say): the first one is still serving, and this
+    // one has touched nothing, since the port is taken before the library is looked at.
     console.log(`SlokAbhyasa is already running at ${urlHome()}${OPEN ? ' — opening it.' : ''}`);
     if (OPEN) openBrowser();
     process.exit(0);
@@ -1422,8 +1537,15 @@ server.on('error', (err) => {
   console.error(`The server could not start: ${err.message}`);
   process.exit(1);
 });
-server.listen(PORT_WANTED.port, HOST, () => {
+// The port first: it is the only lock between two instances on one data folder (review of
+// 4 November 2026, finding 6). Then the library is put in order while requests wait.
+server.listen(PORT_WANTED.port, HOST, async () => {
   port = server.address().port;
+  try { await ensureLibrary(); } catch (err) {
+    console.error(`SlokAbhyasa could not read its library: ${err.message}`);
+    process.exit(1);
+  }
+  signalReady();
   console.log(`SlokAbhyasa is running at ${urlHome()}`);
   console.log(`Slokas are stored in ${LIB} (and its subfolders); quizzes in ${QUIZZES}`);
   if (OPEN) openBrowser();

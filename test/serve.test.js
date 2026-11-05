@@ -8,6 +8,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import http from 'node:http';
+import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,7 +22,24 @@ const tone = (sec = 0.5, sr = 16000) => {
   for (let i = 0; i < x.length; i++) x[i] = 0.3 * Math.sin((2 * Math.PI * 220 * i) / sr);
   return x;
 };
-const wavBytes = () => { const u8 = encodeWavBytes(tone(), 16000); return Buffer.from(u8.buffer, u8.byteOffset, u8.byteLength); };
+const asBuffer = (u8) => Buffer.from(u8.buffer, u8.byteOffset, u8.byteLength);
+const wavBytes = () => asBuffer(encodeWavBytes(tone(), 16000));
+// a tone with half a second of silence at each end: what Trim has something to remove from
+const paddedWav = () => { const t = tone(); const x = new Float32Array(8000 + t.length + 8000); x.set(t, 8000); return asBuffer(encodeWavBytes(x, 16000)); };
+// a damaged file written a moment ago counts as "still being written"; a case that expects a quarantine ages it
+const aged = async (file, content) => { await fsp.writeFile(file, content); const old = new Date(Date.now() - 120000); await fsp.utimes(file, old, old); };
+
+// Starts serve.js on `dir` expecting it to refuse; resolves with its output once it has exited.
+function failedStart(dir) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ['serve.js'], { cwd: ROOT, env: { ...process.env, SLOKABHYASA_DATA: dir, PORT: '0' }, stdio: ['ignore', 'pipe', 'pipe'] });
+    let out = '';
+    child.stdout.on('data', (c) => { out += c; });
+    child.stderr.on('data', (c) => { out += c; });
+    const timer = setTimeout(() => { child.kill(); reject(new Error(`the server did not exit:\n${out}`)); }, 20000);
+    child.on('exit', (code) => { clearTimeout(timer); resolve({ code, out }); });
+  });
+}
 
 // Starts serve.js on `dir`; resolves once it prints the port it chose.
 async function startServer(dir) {
@@ -89,7 +107,7 @@ test('the server on a temporary data folder: the edge, the files, the versions',
   await fsp.writeFile(path.join(libDir, ...fileB.split('/')), wav);
   await fsp.writeFile(path.join(libDir, ...fileB.replace(/\.wav$/, '.json').split('/')), JSON.stringify(detailsB, null, 2));
   await fsp.writeFile(path.join(dir, 'sessions', `${oldSession.id}.json`), JSON.stringify(oldSession, null, 2));
-  await fsp.writeFile(path.join(dir, 'profiles.json'), '{"schemaVersion": "1.0.0", "profiles": [{"id": "p-1", "name": "An');
+  await aged(path.join(dir, 'profiles.json'), '{"schemaVersion": "1.0.0", "profiles": [{"id": "p-1", "name": "An');
   const stale = path.join(libDir, 'index.json.tmp-999-aaaaaa');
   await fsp.writeFile(stale, '[');
   const old = new Date(Date.now() - 120000);
@@ -271,11 +289,184 @@ test('the server on a temporary data folder: the edge, the files, the versions',
       assert.equal(JSON.parse(await fsp.readFile(path.join(dir, 'quizzes', `${q.id}.json`), 'utf8')).schemaVersion, '1.0.0');
     });
 
-    await t.test('no temporary file is left anywhere in the data folder', async () => {
+    await t.test('every answer forbids framing by another site', async () => {
+      for (const p of ['/', '/api/folders', `/api/baselines/${recA.id}/audio`, '/js/app.js']) {
+        const r = await raw(port, { path: p });
+        assert.equal(r.status, 200, p);
+        assert.equal(r.headers['x-frame-options'], 'DENY', p);
+        assert.equal(r.headers['content-security-policy'], "frame-ancestors 'none'", p);
+      }
+      const refused = await raw(port, { path: '/api/folders', headers: { origin: 'https://evil.example' } });
+      assert.equal(refused.status, 403);
+      assert.equal(refused.headers['x-frame-options'], 'DENY', 'a refusal too');
+    });
+
+    await t.test('a bad percent-encoding in a reference path is 400, not 500', async () => {
+      assert.equal((await raw(port, { path: '/api/reference/%E0' })).status, 400);
+      assert.equal((await raw(port, { path: '/api/reference/gita/verses/%E0' })).status, 400);
+      assert.equal((await raw(port, { method: 'PUT', path: '/api/reference/gita/verses/%E0/custom', headers: JSON_H, body: '{}' })).status, 400);
+      assert.equal((await raw(port, { path: '/api/reference/gita/verses/12.3' })).status, 200, 'a sound id still answers');
+    });
+
+    await t.test('a page on another local port is not this app', async () => {
+      assert.equal((await raw(port, { path: `/api/baselines/${recA.id}/audio`, headers: { 'sec-fetch-site': 'same-site', 'sec-fetch-mode': 'no-cors', 'sec-fetch-dest': 'audio' } })).status, 403);
+      assert.equal((await raw(port, { path: '/api/folders', headers: { 'sec-fetch-site': 'same-origin', 'sec-fetch-mode': 'cors' } })).status, 200);
+    });
+
+    await t.test('an Explorer copy and delete never leaves two slokas on one WAV', async () => {
+      const copyDir = path.join(libDir, 'ch13');
+      await fsp.mkdir(copyDir, { recursive: true });
+      const base = path.basename(recA.file, '.wav');
+      await fsp.copyFile(path.join(libDir, ...recA.file.split('/')), path.join(copyDir, `${base}.wav`));
+      await fsp.copyFile(path.join(libDir, ...recA.file.replace(/\.wav$/, '.json').split('/')), path.join(copyDir, `${base}.json`));
+      const withCopy = json(await raw(port, { path: '/api/baselines' }));
+      const copy = withCopy.find((r) => r.file === `ch13/${base}.wav`);
+      assert.ok(copy, 'the copy has a record of its own');
+      assert.notEqual(copy.id, recA.id, 'with its own id');
+      await fsp.rm(copyDir, { recursive: true, force: true });
+      const after = json(await raw(port, { path: '/api/baselines' }));
+      const owners = after.filter((r) => r.file === recA.file);
+      assert.equal(owners.length, 1, 'one record on the original');
+      assert.equal(owners[0].id, recA.id);
+      assert.equal(owners[0].name, 'CH12-03');
+      assert.ok(!after.some((r) => r.id === copy.id), 'the copy\'s record is gone, not rebound to the original');
+      assert.ok(fs.existsSync(path.join(libDir, ...recA.file.split('/'))));
+      const details = JSON.parse(await fsp.readFile(path.join(libDir, ...recA.file.replace(/\.wav$/, '.json').split('/')), 'utf8'));
+      assert.equal(details.id, recA.id, 'the details still carry the original\'s id');
+    });
+
+    await t.test('two saves of one details file, or one quiz, at the same moment keep both', async () => {
+      await Promise.all([
+        raw(port, { method: 'PATCH', path: `/api/baselines/${recA.id}/meta`, headers: JSON_H, body: JSON.stringify({ notes: 'one' }) }),
+        raw(port, { method: 'PATCH', path: `/api/baselines/${recA.id}/meta`, headers: JSON_H, body: JSON.stringify({ capture: { device: 'USB mic' } }) }),
+      ]);
+      const meta = json(await raw(port, { path: `/api/baselines/${recA.id}/meta` }));
+      assert.equal(meta.notes, 'one');
+      assert.equal(meta.capture && meta.capture.device, 'USB mic');
+      const made = json(await raw(port, { method: 'POST', path: '/api/quizzes', headers: JSON_H, body: JSON.stringify({ name: 'Morning', items: [{ id: recA.id, name: recA.name, folder: 'ch12' }] }) }));
+      const attempt = (n) => raw(port, { method: 'POST', path: `/api/quizzes/${made.id}/attempts`, headers: JSON_H, body: JSON.stringify({ byCategory: { melody: n }, items: [] }) });
+      await Promise.all([attempt(70), attempt(80)]);
+      assert.equal(json(await raw(port, { path: `/api/quizzes/${made.id}` })).attempts.length, 2);
+    });
+
+    await t.test('a rename cut short between a sloka\'s files is repaired at the next listing, by the id the details carry', async () => {
+      // the WAV renamed and the sidecars not (the old order)
+      const oldAbs = path.join(libDir, ...recA.file.split('/'));
+      const renamedRel = `ch12/renamed-${recA.id}.wav`;
+      await fsp.rename(oldAbs, path.join(libDir, ...renamedRel.split('/')));
+      let list = json(await raw(port, { path: '/api/baselines' }));
+      let r = list.find((x) => x.id === recA.id);
+      assert.ok(r, 'the record follows the WAV under its id');
+      assert.equal(r.file, renamedRel);
+      assert.equal(r.name, 'CH12-03', 'the name comes from the details, not the file name');
+      assert.equal(r.meta.notes, 'one', 'the details are the real ones');
+      assert.equal(r.meta.recoveredFrom, undefined);
+      assert.ok(fs.existsSync(path.join(libDir, 'ch12', `renamed-${recA.id}.json`)), 'the details sit beside the WAV again');
+      assert.ok(!fs.existsSync(path.join(libDir, 'ch12', `${path.basename(recA.file, '.wav')}.json`)));
+      // the sidecars renamed and the WAV not (the new order)
+      await fsp.rename(path.join(libDir, 'ch12', `renamed-${recA.id}.json`), path.join(libDir, 'ch12', `other-${recA.id}.json`));
+      list = json(await raw(port, { path: '/api/baselines' }));
+      r = list.find((x) => x.id === recA.id);
+      assert.equal(r.file, renamedRel);
+      assert.equal(r.meta.notes, 'one');
+      assert.ok(fs.existsSync(path.join(libDir, 'ch12', `renamed-${recA.id}.json`)));
+      assert.ok(!fs.existsSync(path.join(libDir, 'ch12', `other-${recA.id}.json`)));
+      recA.file = renamedRel;
+    });
+
+    await t.test('a move into a folder that already holds a file of that name is refused', async () => {
+      await fsp.mkdir(path.join(libDir, 'ch14'), { recursive: true });
+      await fsp.writeFile(path.join(libDir, 'ch14', path.basename(recA.file)), wav);
+      const r = await raw(port, { method: 'POST', path: `/api/baselines/${recA.id}/move`, headers: JSON_H, body: '{"folder":"ch14"}' });
+      assert.equal(r.status, 409);
+      assert.ok(fs.existsSync(path.join(libDir, ...recA.file.split('/'))), 'nothing moved');
+      await fsp.rm(path.join(libDir, 'ch14'), { recursive: true, force: true });
+      const ok = await raw(port, { method: 'POST', path: `/api/baselines/${recA.id}/move`, headers: JSON_H, body: '{"folder":"ch14"}' });
+      assert.equal(ok.status, 200);
+      recA.file = json(ok).file;
+      assert.ok(fs.existsSync(path.join(libDir, ...recA.file.replace(/\.wav$/, '.json').split('/'))), 'the details moved with it');
+    });
+
+    await t.test('a recording being played cannot be replaced: trim answers 409 and leaves the file whole', async () => {
+      const made = json(await raw(port, { method: 'POST', path: '/api/baselines?name=CH12-06&folder=ch12', headers: WAV_H, body: paddedWav() }));
+      const abs = path.join(libDir, ...made.file.split('/'));
+      const before = await fsp.readFile(abs);
+      const held = fs.openSync(abs, 'r'); // what the server holds while it streams the sloka to the player
+      try {
+        const r = await raw(port, { method: 'POST', path: `/api/baselines/${made.id}/trim` });
+        if (process.platform === 'win32') {
+          assert.equal(r.status, 409);
+          assert.ok(/in use/.test(json(r).error), json(r).error);
+          assert.ok(before.equals(await fsp.readFile(abs)), 'the recording is as it was');
+        } else assert.equal(r.status, 200);
+      } finally { fs.closeSync(held); }
+      const again = await raw(port, { method: 'POST', path: `/api/baselines/${made.id}/trim` });
+      assert.equal(again.status, 200);
+      assert.equal(json(again).changed, process.platform === 'win32', 'once the hold is gone the trim goes through');
       assert.deepEqual(await temporaries(dir), []);
+    });
+
+    await t.test('a quiz written by a newer app is skipped with a line and refused on a change, never rewritten', async () => {
+      const qid = '20260103-120000-dddd';
+      const text = JSON.stringify({ schemaVersion: '2.0.0', id: qid, name: 'Future', items: [], attempts: [], later: true });
+      await fsp.writeFile(path.join(dir, 'quizzes', `${qid}.json`), text);
+      assert.ok(!json(await raw(port, { path: '/api/quizzes' })).some((q) => q.id === qid));
+      const r = await raw(port, { method: 'PATCH', path: `/api/quizzes/${qid}`, headers: JSON_H, body: '{"name":"x"}' });
+      assert.equal(r.status, 409);
+      assert.ok(/newer SlokAbhyasa \(2\.0\.0\)/.test(json(r).error));
+      assert.equal(await fsp.readFile(path.join(dir, 'quizzes', `${qid}.json`), 'utf8'), text, 'untouched');
+      assert.ok(srv.output().includes(`${qid}.json skipped`));
+    });
+
+    await t.test('a transcript store that parses but holds no transcript is kept, not written over', async () => {
+      const base = path.join(libDir, ...recA.file.replace(/\.wav$/, '').split('/'));
+      await aged(`${base}.transcript.json`, '{}');
+      await fsp.writeFile(`${base}.txt`, 'ये त्वक्षरमनिर्देश्यम्\n');
+      const r = await raw(port, { path: `/api/baselines/${recA.id}/transcript` });
+      assert.equal(r.status, 200);
+      const folder = path.dirname(`${base}.txt`);
+      assert.ok((await fsp.readdir(folder)).some((n) => n.includes('.transcript.json.broken-')), 'the empty store is kept beside');
+      assert.ok(JSON.parse(await fsp.readFile(`${base}.transcript.json`, 'utf8')).languages, 'the store rebuilt from the text');
+    });
+
+    await t.test('a download the browser drops is not logged', async () => {
+      await new Promise((resolve, reject) => {
+        const sock = net.connect({ host: '127.0.0.1', port }, () => sock.write(`GET /js/app.js HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\n\r\n`));
+        sock.once('data', () => { sock.destroy(); resolve(); });
+        sock.once('error', reject);
+      });
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      assert.ok(!srv.output().includes('sending a file'), srv.output());
+    });
+
+    await t.test('no temporary file is left anywhere in the data folder, and the console saw no 500', async () => {
+      assert.deepEqual(await temporaries(dir), []);
+      const errors = srv.output().split('\n').filter((l) => l.includes(' → '));
+      assert.deepEqual(errors, [], 'no request ended in a 500');
     });
   } finally {
     await srv.stop();
     await fsp.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('the server refuses to start, with a sentence, on a library it cannot read or one from a newer app', async () => {
+  const asFolder = await fsp.mkdtemp(path.join(os.tmpdir(), 'slokabhyasa-nostart-'));
+  const newer = await fsp.mkdtemp(path.join(os.tmpdir(), 'slokabhyasa-nostart-'));
+  try {
+    await fsp.mkdir(path.join(asFolder, 'library', 'index.json'), { recursive: true });
+    const a = await failedStart(asFolder);
+    assert.equal(a.code, 1);
+    assert.ok(a.out.includes('SlokAbhyasa could not read its library:'), a.out);
+    assert.ok(!a.out.includes('    at '), 'one sentence, no stack trace');
+    await fsp.mkdir(path.join(newer, 'library'), { recursive: true });
+    await fsp.writeFile(path.join(newer, 'library', 'index.json'), '{ "schemaVersion": "2.0.0", "records": [] }');
+    const b = await failedStart(newer);
+    assert.equal(b.code, 1);
+    assert.ok(b.out.includes('newer SlokAbhyasa (2.0.0)'), b.out);
+    assert.equal(await fsp.readFile(path.join(newer, 'library', 'index.json'), 'utf8'), '{ "schemaVersion": "2.0.0", "records": [] }', 'untouched');
+  } finally {
+    await fsp.rm(asFolder, { recursive: true, force: true });
+    await fsp.rm(newer, { recursive: true, force: true });
   }
 });
